@@ -1,0 +1,64 @@
+﻿// limitations under the License.
+syntax = "proto3";
+import "google/protobuf/any.proto";
+import "google/protobuf/empty.proto";
+//import "timestamp.proto";
+//import "any.proto";
+//import "empty.proto";
+
+
+package hello;
+
+
+service ProcessGrpc
+{
+   rpc GetAddresses(google.protobuf.Empty)  returns (Addresses);
+
+   rpc ConnectToWebServer(ConnectToWebServerRequest) returns (google.protobuf.Empty);
+   
+   rpc StreamingServer (stream SendDataRequest) returns (stream SendDataRequest);
+
+   rpc CloseBrowser(CloseBrowserRequest) returns (google.protobuf.Empty);
+
+   rpc GetServerInfo(google.protobuf.Empty) returns (ServerInfoRes);
+}
+
+
+message ConnectToWebServerRequest{
+    string address = 1;
+    int32 port = 2;
+    string BrowserConnectId = 3;
+}
+
+message ConnectToWebServerReply{
+    string BrowserConnectId = 1;
+    bool Succeeded = 2;
+    string ErrorMessage = 3;
+}
+
+
+
+message SendDataRequest{
+    string BrowserConnectId = 3;
+    bytes Data = 2;
+}
+
+message CloseBrowserRequest{
+    string browserConnectId = 1;
+}
+
+message Addresses{
+    repeated AddressItem Items = 1;
+
+    message AddressItem{
+        uint32 port = 1;
+        string url = 2;
+        string remark = 3;
+    }
+}
+
+message ServerInfoRes{
+    uint32 ConnectionCount = 1;
+    uint32 CurrentTask1Count = 2;
+    uint32 CurrentTask2Count = 3;
+}

@@ -1,0 +1,49 @@
+﻿<Project Sdk="Microsoft.NET.Sdk.Web">
+
+	<PropertyGroup>
+		<TargetFramework>net8.0</TargetFramework>
+		<EnablePreviewFeatures>true</EnablePreviewFeatures>
+		<LangVersion>preview</LangVersion>
+		<ServerGarbageCollection>true</ServerGarbageCollection>
+		<Nullable>enable</Nullable>
+		<IsAotCompatible>true</IsAotCompatible>
+		<StripSymbols>true</StripSymbols>
+		<OutputType>Exe</OutputType>
+		<PublishAot>true</PublishAot>
+	</PropertyGroup>
+
+	<PropertyGroup>
+		<EnablePreviewFeatures>True</EnablePreviewFeatures>
+		<DockerDefaultTargetOS>Linux</DockerDefaultTargetOS>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<None Remove="proto\TextFile.proto" />
+		<None Remove="proto\chat.proto" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<PackageReference Include="DnsClient" Version="1.7.0" />
+		<PackageReference Include="Grpc.AspNetCore" Version="2.58.0" />
+		<PackageReference Include="Microsoft.AspNetCore.Hosting.WindowsServices" Version="7.0.12" />
+		<PackageReference Include="Microsoft.Extensions.Hosting.Systemd" Version="7.0.0" />
+		<PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="7.0.1" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<Protobuf Include="proto\TextFile.proto" GrpcServices="Server" />
+		<Protobuf Include="proto\chat.proto" GrpcServices="Server" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<None Update="1624969787.p12">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</None>
+		<None Update="boran.net.cn.pfx">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</None>
+		<None Update="proxy.service">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</None>
+	</ItemGroup>
+</Project>

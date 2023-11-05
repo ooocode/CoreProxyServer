@@ -1,0 +1,16 @@
+[Unit]
+Description=Socket5 ASP.Net Core”¶”√
+[Service]
+WorkingDirectory=/home/uos/dotnet-projects/EventBrige-5003
+ExecStart=/home/uos/dotnet/dotnet /home/uos/dotnet-projects/EventBrige-5003/WebApplicationEventBridge.dll
+Restart=always
+# Restart service after 10 seconds if the dotnet service crashes:
+RestartSec=10
+KillSignal=SIGINT
+SyslogIdentifier=dotnet-example
+User=www-data
+Environment=ASPNETCORE_ENVIRONMENT=Production
+Environment=DOTNET_PRINT_TELEMETRY_MESSAGE=false
+
+[Install]
+WantedBy=multi-user.target

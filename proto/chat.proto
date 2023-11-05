@@ -1,0 +1,56 @@
+﻿// limitations under the License.
+syntax = "proto3";
+import "google/protobuf/any.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
+//import "timestamp.proto";
+//import "any.proto";
+//import "empty.proto";
+
+
+package hello;
+
+
+service ChatGrpc
+{
+   /*rpc GetAddresses(google.protobuf.Empty)  returns (Addresses);
+
+   rpc ConnectToWebServer(ConnectToWebServerRequest) returns (google.protobuf.Empty);
+   
+   rpc StreamingServer (stream SendDataRequest) returns (stream SendDataRequest);
+
+   rpc CloseBrowser(CloseBrowserRequest) returns (google.protobuf.Empty);
+
+   rpc GetServerInfo(google.protobuf.Empty) returns (ServerInfoRes);*/
+
+
+   rpc RegisterUser(RegisterUserRequest) returns (RegisterUserResponse);
+
+   rpc ExchangeMessages(stream ExchangeMessagesRequest) returns (stream ExchangeMessagesResponse);
+
+   rpc GetAllClients(google.protobuf.Empty) returns (GetAllClientsResponse);
+}
+
+message RegisterUserRequest{
+    string userId = 1;
+}
+
+message RegisterUserResponse{
+    string userId = 1;
+}
+
+message ExchangeMessagesRequest{
+    string toUserId = 1;
+    sint64 sendTime = 2; 
+    bytes message = 3;
+}
+
+message ExchangeMessagesResponse{
+    string fromUserId = 1;
+    sint64 sendTime = 2; 
+    bytes message = 3;
+}
+
+message GetAllClientsResponse{
+   repeated string userIds = 1;
+}
