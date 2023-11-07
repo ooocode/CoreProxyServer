@@ -3,34 +3,41 @@ using Google.Protobuf.WellKnownTypes;
 using Grpc.Core;
 using Hello;
 using Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets;
-using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
 using Microsoft.Net.Http.Headers;
 using ServerWebApplication.Common;
 using System;
 using System.Threading;
 using System.Threading.Tasks;
+using Prometheus;
 
 namespace ServerWebApplication.Impl
 {
-
-    public class ProcessImpl : Hello.ProcessGrpc.ProcessGrpcBase
+    public class ProcessImpl : ProcessGrpc.ProcessGrpcBase
     {
         private readonly ILogger<ProcessImpl> logger;
         private readonly SocketConnectionContextFactory connectionFactory;
         private readonly DnsParserService dnsParserService;
-        private readonly IMemoryCache memoryCache;
         private readonly CertificatePassword clientPassword;
+
+        public static Gauge CurrentCount = Metrics
+            .CreateGauge("grpc_stream_clients", "GRPC双向流连接数");
+
+        public static Gauge CurrentTask1Count = Metrics
+            .CreateGauge("grpc_stream_clients_task1", "GRPC双向流Task1连接数");
+
+        public static Gauge CurrentTask2Count = Metrics
+            .CreateGauge("grpc_stream_clients_task2", "GRPC双向流Task2连接数");
+
 
         public ProcessImpl(ILogger<ProcessImpl> logger,
             SocketConnectionContextFactory connectionFactory,
             DnsParserService dnsParserService,
-            IMemoryCache memoryCache,
             CertificatePassword clientPassword)
         {
             this.logger = logger;
             this.dnsParserService = dnsParserService;
-            this.memoryCache = memoryCache;
+
             this.clientPassword = clientPassword;
             this.connectionFactory = connectionFactory;
         }
@@ -45,27 +52,15 @@ namespace ServerWebApplication.Impl
             }
         }
 
-        public override async Task<Empty> ConnectToWebServer(ConnectToWebServerRequest request, ServerCallContext context)
+
+        private async Task<SocketConnect> CreateSocketConnectAsync(string address, int port, CancellationToken cancellationToken)
         {
-            CheckPassword(context);
-            try
-            {
-                SocketConnect target = new SocketConnect(connectionFactory);
-                var ipAddress = await dnsParserService.ParseIpAddressAsync(request.Address, context.CancellationToken);
+            SocketConnect target = new SocketConnect(connectionFactory);
+            var ipAddress = await dnsParserService.ParseIpAddressAsync(address, cancellationToken);
 
-                await target.ConnectAsync(ipAddress, request.Port, context.CancellationToken);
-                logger.LogInformation($"成功连接到： {request.Address}:{request.Port}");
-
-                memoryCache.Set(request.BrowserConnectId,
-                    target,
-                    TimeSpan.FromMinutes(1));
-
-                return new Empty();
-            }
-            catch (Exception ex)
-            {
-                throw new RpcException(new Status(StatusCode.Unavailable, $"连接到Web服务器失败: {request.Address}:{request.Port} {ex.InnerException?.Message ?? ex.Message}"));
-            }
+            await target.ConnectAsync(ipAddress, port, cancellationToken);
+            logger.LogInformation($"成功连接到： {address}:{port}");
+            return target;
         }
 
 
@@ -76,22 +71,23 @@ namespace ServerWebApplication.Impl
         {
             CheckPassword(context);
 
-            var browserConnectId = context.RequestHeaders.GetValue("BrowserConnectId");
-            ArgumentException.ThrowIfNullOrWhiteSpace(browserConnectId);
+            var targetAddress = context.RequestHeaders.GetValue("TargetAddress");
+            var targetPort = int.Parse(context.RequestHeaders.GetValue("TargetPort")!);
 
-            if (!memoryCache.TryGetValue<SocketConnect>(browserConnectId, out var target))
+            await using var target = await CreateSocketConnectAsync(targetAddress!, targetPort, context.CancellationToken);
+
+            //返回成功
+            await responseStream.WriteAsync(new SendDataRequest
             {
-                return;
-            }
-
-            //CurrentCount.Inc();
-            //logger.LogInformation($"{DateTimeOffset.Now.ToString("HH:mm:ss")} +当前连接数:{CurrentCount.Value}");
+                Data = ByteString.Empty
+            }, context.CancellationToken);
 
             using CancellationTokenSource targetCancelTokenSource = new CancellationTokenSource();
             using CancellationTokenSource cancellationTokenSource = CancellationTokenSource
                 .CreateLinkedTokenSource(context.CancellationToken, targetCancelTokenSource.Token);
             var cancelToken = cancellationTokenSource.Token;
 
+            CurrentCount.Inc();
             try
             {
                 //发到网站服务器
@@ -99,7 +95,7 @@ namespace ServerWebApplication.Impl
                 {
                     try
                     {
-                        // CurrentTask1Count.Inc();
+                        CurrentTask1Count.Inc();
                         await foreach (var message in requestStream.ReadAllAsync(cancelToken))
                         {
                             await target.SendAsync(message.Data.Memory, cancelToken);
@@ -107,7 +103,7 @@ namespace ServerWebApplication.Impl
                     }
                     finally
                     {
-                        //CurrentTask1Count.Dec();
+                        CurrentTask1Count.Dec();
                     }
                 }, cancelToken);
 
@@ -116,7 +112,7 @@ namespace ServerWebApplication.Impl
                 {
                     try
                     {
-                        //CurrentTask2Count.Inc();
+                        CurrentTask2Count.Inc();
 
                         //从目标服务器读取数据，发送到客户端
                         await foreach (var memory in target.LoopRecvDataAsync(cancelToken))
@@ -130,7 +126,7 @@ namespace ServerWebApplication.Impl
                     }
                     finally
                     {
-                        //CurrentTask2Count.Dec();
+                        CurrentTask2Count.Dec();
                         targetCancelTokenSource.Cancel();
                     }
                 }, cancelToken);
@@ -147,14 +143,7 @@ namespace ServerWebApplication.Impl
             }
             finally
             {
-                //CurrentCount.Dec();
-                //logger.LogInformation($"{DateTimeOffset.Now.ToString("HH:mm:ss")} -当前连接数:{CurrentCount.Value}");
-
-                await target.DisposeAsync();
-
-                //从缓存中移除
-                memoryCache.Remove(browserConnectId);
-
+                CurrentCount.Dec();
                 logger.LogInformation("StreamingServer结束");
             }
         }
@@ -166,9 +155,9 @@ namespace ServerWebApplication.Impl
 
             ServerInfoRes serverInfoRes = new ServerInfoRes
             {
-                //ConnectionCount = (uint)CurrentCount.Value,
-                //CurrentTask1Count = (uint)CurrentTask1Count.Value,
-                //CurrentTask2Count = (uint)CurrentTask2Count.Value
+                ConnectionCount = (uint)CurrentCount.Value,
+                CurrentTask1Count = (uint)CurrentTask1Count.Value,
+                CurrentTask2Count = (uint)CurrentTask2Count.Value
             };
             return Task.FromResult(serverInfoRes);
         }

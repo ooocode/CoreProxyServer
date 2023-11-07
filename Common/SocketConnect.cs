@@ -32,26 +32,24 @@ namespace ServerWebApplication
             connectionContext = connectionFactory.Create(socket);
         }
 
-        public async ValueTask DisposeAsync()
-        {
-            if (connectionContext != null)
-            {
-                await connectionContext.Transport.Input.CompleteAsync();
-                await connectionContext.Transport.Output.CompleteAsync();
-            }
-        }
-
         public async IAsyncEnumerable<ReadOnlyMemory<byte>> LoopRecvDataAsync(
             [EnumeratorCancellation]
             CancellationToken cancellation = default)
         {
             while (true)
             {
-                // 从PipeWriter至少分配512字节
-                //Memory<byte> memory = pipe.Writer.GetMemory(minimumBufferSize);
-
+                //浏览器普通接收
                 var result = await connectionContext!.Transport.Input.ReadAsync(cancellation);
                 ReadOnlySequence<byte> buffer = result.Buffer;
+                if (buffer.IsEmpty)
+                {
+                    break;
+                }
+
+                if (result.IsCanceled)
+                {
+                    break;
+                }
 
 
                 foreach (var memory in buffer)
@@ -61,6 +59,7 @@ namespace ServerWebApplication
 
                 connectionContext.Transport.Input.AdvanceTo(buffer.End);
 
+                // Stop reading if there's no more data coming.
                 if (result.IsCompleted)
                 {
                     break;
@@ -72,6 +71,16 @@ namespace ServerWebApplication
         {
             ArgumentNullException.ThrowIfNull(connectionContext);
             return connectionContext.Transport.Output.WriteAsync(memory, cancellationToken);
+        }
+
+
+        public async ValueTask DisposeAsync()
+        {
+            if (connectionContext != null)
+            {
+                await connectionContext.Transport.Input.CompleteAsync();
+                await connectionContext.Transport.Output.CompleteAsync();
+            }
         }
     }
 }

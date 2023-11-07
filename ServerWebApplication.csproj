@@ -28,6 +28,7 @@
 		<PackageReference Include="Microsoft.AspNetCore.Hosting.WindowsServices" Version="7.0.12" />
 		<PackageReference Include="Microsoft.Extensions.Hosting.Systemd" Version="7.0.0" />
 		<PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="7.0.1" />
+		<PackageReference Include="prometheus-net" Version="8.1.0" />
 	</ItemGroup>
 
 	<ItemGroup>
@@ -36,12 +37,6 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<None Update="1624969787.p12">
-			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-		</None>
-		<None Update="boran.net.cn.pfx">
-			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-		</None>
 		<None Update="proxy.service">
 			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
 		</None>

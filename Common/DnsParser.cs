@@ -17,7 +17,7 @@ namespace ServerWebApplication.Common
             if (!IPAddress.TryParse(domainOrIp, out var iPAddress))
             {
                 var record = (await lookupClient.QueryAsync(domainOrIp, QueryType.A,
-                    cancellationToken: CancellationToken.None)).Answers.ARecords().FirstOrDefault();
+                    cancellationToken: cancellationToken)).Answers.ARecords().FirstOrDefault();
                 if (record == null)
                 {
                     throw new Exception($"不能连接到WebServer " +

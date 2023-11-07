@@ -12,6 +12,8 @@ using System.Security.Cryptography.X509Certificates;
 using System.Security.Cryptography;
 using System.IO;
 using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 
 
 //设置允许不安全的HTTP2支持
@@ -51,6 +53,15 @@ else if (Microsoft.Extensions.Hosting.Systemd.SystemdHelpers.IsSystemdService())
 else
 {
     builder.Host.UseConsoleLifetime();
+
+    ThreadPool.QueueUserWorkItem(async (_) =>
+    {
+        while (true)
+        {
+            Console.WriteLine($"Total={ProcessImpl.CurrentCount.Value} Task1={ProcessImpl.CurrentTask1Count.Value} Task2={ProcessImpl.CurrentTask2Count.Value}");
+            await Task.Delay(2000);
+        }
+    });
 }
 
 
