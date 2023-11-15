@@ -2,7 +2,7 @@
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 
-namespace CoreProxy.WinFormsApp.Common
+namespace ServerWebApplication.Common
 {
     public class RsaService
     {

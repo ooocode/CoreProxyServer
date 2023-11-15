@@ -42,6 +42,7 @@ namespace ServerWebApplication
 
             using (var process = Process.Start(info))
             {
+                ArgumentNullException.ThrowIfNull(process);
                 output = process.StandardOutput.ReadToEnd();
             }
 
@@ -68,6 +69,7 @@ namespace ServerWebApplication
 
             using (var process = Process.Start(info))
             {
+                ArgumentNullException.ThrowIfNull(process);
                 output = process.StandardOutput.ReadToEnd();
                 Console.WriteLine(output);
             }

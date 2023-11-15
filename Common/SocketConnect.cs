@@ -10,7 +10,7 @@ using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace ServerWebApplication
+namespace ServerWebApplication.Common
 {
     public class SocketConnect : IAsyncDisposable
     {
