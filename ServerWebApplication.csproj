@@ -8,6 +8,7 @@
 		<Nullable>enable</Nullable>
 		<IsAotCompatible>true</IsAotCompatible>
 		<StripSymbols>true</StripSymbols>
+		<InvariantGlobalization>true</InvariantGlobalization>
 		<OutputType>Exe</OutputType>
 		<PublishAot>true</PublishAot>
 	</PropertyGroup>
@@ -24,11 +25,11 @@
 
 	<ItemGroup>
 		<PackageReference Include="DnsClient" Version="1.7.0" />
-		<PackageReference Include="Grpc.AspNetCore" Version="2.59.0" />
-		<PackageReference Include="Microsoft.AspNetCore.Hosting.WindowsServices" Version="8.0.0" />
+		<PackageReference Include="Grpc.AspNetCore" Version="2.60.0" />
+		<PackageReference Include="Microsoft.AspNetCore.Hosting.WindowsServices" Version="8.0.1" />
 		<PackageReference Include="Microsoft.Extensions.Hosting.Systemd" Version="8.0.0" />
 		<PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="8.0.0" />
-		<PackageReference Include="prometheus-net" Version="8.1.0" />
+		<PackageReference Include="prometheus-net" Version="8.2.1" />
 	</ItemGroup>
 
 	<ItemGroup>
