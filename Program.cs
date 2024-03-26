@@ -21,7 +21,6 @@ AppContext.SetSwitch("System.Net.Http.SocketsHttpHandler.Http2UnencryptedSupport
 
 var builder = WebApplication.CreateSlimBuilder(args);
 
-
 var certificate2 = GetCertificate();
 var clientPassword = GetCertificatePassword(certificate2);
 
