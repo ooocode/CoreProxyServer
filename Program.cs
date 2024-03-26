@@ -24,7 +24,6 @@ var builder = WebApplication.CreateSlimBuilder(args);
 var certificate2 = GetCertificate();
 var clientPassword = GetCertificatePassword(certificate2);
 
-
 builder.WebHost.ConfigureKestrel(serverOptions =>
 {
     serverOptions.ConfigureEndpointDefaults(c =>
