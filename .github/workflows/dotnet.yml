@@ -41,5 +41,5 @@ jobs:
         prerelease: false
         title: latest
         files: |
-          publish.zip
+          ${{ github.workspace }}/bin/Release/net8.0/linux-x64/publish.zip
 
