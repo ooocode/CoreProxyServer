@@ -29,6 +29,8 @@ jobs:
     #   with:
     #     name: my-artifact
     #     path: ${{ github.workspace }}/bin/Release/net8.0/linux-x64/publish
+    - name: Zip
+      run: zip -r publish.zip ${{ github.workspace }}/bin/Release/net8.0/linux-x64/publish
     - name: Create GitHub release
       uses: marvinpinto/action-automatic-releases@latest
       with:
@@ -37,5 +39,5 @@ jobs:
         prerelease: false
         title: latest
         files: |
-          ${{ github.workspace }}/bin/Release/net8.0/linux-x64/publish/*
+          publish.zip
 
