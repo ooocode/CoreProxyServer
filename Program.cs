@@ -62,7 +62,6 @@ else
     });
 }
 
-
 builder.Services.AddSingleton(s =>
 {
     var logger = s.GetRequiredService<ILogger<Program>>();
