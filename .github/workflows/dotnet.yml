@@ -35,7 +35,7 @@ jobs:
         repo_token: ${{ secrets.GITHUB_TOKEN }}
         automatic_release_tag: latest
         prerelease: false
-        title: Development Build
+        title: latest
         files: |
           ${{ github.workspace }}/bin/Release/net8.0/linux-x64/publish/*
 
