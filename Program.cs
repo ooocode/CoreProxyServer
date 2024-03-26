@@ -37,7 +37,6 @@ builder.WebHost.ConfigureKestrel(serverOptions =>
     });
 });
 
-
 builder.WebHost.UseKestrelHttpsConfiguration();
 
 
