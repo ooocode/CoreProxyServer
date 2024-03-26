@@ -37,5 +37,5 @@ jobs:
         prerelease: false
         title: Development Build
         files: |
-          ${{ github.workspace }}/bin/Release/net8.0/linux-x64/publish/*.*
+          ${{ github.workspace }}/bin/Release/net8.0/linux-x64/publish/*
 
