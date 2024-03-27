@@ -16,7 +16,6 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-20.04]
-        arch: [arm64]
 
     steps:
     - uses: actions/checkout@v4
@@ -27,7 +26,7 @@ jobs:
     - name: Restore dependencies
       run: dotnet restore
     - name: Publish
-      run: dotnet publish -r linux-arm64
+      run: dotnet publish
     # - name: upload result
     #   uses: actions/upload-artifact@v1
     #   with:
