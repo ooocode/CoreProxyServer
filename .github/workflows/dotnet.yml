@@ -27,7 +27,7 @@ jobs:
     - name: Restore dependencies
       run: dotnet restore
     - name: Publish
-      run: dotnet publish
+      run: dotnet publish -r linux-arm64
     # - name: upload result
     #   uses: actions/upload-artifact@v1
     #   with:
