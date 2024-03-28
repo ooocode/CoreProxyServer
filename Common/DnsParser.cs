@@ -9,7 +9,7 @@ namespace ServerWebApplication.Common
 {
     public class DnsParserService
     {
-        private static LookupClient lookupClient =
+        private static readonly LookupClient lookupClient =
               new LookupClient(new LookupClientOptions() { UseCache = true });
 
         public async Task<IPAddress> ParseIpAddressAsync(string domainOrIp, CancellationToken cancellationToken)
