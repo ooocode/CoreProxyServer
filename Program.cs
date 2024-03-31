@@ -94,7 +94,7 @@ namespace ServerWebApplication
         [UnmanagedCallersOnly(EntryPoint = "ServiceStop", CallConvs = [typeof(CallConvCdecl)])]
         public static void ServiceStop()
         {
-            app?.StartAsync();
+            app?.StopAsync();
         }
 
         private static X509Certificate2 GetCertificate()
