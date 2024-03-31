@@ -19,6 +19,8 @@ namespace ServerWebApplication
 {
     public class Program
     {
+        private static WebApplication? app = null;
+
         public static void Main(string[] args)
         {
             //设置允许不安全的HTTP2支持
@@ -61,7 +63,7 @@ namespace ServerWebApplication
 
             builder.Services.AddResponseCompression();
 
-            var app = builder.Build();
+            app = builder.Build();
             app.Logger.LogInformation("客户端连接密码:" + clientPassword.Password);
 
             app.UseResponseCompression();
@@ -87,6 +89,12 @@ namespace ServerWebApplication
             }
 
             Main(args.ToArray());
+        }
+
+        [UnmanagedCallersOnly(EntryPoint = "ServiceStop", CallConvs = [typeof(CallConvCdecl)])]
+        public static void ServiceStop()
+        {
+            app?.StartAsync();
         }
 
         private static X509Certificate2 GetCertificate()
