@@ -144,6 +144,12 @@ namespace ServerWebApplication.Impl
                         Data = UnsafeByteOperations.UnsafeWrap(memory)
                     }, cancellationToken);
                 }
+
+                //返回结束
+                await responseStream.WriteAsync(new SendDataRequest
+                {
+                    Data = ByteString.Empty
+                }, cancellationToken);
             }
             finally
             {
