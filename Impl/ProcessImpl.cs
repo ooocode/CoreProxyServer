@@ -89,8 +89,7 @@ namespace ServerWebApplication.Impl
                 var task1 = LoopReadClient(requestStream, target, cancellationToken);
                 var task2 = LoopReadServer(responseStream, target, cancellationToken);
 
-                await Task.WhenAll(task1, task2)
-                    .WaitAsync(TimeSpan.FromDays(1), cancellationToken);
+                await Task.WhenAll(task1, task2);
             }
             catch (TaskCanceledException)
             {
@@ -145,11 +144,7 @@ namespace ServerWebApplication.Impl
                     }, cancellationToken);
                 }
 
-                //返回结束
-                await responseStream.WriteAsync(new SendDataRequest
-                {
-                    Data = ByteString.Empty
-                }, cancellationToken);
+                throw new RpcException(new Status(StatusCode.Aborted, "target socket已完成"));
             }
             finally
             {
