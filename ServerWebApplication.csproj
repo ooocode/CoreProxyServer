@@ -11,7 +11,7 @@
 		<InvariantGlobalization>true</InvariantGlobalization>
 		<PublishAot>true</PublishAot>
 		<OutputType Condition=" '$(Configuration)'=='Debug' ">exe</OutputType>
-		<OutputType Condition=" '$(Configuration)'=='Release' ">library</OutputType>
+		<OutputType Condition=" '$(Configuration)'=='Release' ">exe</OutputType>
 	</PropertyGroup>
 
 	<PropertyGroup>
