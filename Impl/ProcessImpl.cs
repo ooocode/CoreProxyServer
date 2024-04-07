@@ -37,7 +37,6 @@ namespace ServerWebApplication.Impl
         {
             this.logger = logger;
             this.dnsParserService = dnsParserService;
-
             this.clientPassword = clientPassword;
             this.connectionFactory = connectionFactory;
         }
@@ -82,56 +81,15 @@ namespace ServerWebApplication.Impl
                 Data = ByteString.Empty
             }, context.CancellationToken);
 
-            using CancellationTokenSource targetCancelTokenSource = new CancellationTokenSource();
-            using CancellationTokenSource cancellationTokenSource = CancellationTokenSource
-                .CreateLinkedTokenSource(context.CancellationToken, targetCancelTokenSource.Token);
-            var cancelToken = cancellationTokenSource.Token;
+            var cancellationToken = context.CancellationToken;
 
             CurrentCount.Inc();
             try
             {
-                //发到网站服务器
-                var task1 = Task.Run(async () =>
-                {
-                    try
-                    {
-                        CurrentTask1Count.Inc();
-                        await foreach (var message in requestStream.ReadAllAsync(cancelToken))
-                        {
-                            await target.SendAsync(message.Data.Memory, cancelToken);
-                        }
-                    }
-                    finally
-                    {
-                        CurrentTask1Count.Dec();
-                    }
-                }, cancelToken);
+                var task1 = LoopReadClient(requestStream, target, cancellationToken);
+                var task2 = LoopReadServer(responseStream, target, cancellationToken);
 
-
-                var task2 = Task.Run(async () =>
-                {
-                    try
-                    {
-                        CurrentTask2Count.Inc();
-
-                        //从目标服务器读取数据，发送到客户端
-                        await foreach (var memory in target.LoopRecvDataAsync(cancelToken))
-                        {
-                            //写入到数据通道
-                            await responseStream.WriteAsync(new SendDataRequest
-                            {
-                                Data = UnsafeByteOperations.UnsafeWrap(memory)
-                            }, cancelToken);
-                        }
-                    }
-                    finally
-                    {
-                        CurrentTask2Count.Dec();
-                        targetCancelTokenSource.Cancel();
-                    }
-                }, cancelToken);
-
-                await Task.WhenAny(task1, task2);
+                await Task.WhenAll(task1, task2).WaitAsync(cancellationToken);
             }
             catch (TaskCanceledException)
             {
@@ -145,6 +103,50 @@ namespace ServerWebApplication.Impl
             {
                 CurrentCount.Dec();
                 logger.LogInformation("StreamingServer结束");
+            }
+        }
+
+        private async Task LoopReadClient(IAsyncStreamReader<SendDataRequest> requestStream,
+            SocketConnect target,
+            CancellationToken cancellationToken)
+        {
+            try
+            {
+                CurrentTask1Count.Inc();
+                await foreach (var message in requestStream.ReadAllAsync(cancellationToken))
+                {
+                    //发到网站服务器
+                    await target.SendAsync(message.Data.Memory, cancellationToken);
+                }
+            }
+            finally
+            {
+                CurrentTask1Count.Dec();
+            }
+        }
+
+        private async Task LoopReadServer(
+            IServerStreamWriter<SendDataRequest> responseStream,
+            SocketConnect target,
+            CancellationToken cancellationToken)
+        {
+            try
+            {
+                CurrentTask2Count.Inc();
+
+                //从目标服务器读取数据，发送到客户端
+                await foreach (var memory in target.LoopRecvDataAsync(cancellationToken))
+                {
+                    //写入到数据通道
+                    await responseStream.WriteAsync(new SendDataRequest
+                    {
+                        Data = UnsafeByteOperations.UnsafeWrap(memory)
+                    }, cancellationToken);
+                }
+            }
+            finally
+            {
+                CurrentTask2Count.Dec();
             }
         }
 

@@ -1,7 +1,6 @@
 using Google.Protobuf.WellKnownTypes;
 using Grpc.Core;
 using Hello;
-using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Concurrent;
@@ -13,12 +12,10 @@ namespace ServerWebApplication.Impl
 {
     public class ChatImpl : Hello.ChatGrpc.ChatGrpcBase
     {
-        private readonly IMemoryCache memoryCache;
         private readonly ILogger<ChatImpl> logger;
 
-        public ChatImpl(IMemoryCache memoryCache, ILogger<ChatImpl> logger)
+        public ChatImpl(ILogger<ChatImpl> logger)
         {
-            this.memoryCache = memoryCache;
             this.logger = logger;
         }
 
