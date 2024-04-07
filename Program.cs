@@ -23,48 +23,8 @@ namespace ServerWebApplication
     {
         private static WebApplication? app = null;
 
-        public static async Task Task1()
-        {
-            await Task.Delay(5000);
-            throw new NotImplementedException();
-        }
-
-        public static async Task Task2(CancellationToken cancellationToken)
-        {
-            int index = 0;
-            while (!cancellationToken.IsCancellationRequested)
-            {
-                await Task.Delay(1000);
-                Console.WriteLine(DateTime.Now.ToString());
-
-                index++;
-                if (index == 10)
-                {
-                    // break;
-                }
-            }
-        }
-
         public static void Main(string[] args)
         {
-
-
-            //// 创建两个取消令牌
-            //var cancellationTokenSource1 = new CancellationTokenSource();
-            //cancellationTokenSource1.CancelAfter(TimeSpan.FromSeconds(10));
-
-            //var newSource = new CancellationTokenSource();
-            ////newSource.CancelAfter(TimeSpan.FromSeconds(5));
-
-
-            //var s = CancellationTokenSource.CreateLinkedTokenSource(
-            //    cancellationTokenSource1.Token,newSource.Token);
-
-
-            //await Task2(s.Token);
-
-
-
             //设置允许不安全的HTTP2支持
             AppContext.SetSwitch("System.Net.Http.SocketsHttpHandler.Http2UnencryptedSupport", true);
 
