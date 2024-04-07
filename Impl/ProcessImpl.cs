@@ -80,7 +80,8 @@ namespace ServerWebApplication.Impl
             try
             {
                 var task1 = LoopReadClient(requestStream, target, cancellationToken);
-                var task2 = LoopReadServer(responseStream, target, cancellationToken, cancellationTokenSource);
+                var task2 = LoopReadServer(responseStream, target,
+                    cancellationTokenSource, cancellationToken);
 
                 await Task.WhenAll(task1, task2);
             }
@@ -131,8 +132,8 @@ namespace ServerWebApplication.Impl
         private static async Task LoopReadServer(
             IServerStreamWriter<SendDataRequest> responseStream,
             SocketConnect target,
-            CancellationToken cancellationToken,
-            CancellationTokenSource cancellationTokenSource)
+            CancellationTokenSource cancellationTokenSource,
+            CancellationToken cancellationToken)
         {
             try
             {
