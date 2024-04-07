@@ -106,7 +106,7 @@ namespace ServerWebApplication.Impl
             }
         }
 
-        private async Task LoopReadClient(IAsyncStreamReader<SendDataRequest> requestStream,
+        private static async Task LoopReadClient(IAsyncStreamReader<SendDataRequest> requestStream,
             SocketConnect target,
             CancellationToken cancellationToken)
         {
@@ -125,7 +125,7 @@ namespace ServerWebApplication.Impl
             }
         }
 
-        private async Task LoopReadServer(
+        private static async Task LoopReadServer(
             IServerStreamWriter<SendDataRequest> responseStream,
             SocketConnect target,
             CancellationToken cancellationToken)
