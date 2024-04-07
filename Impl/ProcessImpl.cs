@@ -52,16 +52,6 @@ namespace ServerWebApplication.Impl
         }
 
 
-        private async Task<SocketConnect> CreateSocketConnectAsync(string address, int port, CancellationToken cancellationToken)
-        {
-            SocketConnect target = new SocketConnect(connectionFactory);
-            var ipAddress = await dnsParserService.ParseIpAddressAsync(address, cancellationToken);
-
-            await target.ConnectAsync(ipAddress, port, cancellationToken);
-            logger.LogInformation($"成功连接到： {address}:{port}");
-            return target;
-        }
-
 
 
         public override async Task StreamingServer(IAsyncStreamReader<SendDataRequest> requestStream,
@@ -81,13 +71,16 @@ namespace ServerWebApplication.Impl
                 Data = ByteString.Empty
             }, context.CancellationToken);
 
-            var cancellationToken = context.CancellationToken;
+            using var cancellationTokenSource = new CancellationTokenSource();
+            using var combineSource = CancellationTokenSource.CreateLinkedTokenSource(
+                context.CancellationToken, cancellationTokenSource.Token);
 
+            var cancellationToken = combineSource.Token;
             CurrentCount.Inc();
             try
             {
                 var task1 = LoopReadClient(requestStream, target, cancellationToken);
-                var task2 = LoopReadServer(responseStream, target, cancellationToken);
+                var task2 = LoopReadServer(responseStream, target, cancellationToken, cancellationTokenSource);
 
                 await Task.WhenAll(task1, task2);
             }
@@ -104,6 +97,16 @@ namespace ServerWebApplication.Impl
                 CurrentCount.Dec();
                 logger.LogInformation("StreamingServer结束");
             }
+        }
+
+        private async Task<SocketConnect> CreateSocketConnectAsync(string address, int port, CancellationToken cancellationToken)
+        {
+            SocketConnect target = new SocketConnect(connectionFactory);
+            var ipAddress = await dnsParserService.ParseIpAddressAsync(address, cancellationToken);
+
+            await target.ConnectAsync(ipAddress, port, cancellationToken);
+            logger.LogInformation($"成功连接到： {address}:{port}");
+            return target;
         }
 
         private static async Task LoopReadClient(IAsyncStreamReader<SendDataRequest> requestStream,
@@ -128,7 +131,8 @@ namespace ServerWebApplication.Impl
         private static async Task LoopReadServer(
             IServerStreamWriter<SendDataRequest> responseStream,
             SocketConnect target,
-            CancellationToken cancellationToken)
+            CancellationToken cancellationToken,
+            CancellationTokenSource cancellationTokenSource)
         {
             try
             {
@@ -144,8 +148,8 @@ namespace ServerWebApplication.Impl
                     }, cancellationToken);
                 }
 
-                await Task.Delay(TimeSpan.FromSeconds(5), cancellationToken);
-                throw new RpcException(new Status(StatusCode.Aborted, "target socket已完成"));
+                //取消
+                cancellationTokenSource.Cancel();
             }
             finally
             {
