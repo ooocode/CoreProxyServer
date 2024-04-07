@@ -144,6 +144,7 @@ namespace ServerWebApplication.Impl
                     }, cancellationToken);
                 }
 
+                await Task.Delay(TimeSpan.FromSeconds(5), cancellationToken);
                 throw new RpcException(new Status(StatusCode.Aborted, "target socket已完成"));
             }
             finally
