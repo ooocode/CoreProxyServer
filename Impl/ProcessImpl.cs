@@ -89,7 +89,8 @@ namespace ServerWebApplication.Impl
                 var task1 = LoopReadClient(requestStream, target, cancellationToken);
                 var task2 = LoopReadServer(responseStream, target, cancellationToken);
 
-                await Task.WhenAny(task1, task2).WaitAsync(cancellationToken);
+                await Task.WhenAll(task1, task2)
+                    .WaitAsync(TimeSpan.FromDays(1), cancellationToken);
             }
             catch (TaskCanceledException)
             {
