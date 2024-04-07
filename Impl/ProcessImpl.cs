@@ -47,7 +47,9 @@ namespace ServerWebApplication.Impl
                 ?.Replace("Password ", string.Empty);
             if (string.IsNullOrWhiteSpace(password) || password != clientPassword.Password)
             {
+#if !DEBUG
                 throw new RpcException(new Status(StatusCode.Unauthenticated, string.Empty));
+#endif
             }
         }
 
@@ -101,9 +103,7 @@ namespace ServerWebApplication.Impl
         private async Task<SocketConnect> CreateSocketConnectAsync(string address, int port, CancellationToken cancellationToken)
         {
             SocketConnect target = new SocketConnect(connectionFactory);
-            var ipAddress = await dnsParserService.ParseIpAddressAsync(address, cancellationToken);
-
-            await target.ConnectAsync(ipAddress, port, cancellationToken);
+            await target.ConnectAsync(address, port, cancellationToken);
             logger.LogInformation($"成功连接到： {address}:{port}");
             return target;
         }
@@ -147,12 +147,11 @@ namespace ServerWebApplication.Impl
                     //写入到数据通道
                     await responseStream.WriteAsync(req, cancellationToken);
                 }
-
-                //取消
-                await cancellationTokenSource.CancelAsync();
             }
             finally
             {
+                //取消
+                await cancellationTokenSource.CancelAsync();
                 CurrentTask2Count.Dec();
             }
         }

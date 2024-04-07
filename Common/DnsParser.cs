@@ -1,5 +1,5 @@
 ﻿using DnsClient;
-using System;
+using DnsClient.Protocol;
 using System.Linq;
 using System.Net;
 using System.Threading;
@@ -12,22 +12,21 @@ namespace ServerWebApplication.Common
         private static readonly LookupClient lookupClient =
               new LookupClient(new LookupClientOptions() { UseCache = true });
 
-        public async Task<IPAddress> ParseIpAddressAsync(string domainOrIp, CancellationToken cancellationToken)
+        public async Task<IPAddress?> ParseIpAddressAsync(string domainOrIp,
+            CancellationToken cancellationToken)
         {
-            if (!IPAddress.TryParse(domainOrIp, out var iPAddress))
-            {
-                var record = (await lookupClient.QueryAsync(domainOrIp, QueryType.A,
-                    cancellationToken: cancellationToken)).Answers.ARecords().FirstOrDefault();
-                if (record == null)
-                {
-                    throw new Exception($"不能连接到WebServer " +
-                        $"{domainOrIp},因为无法解析DNS");
-                }
+            var ls = await lookupClient
+                .QueryAsync(domainOrIp, QueryType.A, cancellationToken: cancellationToken);
+            var record = ls
+                .Answers.OfType<HInfoRecord>()
+                .FirstOrDefault();
 
-                iPAddress = record.Address;
+            if (record == null)
+            {
+                return null;
             }
 
-            return iPAddress;
+            return null;
         }
     }
 }
