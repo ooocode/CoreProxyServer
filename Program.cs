@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using ServerWebApplication.Common;
 using ServerWebApplication.Impl;
@@ -27,6 +28,14 @@ namespace ServerWebApplication
             AppContext.SetSwitch("System.Net.Http.SocketsHttpHandler.Http2UnencryptedSupport", true);
 
             var builder = WebApplication.CreateSlimBuilder(args);
+            if (Microsoft.Extensions.Hosting.WindowsServices.WindowsServiceHelpers.IsWindowsService())
+            {
+                builder.Host.UseWindowsService();
+            }
+            else if (Microsoft.Extensions.Hosting.Systemd.SystemdHelpers.IsSystemdService())
+            {
+                builder.Host.UseSystemd();
+            }
 
             var certificate2 = GetCertificate();
             var clientPassword = GetCertificatePassword(certificate2);
