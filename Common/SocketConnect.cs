@@ -46,12 +46,6 @@ namespace ServerWebApplication.Common
                     break;
                 }
 
-                if (result.IsCanceled)
-                {
-                    break;
-                }
-
-
                 foreach (var memory in buffer)
                 {
                     yield return memory;

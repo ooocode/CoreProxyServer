@@ -51,9 +51,6 @@ namespace ServerWebApplication.Impl
             }
         }
 
-
-
-
         public override async Task StreamingServer(IAsyncStreamReader<SendDataRequest> requestStream,
             IServerStreamWriter<SendDataRequest> responseStream,
             ServerCallContext context)
@@ -76,9 +73,10 @@ namespace ServerWebApplication.Impl
                 context.CancellationToken, cancellationTokenSource.Token);
 
             var cancellationToken = combineSource.Token;
-            CurrentCount.Inc();
+
             try
             {
+                CurrentCount.Inc();
                 var task1 = LoopReadClient(requestStream, target, cancellationToken);
                 var task2 = LoopReadServer(responseStream, target,
                     cancellationTokenSource, cancellationToken);
@@ -142,15 +140,16 @@ namespace ServerWebApplication.Impl
                 //从目标服务器读取数据，发送到客户端
                 await foreach (var memory in target.LoopRecvDataAsync(cancellationToken))
                 {
-                    //写入到数据通道
-                    await responseStream.WriteAsync(new SendDataRequest
+                    var req = new SendDataRequest
                     {
                         Data = UnsafeByteOperations.UnsafeWrap(memory)
-                    }, cancellationToken);
+                    };
+                    //写入到数据通道
+                    await responseStream.WriteAsync(req, cancellationToken);
                 }
 
                 //取消
-                cancellationTokenSource.Cancel();
+                await cancellationTokenSource.CancelAsync();
             }
             finally
             {
