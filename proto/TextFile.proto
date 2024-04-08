@@ -18,13 +18,9 @@ service ProcessGrpc
 }
 
 message SendDataRequest{
-    string BrowserConnectId = 3;
     bytes Data = 2;
 }
 
-message CloseBrowserRequest{
-    string browserConnectId = 1;
-}
 
 message ServerInfoRes{
     uint32 ConnectionCount = 1;

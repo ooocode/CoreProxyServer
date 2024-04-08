@@ -17,7 +17,6 @@ namespace ServerWebApplication.Impl
     {
         private readonly ILogger<ProcessImpl> logger;
         private readonly SocketConnectionContextFactory connectionFactory;
-        private readonly DnsParserService dnsParserService;
         private readonly CertificatePassword clientPassword;
 
         public static Gauge CurrentCount = Metrics
@@ -32,11 +31,9 @@ namespace ServerWebApplication.Impl
 
         public ProcessImpl(ILogger<ProcessImpl> logger,
             SocketConnectionContextFactory connectionFactory,
-            DnsParserService dnsParserService,
             CertificatePassword clientPassword)
         {
             this.logger = logger;
-            this.dnsParserService = dnsParserService;
             this.clientPassword = clientPassword;
             this.connectionFactory = connectionFactory;
         }

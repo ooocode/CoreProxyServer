@@ -5,7 +5,6 @@ using Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using ServerWebApplication.Common;
 using ServerWebApplication.Impl;
 using System;
 using System.Collections.Generic;
@@ -61,7 +60,6 @@ namespace ServerWebApplication
             });
 
             builder.Services.AddSingleton(clientPassword);
-            builder.Services.AddSingleton<DnsParserService>();
             builder.Services.AddMemoryCache();
 
             builder.Services.AddGrpc(c =>
