@@ -89,8 +89,8 @@ namespace ServerWebApplication.Impl
                     }
                     else if (item == nameof(LoopReadServer))
                     {
-                        //服务器端退出了，等2秒钟后退出，避免数据丢失
-                        await Task.Delay(2000, cancellationToken);
+                        //服务器端退出了，等1秒钟后退出，避免数据丢失
+                        await Task.Delay(1000, cancellationToken);
                         break;
                     }
                 }
@@ -118,7 +118,8 @@ namespace ServerWebApplication.Impl
             return target;
         }
 
-        private static async Task<string> LoopReadClient(IAsyncStreamReader<SendDataRequest> requestStream,
+        private static async Task<string> LoopReadClient(
+            IAsyncStreamReader<SendDataRequest> requestStream,
             SocketConnect target,
             CancellationToken cancellationToken)
         {
