@@ -67,20 +67,33 @@ namespace ServerWebApplication.Impl
                 Data = ByteString.Empty
             }, context.CancellationToken);
 
-            using var cancellationTokenSource = new CancellationTokenSource();
-            using var combineSource = CancellationTokenSource.CreateLinkedTokenSource(
-                context.CancellationToken, cancellationTokenSource.Token);
+            //using var cancellationTokenSource = new CancellationTokenSource();
+            //using var combineSource = CancellationTokenSource.CreateLinkedTokenSource(
+            //    context.CancellationToken, cancellationTokenSource.Token);
 
-            var cancellationToken = combineSource.Token;
+            //var cancellationToken = combineSource.Token;
+            var cancellationToken = context.CancellationToken;
 
             try
             {
                 CurrentCount.Inc();
                 var task1 = LoopReadClient(requestStream, target, cancellationToken);
-                var task2 = LoopReadServer(responseStream, target,
-                    cancellationTokenSource, cancellationToken);
+                var task2 = LoopReadServer(responseStream, target, cancellationToken);
 
-                await Task.WhenAll(task1, task2);
+                await foreach (var item in TaskEx.WhenEach([task1, task2]))
+                {
+                    if (item == nameof(LoopReadClient))
+                    {
+                        //客户端退出了, 立即退出
+                        break;
+                    }
+                    else if (item == nameof(LoopReadServer))
+                    {
+                        //服务器端退出了，等2秒钟后退出，避免数据丢失
+                        await Task.Delay(2000, cancellationToken);
+                        break;
+                    }
+                }
             }
             catch (TaskCanceledException)
             {
@@ -105,7 +118,7 @@ namespace ServerWebApplication.Impl
             return target;
         }
 
-        private static async Task LoopReadClient(IAsyncStreamReader<SendDataRequest> requestStream,
+        private static async Task<string> LoopReadClient(IAsyncStreamReader<SendDataRequest> requestStream,
             SocketConnect target,
             CancellationToken cancellationToken)
         {
@@ -122,12 +135,12 @@ namespace ServerWebApplication.Impl
             {
                 CurrentTask1Count.Dec();
             }
+            return nameof(LoopReadClient);
         }
 
-        private static async Task LoopReadServer(
+        private static async Task<string> LoopReadServer(
             IServerStreamWriter<SendDataRequest> responseStream,
             SocketConnect target,
-            CancellationTokenSource cancellationTokenSource,
             CancellationToken cancellationToken)
         {
             try
@@ -147,10 +160,9 @@ namespace ServerWebApplication.Impl
             }
             finally
             {
-                //取消
-                await cancellationTokenSource.CancelAsync();
                 CurrentTask2Count.Dec();
             }
+            return nameof(LoopReadServer);
         }
 
 
