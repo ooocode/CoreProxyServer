@@ -17,7 +17,6 @@ namespace ServerWebApplication.Impl
     {
         private readonly ILogger<ProcessImpl> logger;
         private readonly SocketConnectionContextFactory connectionFactory;
-        private readonly DnsParserService dnsParserService;
         private readonly CertificatePassword clientPassword;
 
         public static Gauge CurrentCount = Metrics
@@ -32,12 +31,9 @@ namespace ServerWebApplication.Impl
 
         public ProcessImpl(ILogger<ProcessImpl> logger,
             SocketConnectionContextFactory connectionFactory,
-            DnsParserService dnsParserService,
             CertificatePassword clientPassword)
         {
             this.logger = logger;
-            this.dnsParserService = dnsParserService;
-
             this.clientPassword = clientPassword;
             this.connectionFactory = connectionFactory;
         }
@@ -56,13 +52,10 @@ namespace ServerWebApplication.Impl
         private async Task<SocketConnect> CreateSocketConnectAsync(string address, int port, CancellationToken cancellationToken)
         {
             SocketConnect target = new SocketConnect(connectionFactory);
-            var ipAddress = await dnsParserService.ParseIpAddressAsync(address, cancellationToken);
-
-            await target.ConnectAsync(ipAddress, port, cancellationToken);
+            await target.ConnectAsync(address, port, cancellationToken);
             logger.LogInformation($"成功连接到： {address}:{port}");
             return target;
         }
-
 
 
         public override async Task StreamingServer(IAsyncStreamReader<SendDataRequest> requestStream,
@@ -82,69 +75,71 @@ namespace ServerWebApplication.Impl
                 Data = ByteString.Empty
             }, context.CancellationToken);
 
-            using CancellationTokenSource targetCancelTokenSource = new CancellationTokenSource();
-            using CancellationTokenSource cancellationTokenSource = CancellationTokenSource
-                .CreateLinkedTokenSource(context.CancellationToken, targetCancelTokenSource.Token);
-            var cancelToken = cancellationTokenSource.Token;
+            var cancelToken = context.CancellationToken;
 
             CurrentCount.Inc();
+
+            var taskClient = HandlerClient(requestStream, target, cancelToken);
+            var taskServer = HandlerServer(responseStream, target, cancelToken);
+
             try
             {
-                //发到网站服务器
-                var task1 = Task.Run(async () =>
+                await foreach (var item in Task.WhenEach(taskClient, taskServer))
                 {
-                    try
+                    if (item.Id == taskClient.Id)
                     {
-                        CurrentTask1Count.Inc();
-                        await foreach (var message in requestStream.ReadAllAsync(cancelToken))
-                        {
-                            await target.SendAsync(message.Data.Memory, cancelToken);
-                        }
+                        //客户端断开了
+                        break;
                     }
-                    finally
+                    else
                     {
-                        CurrentTask1Count.Dec();
+                        //服务端断开了
+                        await Task.Delay(2000, cancelToken);
+                        break;
                     }
-                }, cancelToken);
-
-
-                var task2 = Task.Run(async () =>
-                {
-                    try
-                    {
-                        CurrentTask2Count.Inc();
-
-                        //从目标服务器读取数据，发送到客户端
-                        await foreach (var memory in target.LoopRecvDataAsync(cancelToken))
-                        {
-                            //写入到数据通道
-                            await responseStream.WriteAsync(new SendDataRequest
-                            {
-                                Data = UnsafeByteOperations.UnsafeWrap(memory)
-                            }, cancelToken);
-                        }
-                    }
-                    finally
-                    {
-                        CurrentTask2Count.Dec();
-                        targetCancelTokenSource.Cancel();
-                    }
-                }, cancelToken);
-
-                await Task.WhenAny(task1, task2);
-            }
-            catch (TaskCanceledException)
-            {
-                logger.LogInformation("Grpc客户端关闭了流");
-            }
-            catch (Exception ex)
-            {
-                logger.LogError(ex, "StreamingServer");
+                }
             }
             finally
             {
                 CurrentCount.Dec();
-                logger.LogInformation("StreamingServer结束");
+            }
+        }
+
+        private async Task HandlerClient(IAsyncStreamReader<SendDataRequest> requestStream, SocketConnect target, CancellationToken cancellationToken)
+        {
+            try
+            {
+                CurrentTask1Count.Inc();
+                await foreach (var message in requestStream.ReadAllAsync(cancellationToken))
+                {
+                    await target.SendAsync(message.Data.Memory, cancellationToken);
+                }
+            }
+            finally
+            {
+                CurrentTask1Count.Dec();
+            }
+        }
+
+        private async Task HandlerServer(IServerStreamWriter<SendDataRequest> responseStream, SocketConnect target, CancellationToken cancellationToken)
+        {
+            try
+            {
+                CurrentTask2Count.Inc();
+
+                //从目标服务器读取数据，发送到客户端
+                await foreach (var memory in target.LoopRecvDataAsync(cancellationToken))
+                {
+                    //写入到数据通道
+                    await responseStream.WriteAsync(new SendDataRequest
+                    {
+                        Data = UnsafeByteOperations.UnsafeWrap(memory)
+                    }, cancellationToken);
+                }
+            }
+            finally
+            {
+                CurrentTask2Count.Dec();
             }
         }
 

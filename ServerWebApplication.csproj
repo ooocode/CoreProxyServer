@@ -1,21 +1,20 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk.Web">
 
 	<PropertyGroup>
-		<TargetFramework>net8.0</TargetFramework>
+		<TargetFramework>net9.0</TargetFramework>
 		<EnablePreviewFeatures>true</EnablePreviewFeatures>
 		<LangVersion>preview</LangVersion>
 		<ServerGarbageCollection>true</ServerGarbageCollection>
 		<Nullable>enable</Nullable>
-		<IsAotCompatible>true</IsAotCompatible>
-		<StripSymbols>true</StripSymbols>
+		<!--<IsAotCompatible>true</IsAotCompatible>
+		<StripSymbols>true</StripSymbols>-->
 		<InvariantGlobalization>true</InvariantGlobalization>
 		<OutputType>Exe</OutputType>
-		<PublishAot>true</PublishAot>
+		<PublishAot>false</PublishAot>
 	</PropertyGroup>
 
 	<PropertyGroup>
 		<EnablePreviewFeatures>True</EnablePreviewFeatures>
-		<DockerDefaultTargetOS>Linux</DockerDefaultTargetOS>
 	</PropertyGroup>
 
 	<ItemGroup>
@@ -24,9 +23,8 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<PackageReference Include="DnsClient" Version="1.7.0" />
-		<PackageReference Include="Grpc.AspNetCore" Version="2.60.0" />
-		<PackageReference Include="Microsoft.AspNetCore.Hosting.WindowsServices" Version="8.0.1" />
+		<PackageReference Include="Grpc.AspNetCore" Version="2.63.0" />
+		<PackageReference Include="Microsoft.AspNetCore.Hosting.WindowsServices" Version="8.0.6" />
 		<PackageReference Include="Microsoft.Extensions.Hosting.Systemd" Version="8.0.0" />
 		<PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="8.0.0" />
 		<PackageReference Include="prometheus-net" Version="8.2.1" />
@@ -41,5 +39,9 @@
 		<None Update="proxy.service">
 			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
 		</None>
+	</ItemGroup>
+
+	<ItemGroup>
+	  <ProjectReference Include="..\CoreProxy.Interface\CoreProxy.Interface.csproj" />
 	</ItemGroup>
 </Project>

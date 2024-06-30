@@ -5,7 +5,6 @@ using Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using ServerWebApplication.Common;
 using ServerWebApplication.Impl;
 using System;
 using System.IO;
@@ -21,10 +20,8 @@ AppContext.SetSwitch("System.Net.Http.SocketsHttpHandler.Http2UnencryptedSupport
 
 var builder = WebApplication.CreateSlimBuilder(args);
 
-
 var certificate2 = GetCertificate();
 var clientPassword = GetCertificatePassword(certificate2);
-
 
 builder.WebHost.ConfigureKestrel(serverOptions =>
 {
@@ -72,7 +69,6 @@ builder.Services.AddSingleton(s =>
 });
 
 builder.Services.AddSingleton(clientPassword);
-builder.Services.AddSingleton<DnsParserService>();
 builder.Services.AddMemoryCache();
 
 builder.Services.AddGrpc(c =>
@@ -90,9 +86,8 @@ app.UseResponseCompression();
 
 app.MapGrpcService<ChatImpl>();
 app.MapGrpcService<ProcessImpl>();
+
 app.Run();
-
-
 
 
 X509Certificate2 GetCertificate()
