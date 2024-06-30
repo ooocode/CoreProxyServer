@@ -131,20 +131,16 @@ namespace ServerWebApplication
 
         private static CertificatePassword GetCertificatePassword(X509Certificate2 certificate2)
         {
-            using (var sha256 = SHA256.Create())
-            {
-                var cerBytes = certificate2.GetRawCertData().Reverse().ToArray();
-                var bytes = sha256.ComputeHash(cerBytes);
-                var result = BitConverter.ToString(bytes).Replace("-", "");
+            using var sha256 = SHA256.Create();
+            var cerBytes = certificate2.GetRawCertData().Reverse().ToArray();
+            var bytes = sha256.ComputeHash(cerBytes);
+            var result = BitConverter.ToString(bytes).Replace("-", "");
 
-                string fileName = Path.Combine(AppContext.BaseDirectory, "client-password.txt");
-                File.WriteAllText(fileName, result);
-                return new CertificatePassword(result);
-            }
+            string fileName = Path.Combine(AppContext.BaseDirectory, "client-password.txt");
+            File.WriteAllText(fileName, result);
+            return new CertificatePassword(result);
         }
     }
-
-
 
     public record CertificatePassword(string Password);
 }

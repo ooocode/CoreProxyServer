@@ -30,8 +30,7 @@ namespace ServerWebApplication.Common
         }
 
         public async IAsyncEnumerable<ReadOnlyMemory<byte>> LoopRecvDataAsync(
-            [EnumeratorCancellation]
-            CancellationToken cancellationToken = default)
+            [EnumeratorCancellation] CancellationToken cancellationToken)
         {
             while (!cancellationToken.IsCancellationRequested)
             {

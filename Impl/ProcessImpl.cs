@@ -67,22 +67,23 @@ namespace ServerWebApplication.Impl
             CheckPassword(context);
 
             var targetAddress = context.RequestHeaders.GetValue("TargetAddress");
+            ArgumentException.ThrowIfNullOrWhiteSpace(targetAddress, nameof(targetAddress));
             var targetPort = int.Parse(context.RequestHeaders.GetValue("TargetPort")!);
 
-            await using var target = await CreateSocketConnectAsync(targetAddress!, targetPort, context.CancellationToken);
+            await using var target = await CreateSocketConnectAsync(targetAddress, targetPort, context.CancellationToken);
+
+            var cancellationToken = context.CancellationToken;
 
             //返回成功
             await responseStream.WriteAsync(new SendDataRequest
             {
                 Data = ByteString.Empty
-            }, context.CancellationToken);
+            }, cancellationToken);
 
-            var cancelToken = context.CancellationToken;
 
             CurrentCount.Inc();
-
-            var taskClient = HandlerClient(requestStream, target, cancelToken);
-            var taskServer = HandlerServer(responseStream, target, cancelToken);
+            var taskClient = HandlerClient(requestStream, target, cancellationToken);
+            var taskServer = HandlerServer(responseStream, target, cancellationToken);
 
             try
             {
@@ -96,7 +97,7 @@ namespace ServerWebApplication.Impl
                     else
                     {
                         //服务端断开了
-                        await Task.Delay(2000, cancelToken);
+                        await Task.Delay(2000, cancellationToken);
                         break;
                     }
                 }
@@ -107,7 +108,7 @@ namespace ServerWebApplication.Impl
             }
         }
 
-        private async Task HandlerClient(IAsyncStreamReader<SendDataRequest> requestStream, SocketConnect target, CancellationToken cancellationToken)
+        private static async Task HandlerClient(IAsyncStreamReader<SendDataRequest> requestStream, SocketConnect target, CancellationToken cancellationToken)
         {
             try
             {
@@ -123,7 +124,7 @@ namespace ServerWebApplication.Impl
             }
         }
 
-        private async Task HandlerServer(IServerStreamWriter<SendDataRequest> responseStream, SocketConnect target, CancellationToken cancellationToken)
+        private static async Task HandlerServer(IServerStreamWriter<SendDataRequest> responseStream, SocketConnect target, CancellationToken cancellationToken)
         {
             try
             {
@@ -149,7 +150,7 @@ namespace ServerWebApplication.Impl
         {
             CheckPassword(context);
 
-            ServerInfoRes serverInfoRes = new ServerInfoRes
+            ServerInfoRes serverInfoRes = new()
             {
                 ConnectionCount = (uint)CurrentCount.Value,
                 CurrentTask1Count = (uint)CurrentTask1Count.Value,
