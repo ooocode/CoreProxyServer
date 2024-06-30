@@ -9,6 +9,7 @@
 		<!--<IsAotCompatible>true</IsAotCompatible>
 		<StripSymbols>true</StripSymbols>-->
 		<InvariantGlobalization>true</InvariantGlobalization>
+		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
 		<OutputType>Exe</OutputType>
 		<PublishAot>false</PublishAot>
 	</PropertyGroup>

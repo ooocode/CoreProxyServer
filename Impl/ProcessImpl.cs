@@ -145,13 +145,6 @@ namespace ServerWebApplication.Impl
             }
         }
 
-        private async Task<SocketConnect> CreateSocketConnectAsync(string address, int port, CancellationToken cancellationToken)
-        {
-            SocketConnect target = new SocketConnect(connectionFactory);
-            await target.ConnectAsync(address, port, cancellationToken);
-            logger.LogInformation($"成功连接到： {address}:{port}");
-            return target;
-        }
 
         private static async Task<string> LoopReadClient(
             IAsyncStreamReader<SendDataRequest> requestStream,

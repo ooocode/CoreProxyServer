@@ -15,16 +15,7 @@ using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 
-
-//设置允许不安全的HTTP2支持
-AppContext.SetSwitch("System.Net.Http.SocketsHttpHandler.Http2UnencryptedSupport", true);
-
-var builder = WebApplication.CreateSlimBuilder(args);
-
-var certificate2 = GetCertificate();
-var clientPassword = GetCertificatePassword(certificate2);
-
-builder.WebHost.ConfigureKestrel(serverOptions =>
+namespace ServerWebApplication
 {
     public class Program
     {
@@ -92,8 +83,17 @@ builder.WebHost.ConfigureKestrel(serverOptions =>
 
         [UnmanagedCallersOnly(EntryPoint = "ServiceMain", CallConvs = [typeof(CallConvCdecl)])]
 
-builder.Services.AddSingleton(clientPassword);
-builder.Services.AddMemoryCache();
+        public static unsafe void ServiceMain(int argc, nint* argv)
+        {
+            List<string> args = new List<string>();
+            for (int i = 0; i < argc; i++)
+            {
+                var arg = Marshal.PtrToStringAnsi(argv[i]);
+                if (!string.IsNullOrWhiteSpace(arg))
+                {
+                    args.Add(arg);
+                }
+            }
 
             Main(args.ToArray());
         }
@@ -119,22 +119,29 @@ builder.Services.AddMemoryCache();
                 var req = new CertificateRequest("cn=Microsofter.learn.com ", rsa, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
                 req.CertificateExtensions.Add(new X509KeyUsageExtension(X509KeyUsageFlags.DigitalSignature, true));
 
-app.MapGrpcService<ChatImpl>();
-app.MapGrpcService<ProcessImpl>();
-
-app.Run();
+                var cert = req.CreateSelfSigned(DateTimeOffset.Now.AddDays(-1), DateTimeOffset.Now.AddYears(5));
 
                 var rawBytes = cert.Export(X509ContentType.Pfx, password);
                 var certificate = new X509Certificate2(rawBytes, password, X509KeyStorageFlags.PersistKeySet | X509KeyStorageFlags.Exportable);
 
-X509Certificate2 GetCertificate()
-{
-    string fileName = Path.Combine(AppContext.BaseDirectory, "certificate.pfx");
-    string password = "apz8fwga";
-    if (File.Exists(fileName))
-    {
-        var certificate = new X509Certificate2(fileName, password, X509KeyStorageFlags.PersistKeySet | X509KeyStorageFlags.Exportable);
-        return certificate;
+                File.WriteAllBytes(fileName, rawBytes);
+                return certificate;
+            }
+        }
+
+        private static CertificatePassword GetCertificatePassword(X509Certificate2 certificate2)
+        {
+            using (var sha256 = SHA256.Create())
+            {
+                var cerBytes = certificate2.GetRawCertData().Reverse().ToArray();
+                var bytes = sha256.ComputeHash(cerBytes);
+                var result = BitConverter.ToString(bytes).Replace("-", "");
+
+                string fileName = Path.Combine(AppContext.BaseDirectory, "client-password.txt");
+                File.WriteAllText(fileName, result);
+                return new CertificatePassword(result);
+            }
+        }
     }
 
 
