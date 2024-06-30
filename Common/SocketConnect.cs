@@ -31,12 +31,12 @@ namespace ServerWebApplication.Common
 
         public async IAsyncEnumerable<ReadOnlyMemory<byte>> LoopRecvDataAsync(
             [EnumeratorCancellation]
-            CancellationToken cancellation = default)
+            CancellationToken cancellationToken = default)
         {
-            while (true)
+            while (!cancellationToken.IsCancellationRequested)
             {
                 //浏览器普通接收
-                var result = await connectionContext!.Transport.Input.ReadAsync(cancellation);
+                var result = await connectionContext!.Transport.Input.ReadAsync(cancellationToken);
                 ReadOnlySequence<byte> buffer = result.Buffer;
 
                 foreach (var memory in buffer)
