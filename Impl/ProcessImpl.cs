@@ -70,9 +70,8 @@ namespace ServerWebApplication.Impl
             ArgumentException.ThrowIfNullOrWhiteSpace(targetAddress, nameof(targetAddress));
             var targetPort = int.Parse(context.RequestHeaders.GetValue("TargetPort")!);
 
-            await using var target = await CreateSocketConnectAsync(targetAddress, targetPort, context.CancellationToken);
-
             var cancellationToken = context.CancellationToken;
+            await using var target = await CreateSocketConnectAsync(targetAddress, targetPort, cancellationToken);
 
             //返回成功
             await responseStream.WriteAsync(new SendDataRequest
