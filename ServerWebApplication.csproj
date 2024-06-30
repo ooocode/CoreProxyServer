@@ -41,8 +41,4 @@
 			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
 		</None>
 	</ItemGroup>
-
-	<ItemGroup>
-		<ProjectReference Include="..\CoreProxy.Interface\CoreProxy.Interface.csproj" />
-	</ItemGroup>
 </Project>
