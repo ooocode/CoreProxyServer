@@ -22,7 +22,7 @@ jobs:
     - name: Setup .NET
       uses: actions/setup-dotnet@v4
       with:
-        dotnet-version: 8.0.x
+        dotnet-version: 9.0.x
     - name: Restore dependencies
       run: dotnet restore
     - name: Publish
@@ -34,7 +34,7 @@ jobs:
     #     path: ${{ github.workspace }}/bin/Release/net8.0/linux-x64/publish
     - name: Zip
       run: |
-        cd ${{ github.workspace }}/bin/Release/net8.0/linux-x64
+        cd ${{ github.workspace }}/bin/Release/net9.0/linux-x64
         zip -r publish-linux-x64.zip publish
     - name: Create GitHub release
       uses: marvinpinto/action-automatic-releases@latest
@@ -44,5 +44,5 @@ jobs:
         prerelease: false
         title: latest
         files: |
-          bin/Release/net8.0/linux-x64/publish-linux-x64.zip
+          bin/Release/net9.0/linux-x64/publish-linux-x64.zip
 

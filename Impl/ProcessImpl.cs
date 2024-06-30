@@ -145,56 +145,6 @@ namespace ServerWebApplication.Impl
             }
         }
 
-
-        private static async Task<string> LoopReadClient(
-            IAsyncStreamReader<SendDataRequest> requestStream,
-            SocketConnect target,
-            CancellationToken cancellationToken)
-        {
-            try
-            {
-                CurrentTask1Count.Inc();
-                await foreach (var message in requestStream.ReadAllAsync(cancellationToken))
-                {
-                    //发到网站服务器
-                    await target.SendAsync(message.Data.Memory, cancellationToken);
-                }
-            }
-            finally
-            {
-                CurrentTask1Count.Dec();
-            }
-            return nameof(LoopReadClient);
-        }
-
-        private static async Task<string> LoopReadServer(
-            IServerStreamWriter<SendDataRequest> responseStream,
-            SocketConnect target,
-            CancellationToken cancellationToken)
-        {
-            try
-            {
-                CurrentTask2Count.Inc();
-
-                //从目标服务器读取数据，发送到客户端
-                await foreach (var memory in target.LoopRecvDataAsync(cancellationToken))
-                {
-                    var req = new SendDataRequest
-                    {
-                        Data = UnsafeByteOperations.UnsafeWrap(memory)
-                    };
-                    //写入到数据通道
-                    await responseStream.WriteAsync(req, cancellationToken);
-                }
-            }
-            finally
-            {
-                CurrentTask2Count.Dec();
-            }
-            return nameof(LoopReadServer);
-        }
-
-
         public override Task<ServerInfoRes> GetServerInfo(Empty request, ServerCallContext context)
         {
             CheckPassword(context);
