@@ -2,6 +2,7 @@
 using Google.Protobuf.WellKnownTypes;
 using Grpc.Core;
 using Hello;
+using Microsoft.AspNetCore.Connections;
 using Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets;
 using Microsoft.Extensions.Logging;
 using Microsoft.Net.Http.Headers;
@@ -34,8 +35,8 @@ namespace ServerWebApplication.Impl
             CertificatePassword clientPassword)
         {
             this.logger = logger;
-            this.clientPassword = clientPassword;
             this.connectionFactory = connectionFactory;
+            this.clientPassword = clientPassword;
         }
 
         private void CheckPassword(ServerCallContext context)

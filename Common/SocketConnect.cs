@@ -4,6 +4,7 @@ using System;
 using System.Buffers;
 using System.Collections.Generic;
 using System.IO.Pipelines;
+using System.Net;
 using System.Net.Sockets;
 using System.Runtime.CompilerServices;
 using System.Threading;
@@ -20,11 +21,12 @@ namespace ServerWebApplication.Common
             this.connectionFactory = connectionFactory;
         }
 
+        private Socket? socket = null;
         public ConnectionContext? connectionContext = null;
 
         public async Task ConnectAsync(string host, int port, CancellationToken cancellationToken)
         {
-            var socket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+            socket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
             await socket.ConnectAsync(host, port, cancellationToken);
             connectionContext = connectionFactory.Create(socket);
         }
@@ -66,6 +68,13 @@ namespace ServerWebApplication.Common
             {
                 await connectionContext.Transport.Input.CompleteAsync();
                 await connectionContext.Transport.Output.CompleteAsync();
+            }
+
+            if (socket != null)
+            {
+                socket.Shutdown(SocketShutdown.Both);
+                socket.Close();
+                socket.Dispose();
             }
         }
     }
