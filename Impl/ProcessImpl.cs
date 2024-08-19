@@ -87,7 +87,18 @@ namespace ServerWebApplication.Impl
 
             try
             {
-                await Task.WhenAll(taskClient, taskServer).WaitAsync(cancellationToken);
+                await foreach (var item in Task.WhenEach(taskClient, taskServer))
+                {
+                    if (item.Id == taskClient.Id)
+                    {
+                        break;
+                    }
+                    else if (item.Id == taskServer.Id)
+                    {
+                        await Task.Delay(1000, cancellationToken);
+                        break;
+                    }
+                }
             }
             finally
             {
@@ -111,7 +122,8 @@ namespace ServerWebApplication.Impl
             }
         }
 
-        private static async Task HandlerServer(IServerStreamWriter<SendDataRequest> responseStream, SocketConnect target, CancellationToken cancellationToken)
+        private static async Task HandlerServer(IServerStreamWriter<SendDataRequest> responseStream,
+            SocketConnect target, CancellationToken cancellationToken)
         {
             try
             {

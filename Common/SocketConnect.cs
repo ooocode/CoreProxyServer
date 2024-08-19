@@ -53,6 +53,8 @@ namespace ServerWebApplication.Common
                     break;
                 }
             }
+            // 完成读取
+            await connectionContext!.Transport.Input.CompleteAsync();
         }
 
         public ValueTask<FlushResult> SendAsync(ReadOnlyMemory<byte> memory, CancellationToken cancellationToken)
