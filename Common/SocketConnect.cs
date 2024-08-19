@@ -26,7 +26,11 @@ namespace ServerWebApplication.Common
 
         public async Task ConnectAsync(string host, int port, CancellationToken cancellationToken)
         {
-            socket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+            socket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp)
+            {
+                NoDelay = true, // Disable Nagle's algorithm for low-latency
+                Blocking = false
+            };
             await socket.ConnectAsync(host, port, cancellationToken);
             connectionContext = connectionFactory.Create(socket);
         }
