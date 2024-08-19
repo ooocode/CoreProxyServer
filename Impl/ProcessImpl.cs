@@ -87,20 +87,7 @@ namespace ServerWebApplication.Impl
 
             try
             {
-                await foreach (var item in Task.WhenEach(taskClient, taskServer))
-                {
-                    if (item.Id == taskClient.Id)
-                    {
-                        //客户端断开了
-                        break;
-                    }
-                    else
-                    {
-                        //服务端断开了
-                        await Task.Delay(2000, cancellationToken);
-                        break;
-                    }
-                }
+                await Task.WhenAll(taskClient, taskServer).WaitAsync(cancellationToken);
             }
             finally
             {
