@@ -28,8 +28,7 @@ namespace ServerWebApplication.Common
         {
             socket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp)
             {
-                NoDelay = true, // Disable Nagle's algorithm for low-latency
-                Blocking = false
+                NoDelay = true// Disable Nagle's algorithm for low-latency
             };
             await socket.ConnectAsync(host, port, cancellationToken);
             connectionContext = connectionFactory.Create(socket);
