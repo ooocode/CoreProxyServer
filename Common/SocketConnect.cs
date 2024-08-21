@@ -24,7 +24,7 @@ namespace ServerWebApplication.Common
         private Socket? socket = null;
         public ConnectionContext? connectionContext = null;
 
-        public async Task ConnectAsync(string host, int port, CancellationToken cancellationToken)
+        public async ValueTask ConnectAsync(string host, int port, CancellationToken cancellationToken)
         {
             socket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp)
             {

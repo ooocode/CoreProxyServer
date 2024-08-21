@@ -52,7 +52,7 @@ namespace ServerWebApplication.Impl
         }
 
 
-        private async Task<SocketConnect> CreateSocketConnectAsync(string address, int port, CancellationToken cancellationToken)
+        private async ValueTask<SocketConnect> CreateSocketConnectAsync(string address, int port, CancellationToken cancellationToken)
         {
             SocketConnect target = new SocketConnect(connectionFactory);
             await target.ConnectAsync(address, port, cancellationToken);
