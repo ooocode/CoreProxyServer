@@ -97,7 +97,9 @@ namespace ServerWebApplication.Impl
                         else if (t == 1)
                         {
                             await HandlerServer(responseStream, target, c);
-                            await Task.Delay(1500, c);
+                            await Task.Delay(1000, c);
+                            context.GetHttpContext().Abort();
+                            logger.LogError("服务器主动断开");
                         }
                     });
                 }
