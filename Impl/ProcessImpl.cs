@@ -95,7 +95,6 @@ namespace ServerWebApplication.Impl
                     {
                         await HandlerServer(responseStream, target, c);
                         await Task.Delay(1500, c);
-                        context.GetHttpContext().Abort();
                     }
                 });
             }
