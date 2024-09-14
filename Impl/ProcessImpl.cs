@@ -83,49 +83,55 @@ namespace ServerWebApplication.Impl
 
             CurrentCount.Inc();
 
-            try
+            if (Environment.ProcessorCount >= 2)
             {
-                await Parallel.ForAsync(0, 2, cancellationToken, async (t, c) =>
+                //多核CPU
+                try
                 {
-                    if (t == 0)
+                    await Parallel.ForAsync(0, 2, cancellationToken, async (t, c) =>
                     {
-                        await HandlerClient(requestStream, target, c);
-                    }
-                    else if (t == 1)
-                    {
-                        await HandlerServer(responseStream, target, c);
-                        await Task.Delay(1500, c);
-                    }
-                });
-            }
-            finally
-            {
-                CurrentCount.Dec();
-            }
-
-
-            /*var taskClient = HandlerClient(requestStream, target, cancellationToken);
-            var taskServer = HandlerServer(responseStream, target, cancellationToken);
-
-            try
-            {
-                await foreach (var item in Task.WhenEach(taskClient, taskServer))
+                        if (t == 0)
+                        {
+                            await HandlerClient(requestStream, target, c);
+                        }
+                        else if (t == 1)
+                        {
+                            await HandlerServer(responseStream, target, c);
+                            await Task.Delay(1500, c);
+                        }
+                    });
+                }
+                finally
                 {
-                    if (item.Id == taskClient.Id)
-                    {
-                        break;
-                    }
-                    else if (item.Id == taskServer.Id)
-                    {
-                        await Task.Delay(1000, cancellationToken);
-                        break;
-                    }
+                    CurrentCount.Dec();
                 }
             }
-            finally
+            else
             {
-                CurrentCount.Dec();
-            }*/
+                //单核CPU
+                var taskClient = HandlerClient(requestStream, target, cancellationToken);
+                var taskServer = HandlerServer(responseStream, target, cancellationToken);
+
+                try
+                {
+                    await foreach (var item in Task.WhenEach(taskClient, taskServer))
+                    {
+                        if (item.Id == taskClient.Id)
+                        {
+                            break;
+                        }
+                        else if (item.Id == taskServer.Id)
+                        {
+                            await Task.Delay(1000, cancellationToken);
+                            break;
+                        }
+                    }
+                }
+                finally
+                {
+                    CurrentCount.Dec();
+                }
+            }
         }
 
         private static async Task HandlerClient(IAsyncStreamReader<SendDataRequest> requestStream, SocketConnect target, CancellationToken cancellationToken)
