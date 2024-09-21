@@ -43,7 +43,11 @@ namespace ServerWebApplication.Common
                 var result = await connectionContext!.Transport.Input.ReadAsync(cancellationToken);
                 ReadOnlySequence<byte> buffer = result.Buffer;
 
-                if (buffer.Length > 0)
+                if (buffer.IsSingleSegment)
+                {
+                    yield return buffer.First;
+                }
+                else
                 {
                     yield return buffer.ToArray();
                 }
