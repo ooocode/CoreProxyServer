@@ -43,10 +43,14 @@ namespace ServerWebApplication.Common
                 var result = await connectionContext!.Transport.Input.ReadAsync(cancellationToken);
                 ReadOnlySequence<byte> buffer = result.Buffer;
 
-                foreach (var memory in buffer)
+                if (buffer.Length > 0)
                 {
-                    yield return memory;
+                    yield return buffer.ToArray();
                 }
+                /*  foreach (var memory in buffer)
+                 {
+                     yield return memory;
+                 } */
 
                 connectionContext.Transport.Input.AdvanceTo(buffer.End);
 

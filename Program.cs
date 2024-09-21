@@ -66,6 +66,7 @@ namespace ServerWebApplication
             {
                 c.ResponseCompressionAlgorithm = "gzip";
                 c.ResponseCompressionLevel = System.IO.Compression.CompressionLevel.SmallestSize;
+                c.MaxReceiveMessageSize = null;
             });
 
             builder.Services.AddResponseCompression();
