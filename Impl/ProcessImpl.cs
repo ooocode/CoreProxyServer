@@ -53,10 +53,18 @@ namespace ServerWebApplication.Impl
 
         private async ValueTask<SocketConnect> CreateSocketConnectAsync(string address, int port, CancellationToken cancellationToken)
         {
-            SocketConnect target = new SocketConnect(connectionFactory);
-            await target.ConnectAsync(address, port, cancellationToken);
-            logger.LogInformation($"成功连接到： {address}:{port}");
-            return target;
+            try
+            {
+                SocketConnect target = new SocketConnect(connectionFactory);
+                await target.ConnectAsync(address, port, cancellationToken);
+                logger.LogInformation($"成功连接到： {address}:{port}");
+                return target;
+            }
+            catch (Exception ex)
+            {
+                logger.LogError($"无法连接到： {address}:{port}  {ex.InnerException?.Message ?? ex.Message}");
+                throw;
+            }
         }
 
 
@@ -109,12 +117,11 @@ namespace ServerWebApplication.Impl
             }
             else
             {
-                //单核CPU
-                var taskClient = HandlerClient(requestStream, target, cancellationToken);
-                var taskServer = HandlerServer(responseStream, target, cancellationToken);
-
                 try
                 {
+                    //单核CPU
+                    var taskClient = HandlerClient(requestStream, target, cancellationToken);
+                    var taskServer = HandlerServer(responseStream, target, cancellationToken);
                     await foreach (var item in Task.WhenEach(taskClient, taskServer))
                     {
                         if (item.Id == taskClient.Id)
@@ -124,6 +131,8 @@ namespace ServerWebApplication.Impl
                         else if (item.Id == taskServer.Id)
                         {
                             await Task.Delay(1000, cancellationToken);
+                            context.GetHttpContext().Abort();
+                            logger.LogError("服务器主动断开");
                             break;
                         }
                     }

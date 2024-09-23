@@ -1,6 +1,8 @@
-﻿using Microsoft.AspNetCore.Builder;
+﻿using Google.Protobuf;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Connections;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets;
 using Microsoft.Extensions.DependencyInjection;
@@ -10,11 +12,13 @@ using ServerWebApplication.Impl;
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.IO.Compression;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
+using System.Threading.Tasks;
 
 namespace ServerWebApplication
 {
@@ -24,6 +28,27 @@ namespace ServerWebApplication
 
         public static void Main(string[] args)
         {
+            Hello.SendDataRequest sendDataRequest = new Hello.SendDataRequest();
+
+
+            var data = System.Security.Cryptography.RandomNumberGenerator.GetBytes(40960);
+            sendDataRequest.Data = Google.Protobuf.ByteString.CopyFrom(data);
+            var length = sendDataRequest.CalculateSize();
+
+            var inputStream = new MemoryStream(sendDataRequest.ToByteArray());
+
+
+
+            var outputStream = new MemoryStream();
+            using (var compressStream = new System.IO.Compression.BrotliStream(outputStream, CompressionLevel.SmallestSize))
+            {
+                inputStream.CopyTo(compressStream);
+            }
+
+
+            var input = inputStream.ToArray();
+            var output = outputStream.ToArray();
+
             //设置允许不安全的HTTP2支持
             AppContext.SetSwitch("System.Net.Http.SocketsHttpHandler.Http2UnencryptedSupport", true);
 
@@ -70,8 +95,10 @@ namespace ServerWebApplication
 
             builder.Services.AddGrpc(c =>
             {
-                c.ResponseCompressionAlgorithm = "gzip";
-                c.ResponseCompressionLevel = System.IO.Compression.CompressionLevel.SmallestSize;
+                var brICompressionProvider = new BrICompressionProvider();
+                c.CompressionProviders.Add(brICompressionProvider);
+                c.ResponseCompressionAlgorithm = brICompressionProvider.EncodingName;//"gzip";
+                c.ResponseCompressionLevel = System.IO.Compression.CompressionLevel.SmallestSize; //System.IO.Compression.CompressionLevel.SmallestSize;
                 c.MaxReceiveMessageSize = null;
             });
 
