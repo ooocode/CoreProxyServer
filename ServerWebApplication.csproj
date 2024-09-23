@@ -11,7 +11,7 @@
 		<InvariantGlobalization>true</InvariantGlobalization>
 		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
 		<OutputType>Exe</OutputType>
-		<PublishAot>true</PublishAot>
+		<PublishAot>false</PublishAot>
 	</PropertyGroup>
 
 	<PropertyGroup>
