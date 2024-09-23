@@ -3,7 +3,6 @@ using Google.Protobuf.WellKnownTypes;
 using Grpc.Core;
 using Hello;
 using Microsoft.AspNetCore.Connections;
-using Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets;
 using Microsoft.Extensions.Logging;
 using Microsoft.Net.Http.Headers;
 using Prometheus;
@@ -17,7 +16,7 @@ namespace ServerWebApplication.Impl
     public class ProcessImpl : ProcessGrpc.ProcessGrpcBase
     {
         private readonly ILogger<ProcessImpl> logger;
-        private readonly SocketConnectionContextFactory connectionFactory;
+        private readonly IConnectionFactory connectionFactory;
         private readonly CertificatePassword clientPassword;
 
         public static Gauge CurrentCount = Metrics
@@ -31,7 +30,7 @@ namespace ServerWebApplication.Impl
 
 
         public ProcessImpl(ILogger<ProcessImpl> logger,
-            SocketConnectionContextFactory connectionFactory,
+            IConnectionFactory connectionFactory,
             CertificatePassword clientPassword)
         {
             this.logger = logger;

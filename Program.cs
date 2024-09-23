@@ -1,4 +1,5 @@
 ﻿using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Connections;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets;
@@ -53,11 +54,16 @@ namespace ServerWebApplication
 
             builder.WebHost.UseKestrelHttpsConfiguration();
 
-            builder.Services.AddSingleton(s =>
+            const string typeName = "Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets.SocketConnectionFactory";
+            var factoryType = typeof(SocketTransportOptions).Assembly.GetType(typeName);
+            ArgumentNullException.ThrowIfNull(factoryType, nameof(factoryType));
+            builder.Services.AddSingleton(typeof(IConnectionFactory), factoryType);
+
+            /*builder.Services.AddSingleton(s =>
             {
                 var logger = s.GetRequiredService<ILogger<Program>>();
                 return new SocketConnectionContextFactory(new SocketConnectionFactoryOptions(), logger);
-            });
+            });*/
 
             builder.Services.AddSingleton(clientPassword);
             builder.Services.AddMemoryCache();

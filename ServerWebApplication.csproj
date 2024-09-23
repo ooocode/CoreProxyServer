@@ -6,8 +6,8 @@
 		<LangVersion>preview</LangVersion>
 		<ServerGarbageCollection>true</ServerGarbageCollection>
 		<Nullable>enable</Nullable>
-		<IsAotCompatible>true</IsAotCompatible>
-		<StripSymbols>true</StripSymbols>
+		<!-- <IsAotCompatible>true</IsAotCompatible>
+		<StripSymbols>true</StripSymbols> -->
 		<InvariantGlobalization>true</InvariantGlobalization>
 		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
 		<OutputType>Exe</OutputType>
