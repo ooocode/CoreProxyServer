@@ -104,11 +104,15 @@ namespace ServerWebApplication.Impl
                         else if (t == 1)
                         {
                             await HandlerServer(responseStream, target, c);
-                            await Task.Delay(1000, c);
+                            await Task.Delay(1500, c);
                             context.GetHttpContext().Abort();
                             logger.LogError("服务器主动断开");
                         }
                     });
+                }
+                catch (TaskCanceledException)
+                {
+                    logger.LogWarning("连接已经取消:" + targetAddress + ":" + targetPort);
                 }
                 finally
                 {
@@ -130,12 +134,15 @@ namespace ServerWebApplication.Impl
                         }
                         else if (item.Id == taskServer.Id)
                         {
-                            await Task.Delay(1000, cancellationToken);
-                            context.GetHttpContext().Abort();
                             logger.LogError("服务器主动断开");
+                            await Task.Delay(1500, cancellationToken);
                             break;
                         }
                     }
+                }
+                catch (TaskCanceledException)
+                {
+                    logger.LogWarning("连接已经取消:" + targetAddress + ":" + targetPort);
                 }
                 finally
                 {
@@ -168,7 +175,7 @@ namespace ServerWebApplication.Impl
                 CurrentTask2Count.Inc();
 
                 //从目标服务器读取数据，发送到客户端
-                await foreach (var memory in target.LoopRecvDataAsync(cancellationToken))
+                await foreach (var memory in target.LoopRecvDataAsync(cancellationToken).WithCancellation(cancellationToken))
                 {
                     //写入到数据通道
                     await responseStream.WriteAsync(new SendDataRequest

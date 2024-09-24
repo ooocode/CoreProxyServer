@@ -86,20 +86,16 @@ namespace ServerWebApplication
             ArgumentNullException.ThrowIfNull(factoryType, nameof(factoryType));
             builder.Services.AddSingleton(typeof(IConnectionFactory), factoryType);
 
-            /*builder.Services.AddSingleton(s =>
-            {
-                var logger = s.GetRequiredService<ILogger<Program>>();
-                return new SocketConnectionContextFactory(new SocketConnectionFactoryOptions(), logger);
-            });*/
-
             builder.Services.AddSingleton(clientPassword);
-            builder.Services.AddMemoryCache();
 
             builder.Services.AddGrpc(c =>
             {
-                var brICompressionProvider = new BrICompressionProvider();
-                c.CompressionProviders.Add(brICompressionProvider);
-                c.ResponseCompressionAlgorithm = brICompressionProvider.EncodingName;//"gzip";
+                /*  var brICompressionProvider = new BrICompressionProvider();
+                 c.CompressionProviders.Add(brICompressionProvider);
+                 c.ResponseCompressionAlgorithm = brICompressionProvider.EncodingName;//"gzip";
+                 c.ResponseCompressionLevel = CompressionLevel.SmallestSize; //System.IO.Compression.CompressionLevel.SmallestSize;
+  */
+                c.ResponseCompressionAlgorithm = "gzip";
                 c.ResponseCompressionLevel = CompressionLevel.SmallestSize; //System.IO.Compression.CompressionLevel.SmallestSize;
                 c.MaxReceiveMessageSize = null;
             });

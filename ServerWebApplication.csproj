@@ -24,10 +24,10 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<PackageReference Include="Grpc.AspNetCore" Version="2.63.0" />
-		<PackageReference Include="Microsoft.AspNetCore.Hosting.WindowsServices" Version="9.0.0-preview.5.24306.11" />
-		<PackageReference Include="Microsoft.Extensions.Hosting.Systemd" Version="9.0.0-preview.5.24306.7" />
-		<PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="9.0.0-preview.5.24306.7" />
+		<PackageReference Include="Grpc.AspNetCore" Version="2.66.0" />
+		<PackageReference Include="Microsoft.AspNetCore.Hosting.WindowsServices" Version="9.0.0-rc.1.24452.1" />
+		<PackageReference Include="Microsoft.Extensions.Hosting.Systemd" Version="9.0.0-rc.1.24431.7" />
+		<PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="9.0.0-rc.1.24431.7" />
 		<PackageReference Include="prometheus-net" Version="8.2.1" />
 	</ItemGroup>
 
