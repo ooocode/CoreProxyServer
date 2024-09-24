@@ -26,11 +26,9 @@ namespace ServerWebApplication
     {
         private static WebApplication? app = null;
 
-        public static void Main(string[] args)
+        private void TestCompress()
         {
             Hello.SendDataRequest sendDataRequest = new Hello.SendDataRequest();
-
-
             var data = System.Security.Cryptography.RandomNumberGenerator.GetBytes(40960);
             sendDataRequest.Data = Google.Protobuf.ByteString.CopyFrom(data);
             var length = sendDataRequest.CalculateSize();
@@ -48,7 +46,11 @@ namespace ServerWebApplication
 
             var input = inputStream.ToArray();
             var output = outputStream.ToArray();
+            Console.WriteLine($"input: {input.Length}, output: {output.Length}");
+        }
 
+        public static void Main(string[] args)
+        {
             //设置允许不安全的HTTP2支持
             AppContext.SetSwitch("System.Net.Http.SocketsHttpHandler.Http2UnencryptedSupport", true);
 
@@ -98,7 +100,7 @@ namespace ServerWebApplication
                 var brICompressionProvider = new BrICompressionProvider();
                 c.CompressionProviders.Add(brICompressionProvider);
                 c.ResponseCompressionAlgorithm = brICompressionProvider.EncodingName;//"gzip";
-                c.ResponseCompressionLevel = System.IO.Compression.CompressionLevel.SmallestSize; //System.IO.Compression.CompressionLevel.SmallestSize;
+                c.ResponseCompressionLevel = CompressionLevel.SmallestSize; //System.IO.Compression.CompressionLevel.SmallestSize;
                 c.MaxReceiveMessageSize = null;
             });
 
