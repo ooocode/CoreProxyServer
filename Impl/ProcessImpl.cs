@@ -3,6 +3,7 @@ using Google.Protobuf.WellKnownTypes;
 using Grpc.Core;
 using Hello;
 using Microsoft.AspNetCore.Connections;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Net.Http.Headers;
 using Prometheus;
@@ -18,7 +19,7 @@ namespace ServerWebApplication.Impl
         private readonly ILogger<ProcessImpl> logger;
         private readonly IConnectionFactory connectionFactory;
         private readonly CertificatePassword clientPassword;
-
+        private readonly IHostApplicationLifetime hostApplicationLifetime;
         public static Gauge CurrentCount = Metrics
             .CreateGauge("grpc_stream_clients", "GRPC双向流连接数");
 
@@ -31,11 +32,13 @@ namespace ServerWebApplication.Impl
 
         public ProcessImpl(ILogger<ProcessImpl> logger,
             IConnectionFactory connectionFactory,
-            CertificatePassword clientPassword)
+            CertificatePassword clientPassword,
+             IHostApplicationLifetime hostApplicationLifetime)
         {
             this.logger = logger;
             this.connectionFactory = connectionFactory;
             this.clientPassword = clientPassword;
+            this.hostApplicationLifetime = hostApplicationLifetime;
         }
 
         private void CheckPassword(ServerCallContext context)
@@ -78,7 +81,9 @@ namespace ServerWebApplication.Impl
             ArgumentException.ThrowIfNullOrWhiteSpace(targetAddress, nameof(targetAddress));
             var targetPort = int.Parse(context.RequestHeaders.GetValue("TargetPort")!);
 
-            var cancellationToken = context.CancellationToken;
+            using var cancellationSource = CancellationTokenSource.CreateLinkedTokenSource(
+                  context.CancellationToken, hostApplicationLifetime.ApplicationStopping);
+            var cancellationToken = cancellationSource.Token;
             await using var target = await CreateSocketConnectAsync(targetAddress, targetPort, cancellationToken);
 
             //返回成功
