@@ -27,7 +27,7 @@ namespace ServerWebApplication.Common
             var iPAddresses = await Dns.GetHostAddressesAsync(host, cancellationToken);
             if (iPAddresses == null || iPAddresses.Length == 0)
             {
-                throw new ArgumentException(nameof(iPAddresses) + ":" + host);
+                throw new ArgumentException(host + ":" + host);
             }
 
             var ipEndPoint = new IPEndPoint(iPAddresses[0], port);
@@ -84,13 +84,6 @@ namespace ServerWebApplication.Common
                 await connectionContext.Transport.Input.CompleteAsync();
                 await connectionContext.Transport.Output.CompleteAsync();
             }
-
-            /*if (socket != null)
-            {
-                socket.Shutdown(SocketShutdown.Both);
-                socket.Close();
-                socket.Dispose();
-            }*/
         }
     }
 }
