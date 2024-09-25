@@ -95,64 +95,33 @@ namespace ServerWebApplication.Impl
 
             CurrentCount.Inc();
 
-            if (Environment.ProcessorCount >= 2)
+
+            try
             {
-                //多核CPU
-                try
+                //单核CPU
+                var taskClient = HandlerClient(requestStream, target, cancellationToken);
+                var taskServer = HandlerServer(responseStream, target, cancellationToken);
+                await foreach (var item in Task.WhenEach(taskClient, taskServer).WithCancellation(cancellationToken))
                 {
-                    await Parallel.ForAsync(0, 2, cancellationToken, async (t, c) =>
+                    if (item.Id == taskClient.Id)
                     {
-                        if (t == 0)
-                        {
-                            await HandlerClient(requestStream, target, c);
-                        }
-                        else if (t == 1)
-                        {
-                            await HandlerServer(responseStream, target, c);
-                            await Task.Delay(1500, c);
-                            context.GetHttpContext().Abort();
-                            logger.LogError("服务器主动断开");
-                        }
-                    });
-                }
-                catch (TaskCanceledException)
-                {
-                    logger.LogWarning("连接已经取消:" + targetAddress + ":" + targetPort);
-                }
-                finally
-                {
-                    CurrentCount.Dec();
-                }
-            }
-            else
-            {
-                try
-                {
-                    //单核CPU
-                    var taskClient = HandlerClient(requestStream, target, cancellationToken);
-                    var taskServer = HandlerServer(responseStream, target, cancellationToken);
-                    await foreach (var item in Task.WhenEach(taskClient, taskServer))
+                        break;
+                    }
+                    else if (item.Id == taskServer.Id)
                     {
-                        if (item.Id == taskClient.Id)
-                        {
-                            break;
-                        }
-                        else if (item.Id == taskServer.Id)
-                        {
-                            logger.LogError("服务器主动断开");
-                            await Task.Delay(1500, cancellationToken);
-                            break;
-                        }
+                        logger.LogError("服务器主动断开");
+                        await Task.Delay(1500, cancellationToken);
+                        break;
                     }
                 }
-                catch (TaskCanceledException)
-                {
-                    logger.LogWarning("连接已经取消:" + targetAddress + ":" + targetPort);
-                }
-                finally
-                {
-                    CurrentCount.Dec();
-                }
+            }
+            catch (TaskCanceledException)
+            {
+                logger.LogWarning("连接已经取消:" + targetAddress + ":" + targetPort);
+            }
+            finally
+            {
+                CurrentCount.Dec();
             }
         }
 
@@ -161,7 +130,7 @@ namespace ServerWebApplication.Impl
             try
             {
                 CurrentTask1Count.Inc();
-                await foreach (var message in requestStream.ReadAllAsync(cancellationToken))
+                await foreach (var message in requestStream.ReadAllAsync(cancellationToken).WithCancellation(cancellationToken))
                 {
                     await target.SendAsync(message.Data.Memory, cancellationToken);
                 }
