@@ -56,10 +56,12 @@ namespace ServerWebApplication
             if (Microsoft.Extensions.Hosting.WindowsServices.WindowsServiceHelpers.IsWindowsService())
             {
                 builder.Host.UseWindowsService();
+                builder.Services.AddHostedService<AutoExitBackgroundService>();
             }
             else if (Microsoft.Extensions.Hosting.Systemd.SystemdHelpers.IsSystemdService())
             {
                 builder.Host.UseSystemd();
+                builder.Services.AddHostedService<AutoExitBackgroundService>();
             }
 
             var certificate2 = GetCertificate();
@@ -97,6 +99,7 @@ namespace ServerWebApplication
                 c.ResponseCompressionLevel = CompressionLevel.SmallestSize; //System.IO.Compression.CompressionLevel.SmallestSize;
                 c.MaxReceiveMessageSize = null;
             });
+
 
             builder.Services.AddResponseCompression();
 
