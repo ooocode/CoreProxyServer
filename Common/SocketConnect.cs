@@ -20,7 +20,7 @@ namespace ServerWebApplication.Common
             this.connectionFactory = connectionFactory;
         }
 
-        public ConnectionContext? connectionContext = null;
+        private ConnectionContext? connectionContext = null;
 
         public async ValueTask ConnectAsync(string host, int port, CancellationToken cancellationToken)
         {

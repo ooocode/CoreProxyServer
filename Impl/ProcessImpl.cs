@@ -92,9 +92,7 @@ namespace ServerWebApplication.Impl
                 Data = ByteString.Empty
             }, cancellationToken);
 
-
             CurrentCount.Inc();
-
 
             try
             {
