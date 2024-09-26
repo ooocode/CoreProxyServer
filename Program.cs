@@ -56,7 +56,6 @@ namespace ServerWebApplication
             if (Microsoft.Extensions.Hosting.WindowsServices.WindowsServiceHelpers.IsWindowsService())
             {
                 builder.Host.UseWindowsService();
-                builder.Services.AddHostedService<AutoExitBackgroundService>();
             }
             else if (Microsoft.Extensions.Hosting.Systemd.SystemdHelpers.IsSystemdService())
             {
