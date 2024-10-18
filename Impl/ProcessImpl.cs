@@ -94,7 +94,7 @@ namespace ServerWebApplication.Impl
                     }
                     else if (item.Id == taskServer.Id)
                     {
-                        logger.LogError("服务器主动断开");
+                        logger.LogError($"服务器主动断开:{targetAddress}:{targetPort}");
                         await Task.Delay(1500, cancellationToken);
                         break;
                     }

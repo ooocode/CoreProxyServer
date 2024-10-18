@@ -95,8 +95,8 @@ namespace ServerWebApplication
                  c.ResponseCompressionAlgorithm = brICompressionProvider.EncodingName;//"gzip";
                  c.ResponseCompressionLevel = CompressionLevel.SmallestSize; //System.IO.Compression.CompressionLevel.SmallestSize;
   */
-                c.ResponseCompressionAlgorithm = "gzip";
-                c.ResponseCompressionLevel = CompressionLevel.Optimal; //System.IO.Compression.CompressionLevel.SmallestSize;
+                //c.ResponseCompressionAlgorithm = "gzip";
+                //c.ResponseCompressionLevel = CompressionLevel.Optimal; //System.IO.Compression.CompressionLevel.SmallestSize;
                 c.MaxReceiveMessageSize = null;
             });
 
