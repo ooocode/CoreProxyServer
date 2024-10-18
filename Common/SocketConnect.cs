@@ -11,15 +11,8 @@ using System.Threading.Tasks;
 
 namespace ServerWebApplication.Common
 {
-    public class SocketConnect : IAsyncDisposable
+    public class SocketConnect(IConnectionFactory connectionFactory) : IAsyncDisposable
     {
-        private readonly IConnectionFactory connectionFactory;
-
-        public SocketConnect(IConnectionFactory connectionFactory)
-        {
-            this.connectionFactory = connectionFactory;
-        }
-
         private ConnectionContext? connectionContext = null;
 
         public async ValueTask ConnectAsync(string host, int port, CancellationToken cancellationToken)

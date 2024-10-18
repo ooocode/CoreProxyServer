@@ -14,12 +14,11 @@ using System.Threading.Tasks;
 
 namespace ServerWebApplication.Impl
 {
-    public class ProcessImpl : ProcessGrpc.ProcessGrpcBase
+    public class ProcessImpl(ILogger<ProcessImpl> logger,
+        IConnectionFactory connectionFactory,
+        CertificatePassword clientPassword,
+         IHostApplicationLifetime hostApplicationLifetime) : ProcessGrpc.ProcessGrpcBase
     {
-        private readonly ILogger<ProcessImpl> logger;
-        private readonly IConnectionFactory connectionFactory;
-        private readonly CertificatePassword clientPassword;
-        private readonly IHostApplicationLifetime hostApplicationLifetime;
         public static Gauge CurrentCount = Metrics
             .CreateGauge("grpc_stream_clients", "GRPC双向流连接数");
 
@@ -28,18 +27,6 @@ namespace ServerWebApplication.Impl
 
         public static Gauge CurrentTask2Count = Metrics
             .CreateGauge("grpc_stream_clients_task2", "GRPC双向流Task2连接数");
-
-
-        public ProcessImpl(ILogger<ProcessImpl> logger,
-            IConnectionFactory connectionFactory,
-            CertificatePassword clientPassword,
-             IHostApplicationLifetime hostApplicationLifetime)
-        {
-            this.logger = logger;
-            this.connectionFactory = connectionFactory;
-            this.clientPassword = clientPassword;
-            this.hostApplicationLifetime = hostApplicationLifetime;
-        }
 
         private void CheckPassword(ServerCallContext context)
         {
@@ -58,7 +45,7 @@ namespace ServerWebApplication.Impl
         {
             try
             {
-                SocketConnect target = new SocketConnect(connectionFactory);
+                SocketConnect target = new(connectionFactory);
                 await target.ConnectAsync(address, port, cancellationToken);
                 logger.LogInformation($"成功连接到： {address}:{port}");
                 return target;

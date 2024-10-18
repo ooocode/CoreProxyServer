@@ -20,6 +20,7 @@ using System.Security.Cryptography.X509Certificates;
 
 namespace ServerWebApplication
 {
+
     public class Program
     {
         private static WebApplication? app = null;
@@ -95,7 +96,7 @@ namespace ServerWebApplication
                  c.ResponseCompressionLevel = CompressionLevel.SmallestSize; //System.IO.Compression.CompressionLevel.SmallestSize;
   */
                 c.ResponseCompressionAlgorithm = "gzip";
-                c.ResponseCompressionLevel = CompressionLevel.SmallestSize; //System.IO.Compression.CompressionLevel.SmallestSize;
+                c.ResponseCompressionLevel = CompressionLevel.Optimal; //System.IO.Compression.CompressionLevel.SmallestSize;
                 c.MaxReceiveMessageSize = null;
             });
 
@@ -117,7 +118,7 @@ namespace ServerWebApplication
 
         public static unsafe void ServiceMain(int argc, nint* argv)
         {
-            List<string> args = new List<string>();
+            List<string> args = [];
             for (int i = 0; i < argc; i++)
             {
                 var arg = Marshal.PtrToStringAnsi(argv[i]);

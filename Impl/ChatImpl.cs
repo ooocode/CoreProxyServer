@@ -10,7 +10,7 @@ using System.Threading.Tasks;
 
 namespace ServerWebApplication.Impl
 {
-    public class ChatImpl : Hello.ChatGrpc.ChatGrpcBase
+    public class ChatImpl : ChatGrpc.ChatGrpcBase
     {
         private readonly ILogger<ChatImpl> logger;
 
