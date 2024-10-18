@@ -76,6 +76,8 @@ namespace ServerWebApplication.Common
             {
                 await connectionContext.Transport.Input.CompleteAsync();
                 await connectionContext.Transport.Output.CompleteAsync();
+
+                await connectionContext.DisposeAsync();
             }
         }
     }
