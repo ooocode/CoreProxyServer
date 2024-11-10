@@ -24,6 +24,8 @@
 	</ItemGroup>
 
 	<ItemGroup>
+		<PackageReference Include="DnsClient" Version="1.8.0" />
+		<PackageReference Include="DotNext.IO" Version="5.14.0" />
 		<PackageReference Include="Grpc.AspNetCore" Version="2.66.0" />
 		<PackageReference Include="Microsoft.AspNetCore.Hosting.WindowsServices" Version="9.0.0-rc.1.24452.1" />
 		<PackageReference Include="Microsoft.Extensions.Hosting.Systemd" Version="9.0.0-rc.1.24431.7" />

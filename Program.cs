@@ -1,22 +1,29 @@
-﻿using Google.Protobuf;
+﻿using DnsClient;
+using Google.Protobuf;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Connections;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Prometheus;
 using ServerWebApplication.Impl;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.IO.Compression;
 using System.Linq;
+using System.Net;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
+using System.Text;
+using System.Threading;
 
 namespace ServerWebApplication
 {
@@ -81,6 +88,10 @@ namespace ServerWebApplication
 
             builder.WebHost.UseKestrelHttpsConfiguration();
 
+
+            var dnsClient = new LookupClient(NameServer.GooglePublicDns, NameServer.GooglePublicDns2, NameServer.Cloudflare, NameServer.Cloudflare2);
+            builder.Services.AddSingleton<ILookupClient>(dnsClient);
+
             const string typeName = "Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets.SocketConnectionFactory";
             var factoryType = typeof(SocketTransportOptions).Assembly.GetType(typeName);
             ArgumentNullException.ThrowIfNull(factoryType, nameof(factoryType));
@@ -100,16 +111,21 @@ namespace ServerWebApplication
                 c.MaxReceiveMessageSize = null;
             });
 
-
-            builder.Services.AddResponseCompression();
-
             app = builder.Build();
             app.Logger.LogInformation("客户端连接密码:" + clientPassword.Password);
 
-            app.UseResponseCompression();
-
             app.MapGrpcService<ChatImpl>();
             app.MapGrpcService<ProcessImpl>();
+
+            /*app.MapGet("/metrics", new RequestDelegate(async (httpContext) =>
+           {
+               using var memoryStream = new MemoryStream();
+               await Metrics.DefaultRegistry.CollectAndExportAsTextAsync(memoryStream, ExpositionFormat.PrometheusText, httpContext.RequestAborted);
+               var text = Encoding.UTF8.GetString(memoryStream.ToArray());
+
+               httpContext.Response.ContentType = "text/plain; charset=utf-8";
+               await httpContext.Response.WriteAsync(text);
+           }));*/
             app.Run();
         }
 
@@ -143,7 +159,7 @@ namespace ServerWebApplication
             string password = "apz8fwga";
             if (File.Exists(fileName))
             {
-                var certificate = new X509Certificate2(fileName, password, X509KeyStorageFlags.PersistKeySet | X509KeyStorageFlags.Exportable);
+                var certificate = new X509Certificate2(fileName, password);
                 return certificate;
             }
 

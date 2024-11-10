@@ -1,4 +1,6 @@
-﻿using Google.Protobuf;
+﻿using DnsClient;
+using DotNext.IO.Pipelines;
+using Google.Protobuf;
 using Google.Protobuf.WellKnownTypes;
 using Grpc.Core;
 using Hello;
@@ -17,7 +19,8 @@ namespace ServerWebApplication.Impl
     public class ProcessImpl(ILogger<ProcessImpl> logger,
         IConnectionFactory connectionFactory,
         CertificatePassword clientPassword,
-         IHostApplicationLifetime hostApplicationLifetime) : ProcessGrpc.ProcessGrpcBase
+        IHostApplicationLifetime hostApplicationLifetime,
+        ILookupClient lookupClient) : ProcessGrpc.ProcessGrpcBase
     {
         public static Gauge CurrentCount = Metrics
             .CreateGauge("grpc_stream_clients", "GRPC双向流连接数");
@@ -40,24 +43,6 @@ namespace ServerWebApplication.Impl
             }
         }
 
-
-        private async ValueTask<SocketConnect> CreateSocketConnectAsync(string address, int port, CancellationToken cancellationToken)
-        {
-            try
-            {
-                SocketConnect target = new(connectionFactory);
-                await target.ConnectAsync(address, port, cancellationToken);
-                logger.LogInformation($"成功连接到： {address}:{port}");
-                return target;
-            }
-            catch (Exception ex)
-            {
-                logger.LogError($"无法连接到： {address}:{port}  {ex.InnerException?.Message ?? ex.Message}");
-                throw;
-            }
-        }
-
-
         public override async Task StreamingServer(IAsyncStreamReader<SendDataRequest> requestStream,
             IServerStreamWriter<SendDataRequest> responseStream,
             ServerCallContext context)
@@ -71,7 +56,11 @@ namespace ServerWebApplication.Impl
             using var cancellationSource = CancellationTokenSource.CreateLinkedTokenSource(
                   context.CancellationToken, hostApplicationLifetime.ApplicationStopping);
             var cancellationToken = cancellationSource.Token;
-            await using var target = await CreateSocketConnectAsync(targetAddress, targetPort, cancellationToken);
+
+
+            await using SocketConnect target = new(connectionFactory, lookupClient);
+            await target.ConnectAsync(targetAddress, targetPort, cancellationToken);
+            logger.LogInformation($"成功连接到：{targetAddress}:{targetPort}");
 
             //返回成功
             await responseStream.WriteAsync(new SendDataRequest
@@ -100,9 +89,9 @@ namespace ServerWebApplication.Impl
                     }
                 }
             }
-            catch (TaskCanceledException)
+            catch (Exception ex)
             {
-                logger.LogWarning("连接已经取消:" + targetAddress + ":" + targetPort);
+                logger.LogWarning(ex, "服务器出现错误:" + targetAddress + ":" + targetPort);
             }
             finally
             {
@@ -129,12 +118,17 @@ namespace ServerWebApplication.Impl
         private static async Task HandlerServer(IServerStreamWriter<SendDataRequest> responseStream,
             SocketConnect target, CancellationToken cancellationToken)
         {
+            if (target.PipeReader == null)
+            {
+                return;
+            }
+
             try
             {
                 CurrentTask2Count.Inc();
 
                 //从目标服务器读取数据，发送到客户端
-                await foreach (var memory in target.LoopRecvDataAsync(cancellationToken).WithCancellation(cancellationToken))
+                await foreach (var memory in target.PipeReader.ReadAllAsync(cancellationToken).WithCancellation(cancellationToken))
                 {
                     //写入到数据通道
                     await responseStream.WriteAsync(new SendDataRequest

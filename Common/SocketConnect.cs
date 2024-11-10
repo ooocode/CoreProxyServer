@@ -1,66 +1,35 @@
-﻿using Microsoft.AspNetCore.Connections;
+﻿using DnsClient;
+using Microsoft.AspNetCore.Connections;
 using System;
-using System.Buffers;
-using System.Collections.Generic;
 using System.IO.Pipelines;
 using System.Linq;
 using System.Net;
-using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
 
 namespace ServerWebApplication.Common
 {
-    public class SocketConnect(IConnectionFactory connectionFactory) : IAsyncDisposable
+    public class SocketConnect(IConnectionFactory connectionFactory, ILookupClient lookupClient) : IAsyncDisposable
     {
         private ConnectionContext? connectionContext = null;
 
+        public PipeReader? PipeReader => connectionContext?.Transport.Input;
+
         public async ValueTask ConnectAsync(string host, int port, CancellationToken cancellationToken)
         {
-            var iPAddresses = await Dns.GetHostAddressesAsync(host, cancellationToken);
-            if (iPAddresses == null || iPAddresses.Length == 0)
+            if (!IPAddress.TryParse(host, out var iPAddress))
+            {
+                var result = await lookupClient.QueryAsync(host, QueryType.A, cancellationToken: cancellationToken);
+                iPAddress = result.Answers.ARecords().FirstOrDefault()?.Address;
+            }
+
+            if (iPAddress == null)
             {
                 throw new ArgumentException(host + ":" + host);
             }
 
-            var ipEndPoint = new IPEndPoint(iPAddresses[0], port);
+            var ipEndPoint = new IPEndPoint(iPAddress, port);
             connectionContext = await connectionFactory.ConnectAsync(ipEndPoint, cancellationToken);
-        }
-
-        public async IAsyncEnumerable<ReadOnlyMemory<byte>> LoopRecvDataAsync(
-            [EnumeratorCancellation] CancellationToken cancellationToken)
-        {
-            ArgumentNullException.ThrowIfNull(connectionContext, nameof(connectionContext));
-            while (!cancellationToken.IsCancellationRequested)
-            {
-                //浏览器普通接收
-                var result = await connectionContext.Transport.Input.ReadAsync(cancellationToken);
-                ReadOnlySequence<byte> buffer = result.Buffer;
-
-                if (buffer.IsEmpty)
-                {
-                    break;
-                }
-
-                if (buffer.IsSingleSegment)
-                {
-                    yield return buffer.First;
-                }
-                else
-                {
-                    yield return buffer.ToArray();
-                }
-
-                connectionContext.Transport.Input.AdvanceTo(buffer.End);
-
-                // Stop reading if there's no more data coming.
-                if (result.IsCompleted)
-                {
-                    break;
-                }
-            }
-            // 完成读取
-            await connectionContext.Transport.Input.CompleteAsync();
         }
 
         public ValueTask<FlushResult> SendAsync(ReadOnlyMemory<byte> memory, CancellationToken cancellationToken)
@@ -68,7 +37,6 @@ namespace ServerWebApplication.Common
             ArgumentNullException.ThrowIfNull(connectionContext);
             return connectionContext.Transport.Output.WriteAsync(memory, cancellationToken);
         }
-
 
         public async ValueTask DisposeAsync()
         {
