@@ -3,6 +3,7 @@ using Google.Protobuf;
 using Microsoft.AspNetCore.Connections;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using ServerWebApplication.Impl;
+using System.Diagnostics.CodeAnalysis;
 using System.IO.Compression;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -11,7 +12,6 @@ using System.Security.Cryptography.X509Certificates;
 
 namespace ServerWebApplication
 {
-
     public class Program
     {
         private static WebApplication? app = null;
@@ -24,21 +24,20 @@ namespace ServerWebApplication
             var length = sendDataRequest.CalculateSize();
 
             var inputStream = new MemoryStream(sendDataRequest.ToByteArray());
-
-
-
             var outputStream = new MemoryStream();
             using (var compressStream = new System.IO.Compression.BrotliStream(outputStream, CompressionLevel.SmallestSize))
             {
                 inputStream.CopyTo(compressStream);
             }
 
-
             var input = inputStream.ToArray();
             var output = outputStream.ToArray();
             Console.WriteLine($"input: {input.Length}, output: {output.Length}");
         }
 
+
+        [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "此调用在运行时安全")]
+        [UnconditionalSuppressMessage("Trimming", "IL2072", Justification = "此调用在运行时安全")]
         public static void Main(string[] args)
         {
             //设置允许不安全的HTTP2支持

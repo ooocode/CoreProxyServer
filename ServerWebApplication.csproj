@@ -7,12 +7,12 @@
 		<ServerGarbageCollection>true</ServerGarbageCollection>
 		<Nullable>enable</Nullable>
 		<ImplicitUsings>enable</ImplicitUsings>
-		<!-- <IsAotCompatible>true</IsAotCompatible>
-		<StripSymbols>true</StripSymbols> -->
+		<IsAotCompatible>true</IsAotCompatible>
+		<StripSymbols>true</StripSymbols>
 		<InvariantGlobalization>true</InvariantGlobalization>
 		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
 		<OutputType>Exe</OutputType>
-		<PublishAot>false</PublishAot>
+		<PublishAot>true</PublishAot>
 	</PropertyGroup>
 
 	<PropertyGroup>
@@ -43,5 +43,9 @@
 		<None Update="proxy.service">
 			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
 		</None>
+	</ItemGroup>
+
+	<ItemGroup>
+    	<TrimmerRootAssembly Include="Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets" />
 	</ItemGroup>
 </Project>
