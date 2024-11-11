@@ -6,6 +6,7 @@
 		<LangVersion>preview</LangVersion>
 		<ServerGarbageCollection>true</ServerGarbageCollection>
 		<Nullable>enable</Nullable>
+		<ImplicitUsings>enable</ImplicitUsings>
 		<!-- <IsAotCompatible>true</IsAotCompatible>
 		<StripSymbols>true</StripSymbols> -->
 		<InvariantGlobalization>true</InvariantGlobalization>
@@ -27,9 +28,9 @@
 		<PackageReference Include="DnsClient" Version="1.8.0" />
 		<PackageReference Include="DotNext.IO" Version="5.14.0" />
 		<PackageReference Include="Grpc.AspNetCore" Version="2.66.0" />
-		<PackageReference Include="Microsoft.AspNetCore.Hosting.WindowsServices" Version="9.0.0-rc.1.24452.1" />
-		<PackageReference Include="Microsoft.Extensions.Hosting.Systemd" Version="9.0.0-rc.1.24431.7" />
-		<PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="9.0.0-rc.1.24431.7" />
+		<PackageReference Include="Microsoft.Extensions.Hosting" Version="9.0.0-rc.2.24473.5" />
+		<PackageReference Include="Microsoft.Extensions.Hosting.Systemd" Version="9.0.0-rc.2.24473.5" />
+		<PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="9.0.0-rc.2.24473.5" />
 		<PackageReference Include="prometheus-net" Version="8.2.1" />
 	</ItemGroup>
 

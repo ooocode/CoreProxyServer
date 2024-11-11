@@ -1,11 +1,7 @@
 ﻿using DnsClient;
 using Microsoft.AspNetCore.Connections;
-using System;
 using System.IO.Pipelines;
-using System.Linq;
 using System.Net;
-using System.Threading;
-using System.Threading.Tasks;
 
 namespace ServerWebApplication.Common
 {

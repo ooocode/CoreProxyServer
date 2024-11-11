@@ -5,14 +5,9 @@ using Google.Protobuf.WellKnownTypes;
 using Grpc.Core;
 using Hello;
 using Microsoft.AspNetCore.Connections;
-using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
 using Microsoft.Net.Http.Headers;
 using Prometheus;
 using ServerWebApplication.Common;
-using System;
-using System.Threading;
-using System.Threading.Tasks;
 
 namespace ServerWebApplication.Impl
 {

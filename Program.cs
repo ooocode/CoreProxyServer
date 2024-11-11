@@ -1,29 +1,13 @@
 ﻿using DnsClient;
 using Google.Protobuf;
-using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Connections;
-using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
-using Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
-using Prometheus;
 using ServerWebApplication.Impl;
-using System;
-using System.Collections.Generic;
-using System.Diagnostics;
-using System.IO;
 using System.IO.Compression;
-using System.Linq;
-using System.Net;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
-using System.Text;
-using System.Threading;
 
 namespace ServerWebApplication
 {
@@ -93,7 +77,7 @@ namespace ServerWebApplication
             builder.Services.AddSingleton<ILookupClient>(dnsClient);
 
             const string typeName = "Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets.SocketConnectionFactory";
-            var factoryType = typeof(SocketTransportOptions).Assembly.GetType(typeName);
+            var factoryType = typeof(Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets.SocketTransportOptions).Assembly.GetType(typeName);
             ArgumentNullException.ThrowIfNull(factoryType, nameof(factoryType));
             builder.Services.AddSingleton(typeof(IConnectionFactory), factoryType);
 
