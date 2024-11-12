@@ -1,5 +1,4 @@
-﻿using DnsClient;
-using DotNext.IO.Pipelines;
+﻿using DotNext.IO.Pipelines;
 using Google.Protobuf;
 using Google.Protobuf.WellKnownTypes;
 using Grpc.Core;
@@ -15,7 +14,7 @@ namespace ServerWebApplication.Impl
         IConnectionFactory connectionFactory,
         CertificatePassword clientPassword,
         IHostApplicationLifetime hostApplicationLifetime,
-        ILookupClient lookupClient) : ProcessGrpc.ProcessGrpcBase
+        DnsParseService dnsParseService) : ProcessGrpc.ProcessGrpcBase
     {
         public static Gauge CurrentCount = Metrics
             .CreateGauge("grpc_stream_clients", "GRPC双向流连接数");
@@ -53,7 +52,7 @@ namespace ServerWebApplication.Impl
             var cancellationToken = cancellationSource.Token;
 
 
-            await using SocketConnect target = new(connectionFactory, lookupClient);
+            await using SocketConnect target = new(connectionFactory, dnsParseService);
             await target.ConnectAsync(targetAddress, targetPort, cancellationToken);
             logger.LogInformation($"成功连接到：{targetAddress}:{targetPort}");
 

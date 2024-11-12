@@ -1,5 +1,4 @@
-﻿using DnsClient;
-using Google.Protobuf;
+﻿using Google.Protobuf;
 using Microsoft.AspNetCore.Connections;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using ServerWebApplication.Impl;
@@ -34,7 +33,6 @@ namespace ServerWebApplication
             var output = outputStream.ToArray();
             Console.WriteLine($"input: {input.Length}, output: {output.Length}");
         }
-
 
         [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "此调用在运行时安全")]
         [UnconditionalSuppressMessage("Trimming", "IL2072", Justification = "此调用在运行时安全")]
@@ -71,9 +69,9 @@ namespace ServerWebApplication
 
             builder.WebHost.UseKestrelHttpsConfiguration();
 
-
-            var dnsClient = new LookupClient(NameServer.GooglePublicDns, NameServer.GooglePublicDns2, NameServer.Cloudflare, NameServer.Cloudflare2);
-            builder.Services.AddSingleton<ILookupClient>(dnsClient);
+            builder.Services.AddSingleton<DnsParseService>();
+            builder.Services.AddMemoryCache();
+            builder.Services.AddHostedService<DnsBackgroundServiceService>();
 
             const string typeName = "Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets.SocketConnectionFactory";
             var factoryType = typeof(Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets.SocketTransportOptions).Assembly.GetType(typeName);
@@ -95,6 +93,7 @@ namespace ServerWebApplication
             });
 
             app = builder.Build();
+
             app.Logger.LogInformation("客户端连接密码:" + clientPassword.Password);
 
             app.MapGrpcService<ChatImpl>();

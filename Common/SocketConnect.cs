@@ -1,27 +1,20 @@
-﻿using DnsClient;
-using Microsoft.AspNetCore.Connections;
+﻿using Microsoft.AspNetCore.Connections;
 using System.IO.Pipelines;
 using System.Net;
 
 namespace ServerWebApplication.Common
 {
-    public class SocketConnect(IConnectionFactory connectionFactory, ILookupClient lookupClient) : IAsyncDisposable
+    public class SocketConnect(IConnectionFactory connectionFactory, DnsParseService dnsParseService) : IAsyncDisposable
     {
         private ConnectionContext? connectionContext = null;
 
         public PipeReader? PipeReader => connectionContext?.Transport.Input;
 
-        public async ValueTask ConnectAsync(string host, int port, CancellationToken cancellationToken)
+        public async Task ConnectAsync(string host, int port, CancellationToken cancellationToken)
         {
             if (!IPAddress.TryParse(host, out var iPAddress))
             {
-                var result = await lookupClient.QueryAsync(host, QueryType.A, cancellationToken: cancellationToken);
-                iPAddress = result.Answers.ARecords().FirstOrDefault()?.Address;
-            }
-
-            if (iPAddress == null)
-            {
-                throw new ArgumentException(host + ":" + host);
+                iPAddress = await dnsParseService.GetIpAsync(host, port, cancellationToken: cancellationToken);
             }
 
             var ipEndPoint = new IPEndPoint(iPAddress, port);

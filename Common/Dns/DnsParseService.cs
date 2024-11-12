@@ -1,8 +1,7 @@
 using System.Net;
-using DnsClient;
 using Microsoft.Extensions.Caching.Memory;
 
-public class DnsParseService(IMemoryCache memoryCache, ILookupClient lookupClient)
+public class DnsParseService(IMemoryCache memoryCache)
 {
     public async Task<IPAddress> GetIpAsync(string hostName, int port, CancellationToken cancellationToken = default)
     {
@@ -12,16 +11,20 @@ public class DnsParseService(IMemoryCache memoryCache, ILookupClient lookupClien
             return ip;
         }
 
-        var result = await lookupClient.QueryAsync(hostName, QueryType.A, cancellationToken: cancellationToken);
-        var ipAddresses = result.Answers.ARecords().Select(x=>x.TimeToLive);
-        var iPAddress = ipAddresses.FirstOrDefault()?.Address;
+        var ipAddresses = await Dns.GetHostAddressesAsync(hostName, cancellationToken);
+        var iPAddress = ipAddresses.FirstOrDefault();
         ArgumentNullException.ThrowIfNull(iPAddress, nameof(iPAddress));
-        await DnsBackgroundServiceService.DnsChannel.Writer.WriteAsync(new DnsItem
+
+        if (ipAddresses.Length > 1)
         {
-            HostName = hostName,
-            Port = port,
-            IPAddresses = iPAddress
-        })
+            await DnsBackgroundServiceService.DnsChannel.Writer.WriteAsync(new DnsItem
+            {
+                HostName = hostName,
+                Port = port,
+                IPAddresses = ipAddresses.ToList()
+            }, cancellationToken);
+        }
+
         return iPAddress;
     }
 }
