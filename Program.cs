@@ -34,6 +34,15 @@ namespace ServerWebApplication
             Console.WriteLine($"input: {input.Length}, output: {output.Length}");
         }
 
+        private static async IAsyncEnumerable<string> GetData([EnumeratorCancellation] CancellationToken cancellationToken = default)
+        {
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                await Task.Delay(1000);
+                yield return DateTime.Now.ToString();
+            }
+        }
+
         [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "此调用在运行时安全")]
         [UnconditionalSuppressMessage("Trimming", "IL2072", Justification = "此调用在运行时安全")]
         public static void Main(string[] args)

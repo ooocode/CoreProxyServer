@@ -51,7 +51,6 @@ namespace ServerWebApplication.Impl
                   context.CancellationToken, hostApplicationLifetime.ApplicationStopping);
             var cancellationToken = cancellationSource.Token;
 
-
             await using SocketConnect target = new(connectionFactory, dnsParseService);
             await target.ConnectAsync(targetAddress, targetPort, cancellationToken);
             logger.LogInformation($"成功连接到：{targetAddress}:{targetPort}");
@@ -78,7 +77,11 @@ namespace ServerWebApplication.Impl
                     else if (item.Id == taskServer.Id)
                     {
                         logger.LogError($"服务器主动断开:{targetAddress}:{targetPort}");
-                        await Task.Delay(1500, cancellationToken);
+                        if (!cancellationToken.IsCancellationRequested)
+                        {
+                            await Task.Delay(1500, cancellationToken);
+                        }
+
                         break;
                     }
                 }
@@ -95,12 +98,17 @@ namespace ServerWebApplication.Impl
 
         private static async Task HandlerClient(IAsyncStreamReader<SendDataRequest> requestStream, SocketConnect target, CancellationToken cancellationToken)
         {
+            if (target.PipeWriter == null)
+            {
+                return;
+            }
+
             try
             {
                 CurrentTask1Count.Inc();
                 await foreach (var message in requestStream.ReadAllAsync(cancellationToken).WithCancellation(cancellationToken))
                 {
-                    await target.SendAsync(message.Data.Memory, cancellationToken);
+                    await target.PipeWriter.WriteAsync(message.Data.Memory, cancellationToken);
                 }
             }
             finally
