@@ -1,6 +1,4 @@
-﻿using DotNext;
-using DotNext.IO.Pipelines;
-using Google.Protobuf;
+﻿using Google.Protobuf;
 using Google.Protobuf.WellKnownTypes;
 using Grpc.Core;
 using Hello;
@@ -76,26 +74,7 @@ namespace ServerWebApplication.Impl
                 //单核CPU
                 var taskClient = HandlerClient(requestStream, target, cancellationToken);
                 var taskServer = HandlerServer(responseStream, target, cancellationToken);
-                await foreach (var item in Task.WhenEach(taskClient, taskServer).WithCancellation(cancellationToken))
-                {
-                    if (item.Id == taskClient.Id)
-                    {
-                        break;
-                    }
-                    else if (item.Id == taskServer.Id)
-                    {
-                        if (!cancellationToken.IsCancellationRequested)
-                        {
-                            await responseStream.WriteAsync(new SendDataRequest
-                            {
-                                Data = ByteString.Empty
-                            });
-                            await Task.Delay(5000, cancellationToken);
-                        }
-
-                        break;
-                    }
-                }
+                await Task.WhenAll(taskClient, taskServer);
             }
             catch (Exception ex)
             {
@@ -141,7 +120,7 @@ namespace ServerWebApplication.Impl
                 CurrentTask2Count.Inc();
 
                 //从目标服务器读取数据，发送到客户端
-                await foreach (var memory in target.ReadAllAsync(cancellationToken).WithCancellation(cancellationToken))
+                await foreach (var memory in target.PipeReader.ReadAllAsync(cancellationToken).WithCancellation(cancellationToken))
                 {
                     //写入到数据通道
                     await responseStream.WriteAsync(new SendDataRequest
@@ -149,6 +128,12 @@ namespace ServerWebApplication.Impl
                         Data = UnsafeByteOperations.UnsafeWrap(memory)
                     }, cancellationToken);
                 }
+
+                //告知客户端已经断开了
+                await responseStream.WriteAsync(new SendDataRequest
+                {
+                    Data = ByteString.Empty
+                }, cancellationToken);
             }
             finally
             {
