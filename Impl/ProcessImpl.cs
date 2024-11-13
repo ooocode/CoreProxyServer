@@ -74,7 +74,18 @@ namespace ServerWebApplication.Impl
                 //单核CPU
                 var taskClient = HandlerClient(requestStream, target, cancellationToken);
                 var taskServer = HandlerServer(responseStream, target, cancellationToken);
-                await Task.WhenAll(taskClient, taskServer);
+                await foreach (var item in Task.WhenEach(taskClient, taskServer).WithCancellation(cancellationToken))
+                {
+                    if (item.Id == taskClient.Id)
+                    {
+                        break;
+                    }
+                    else if (item.Id == taskServer.Id)
+                    {
+                        await Task.Delay(2000, cancellationToken);
+                        break;
+                    }
+                }
             }
             catch (Exception ex)
             {
@@ -128,12 +139,6 @@ namespace ServerWebApplication.Impl
                         Data = UnsafeByteOperations.UnsafeWrap(memory)
                     }, cancellationToken);
                 }
-
-                //告知客户端已经断开了
-                await responseStream.WriteAsync(new SendDataRequest
-                {
-                    Data = ByteString.Empty
-                }, cancellationToken);
             }
             finally
             {
