@@ -1,8 +1,12 @@
-﻿using Grpc.Core;
+﻿using DotNext.IO.Pipelines;
+using Grpc.Core;
 using Microsoft.AspNetCore.Connections;
+using System.Buffers;
 using System.IO.Pipelines;
 using System.Net;
 using System.Net.Sockets;
+using System.Reflection.PortableExecutable;
+using System.Runtime.CompilerServices;
 
 namespace ServerWebApplication.Common
 {
@@ -32,6 +36,42 @@ namespace ServerWebApplication.Common
                 var err = $"连接失败：{host}:{port} {ex.Message}";
                 logger.LogError(err);
                 throw new RpcException(new Status(StatusCode.Cancelled, err));
+            }
+        }
+
+        public async IAsyncEnumerable<ReadOnlyMemory<byte>> ReadAllAsync([EnumeratorCancellation]CancellationToken cancellationToken)
+        {
+            ArgumentNullException.ThrowIfNull(connectionContext, nameof(connectionContext));
+
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                var result = await connectionContext.Transport.Input.ReadAsync(cancellationToken).ConfigureAwait(false);
+                var buffer = result.Buffer;
+                if (buffer.IsEmpty)
+                {
+                    break;
+                }
+
+                try
+                {
+                    if (buffer.IsSingleSegment)
+                    {
+                        yield return buffer.First;
+                    }
+                    else
+                    {
+                        yield return buffer.ToArray();
+                    }
+                }
+                finally
+                {
+                    connectionContext.Transport.Input.AdvanceTo(buffer.End);
+                }
+
+                if (result.IsCompleted)
+                {
+                    break;
+                }
             }
         }
 

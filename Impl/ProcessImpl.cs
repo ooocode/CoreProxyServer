@@ -1,4 +1,5 @@
-﻿using DotNext.IO.Pipelines;
+﻿using DotNext;
+using DotNext.IO.Pipelines;
 using Google.Protobuf;
 using Google.Protobuf.WellKnownTypes;
 using Grpc.Core;
@@ -140,7 +141,7 @@ namespace ServerWebApplication.Impl
                 CurrentTask2Count.Inc();
 
                 //从目标服务器读取数据，发送到客户端
-                await foreach (var memory in target.PipeReader.ReadAllAsync(cancellationToken).WithCancellation(cancellationToken))
+                await foreach (var memory in target.ReadAllAsync(cancellationToken).WithCancellation(cancellationToken))
                 {
                     //写入到数据通道
                     await responseStream.WriteAsync(new SendDataRequest
