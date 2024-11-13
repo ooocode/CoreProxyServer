@@ -79,9 +79,6 @@ namespace ServerWebApplication
             builder.WebHost.UseKestrelHttpsConfiguration();
 
             builder.Services.AddSingleton<DnsParseService>();
-            builder.Services.AddMemoryCache();
-            builder.Services.AddHostedService<DnsBackgroundServiceService>();
-
             const string typeName = "Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets.SocketConnectionFactory";
             var factoryType = typeof(Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets.SocketTransportOptions).Assembly.GetType(typeName);
             ArgumentNullException.ThrowIfNull(factoryType, nameof(factoryType));
@@ -99,6 +96,7 @@ namespace ServerWebApplication
                 //c.ResponseCompressionAlgorithm = "gzip";
                 //c.ResponseCompressionLevel = CompressionLevel.Optimal; //System.IO.Compression.CompressionLevel.SmallestSize;
                 c.MaxReceiveMessageSize = null;
+                c.EnableDetailedErrors = true;
             });
 
             app = builder.Build();

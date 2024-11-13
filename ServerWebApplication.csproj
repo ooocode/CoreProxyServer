@@ -27,9 +27,9 @@
 	<ItemGroup>
 		<PackageReference Include="DotNext.IO" Version="5.14.0" />
 		<PackageReference Include="Grpc.AspNetCore" Version="2.66.0" />
-		<PackageReference Include="Microsoft.Extensions.Hosting" Version="9.0.0-rc.2.24473.5" />
-		<PackageReference Include="Microsoft.Extensions.Hosting.Systemd" Version="9.0.0-rc.2.24473.5" />
-		<PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="9.0.0-rc.2.24473.5" />
+		<PackageReference Include="Microsoft.Extensions.Hosting" Version="9.0.0" />
+		<PackageReference Include="Microsoft.Extensions.Hosting.Systemd" Version="9.0.0" />
+		<PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="9.0.0" />
 		<PackageReference Include="prometheus-net" Version="8.2.1" />
 	</ItemGroup>
 

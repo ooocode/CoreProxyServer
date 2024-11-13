@@ -1,10 +1,14 @@
-﻿using Microsoft.AspNetCore.Connections;
+﻿using Grpc.Core;
+using Microsoft.AspNetCore.Connections;
 using System.IO.Pipelines;
 using System.Net;
+using System.Net.Sockets;
 
 namespace ServerWebApplication.Common
 {
-    public class SocketConnect(IConnectionFactory connectionFactory, DnsParseService dnsParseService) : IAsyncDisposable
+    public class SocketConnect(IConnectionFactory connectionFactory,
+        DnsParseService dnsParseService,
+        ILogger logger) : IAsyncDisposable
     {
         private ConnectionContext? connectionContext = null;
 
@@ -13,13 +17,22 @@ namespace ServerWebApplication.Common
 
         public async Task ConnectAsync(string host, int port, CancellationToken cancellationToken)
         {
-            if (!IPAddress.TryParse(host, out var iPAddress))
+            try
             {
-                iPAddress = await dnsParseService.GetIpAsync(host, port, cancellationToken: cancellationToken);
-            }
+                if (!IPAddress.TryParse(host, out var iPAddress))
+                {
+                    iPAddress = await dnsParseService.GetIpAsync(host, port, cancellationToken: cancellationToken);
+                }
 
-            var ipEndPoint = new IPEndPoint(iPAddress, port);
-            connectionContext = await connectionFactory.ConnectAsync(ipEndPoint, cancellationToken);
+                var ipEndPoint = new IPEndPoint(iPAddress, port);
+                connectionContext = await connectionFactory.ConnectAsync(ipEndPoint, cancellationToken);
+            }
+            catch (Exception ex) when (ex is SocketException || ex is OperationCanceledException)
+            {
+                var err = $"连接失败：{host}:{port} {ex.Message}";
+                logger.LogError(err);
+                throw new RpcException(new Status(StatusCode.Cancelled, err));
+            }
         }
 
         public async ValueTask DisposeAsync()

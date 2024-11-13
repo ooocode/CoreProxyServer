@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Connections;
 using Microsoft.Net.Http.Headers;
 using Prometheus;
 using ServerWebApplication.Common;
+using System.Net;
 
 namespace ServerWebApplication.Impl
 {
@@ -27,8 +28,14 @@ namespace ServerWebApplication.Impl
 
         private void CheckPassword(ServerCallContext context)
         {
+            var ipAddress = context.GetHttpContext().Connection.RemoteIpAddress;
+            if (ipAddress != null && IPAddress.IsLoopback(ipAddress))
+            {
+                return;
+            }
+
             var password = context.RequestHeaders.GetValue(HeaderNames.Authorization)
-                ?.Replace("Password ", string.Empty);
+               ?.Replace("Password ", string.Empty);
             if (string.IsNullOrWhiteSpace(password) || password != clientPassword.Password)
             {
 #if !DEBUG
@@ -51,7 +58,7 @@ namespace ServerWebApplication.Impl
                   context.CancellationToken, hostApplicationLifetime.ApplicationStopping);
             var cancellationToken = cancellationSource.Token;
 
-            await using SocketConnect target = new(connectionFactory, dnsParseService);
+            await using SocketConnect target = new(connectionFactory, dnsParseService, logger);
             await target.ConnectAsync(targetAddress, targetPort, cancellationToken);
             logger.LogInformation($"成功连接到：{targetAddress}:{targetPort}");
 
@@ -76,10 +83,13 @@ namespace ServerWebApplication.Impl
                     }
                     else if (item.Id == taskServer.Id)
                     {
-                        logger.LogError($"服务器主动断开:{targetAddress}:{targetPort}");
                         if (!cancellationToken.IsCancellationRequested)
                         {
-                            await Task.Delay(1500, cancellationToken);
+                            await responseStream.WriteAsync(new SendDataRequest
+                            {
+                                Data = ByteString.Empty
+                            });
+                            await Task.Delay(5000, cancellationToken);
                         }
 
                         break;
@@ -88,7 +98,7 @@ namespace ServerWebApplication.Impl
             }
             catch (Exception ex)
             {
-                logger.LogWarning(ex, "服务器出现错误:" + targetAddress + ":" + targetPort);
+                logger.LogError(ex, "服务器出现错误:" + targetAddress + ":" + targetPort);
             }
             finally
             {
