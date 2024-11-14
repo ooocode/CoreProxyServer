@@ -74,7 +74,7 @@ namespace ServerWebApplication.Impl
                 //单核CPU
                 var taskClient = HandlerClient(requestStream, target, cancellationToken);
                 var taskServer = HandlerServer(responseStream, target, cancellationToken);
-                await foreach (var item in Task.WhenEach(taskClient, taskServer).WithCancellation(cancellationToken))
+                await foreach (var item in Task.WhenEach(taskClient, taskServer))
                 {
                     if (item.Id == taskClient.Id)
                     {
@@ -107,7 +107,7 @@ namespace ServerWebApplication.Impl
             try
             {
                 CurrentTask1Count.Inc();
-                await foreach (var message in requestStream.ReadAllAsync(cancellationToken).WithCancellation(cancellationToken))
+                await foreach (var message in requestStream.ReadAllAsync(cancellationToken))
                 {
                     await target.PipeWriter.WriteAsync(message.Data.Memory, cancellationToken);
                     await target.PipeWriter.FlushAsync(cancellationToken);
@@ -132,7 +132,7 @@ namespace ServerWebApplication.Impl
                 CurrentTask2Count.Inc();
 
                 //从目标服务器读取数据，发送到客户端
-                await foreach (var memory in target.PipeReader.ReadAllAsync(cancellationToken).WithCancellation(cancellationToken))
+                await foreach (var memory in target.PipeReader.ReadAllAsync(cancellationToken))
                 {
                     //写入到数据通道
                     await responseStream.WriteAsync(new SendDataRequest
