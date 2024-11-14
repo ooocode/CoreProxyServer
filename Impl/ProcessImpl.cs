@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Connections;
 using Microsoft.Net.Http.Headers;
 using Prometheus;
 using ServerWebApplication.Common;
+using System.Collections.Concurrent;
 using System.Net;
 
 namespace ServerWebApplication.Impl
@@ -24,6 +25,8 @@ namespace ServerWebApplication.Impl
 
         public static Gauge CurrentTask2Count = Metrics
             .CreateGauge("grpc_stream_clients_task2", "GRPC双向流Task2连接数");
+
+        public static ConcurrentDictionary<string, string> OnlineClients = new ConcurrentDictionary<string, string>();
 
         private void CheckPassword(ServerCallContext context)
         {
@@ -57,6 +60,7 @@ namespace ServerWebApplication.Impl
                   context.CancellationToken, hostApplicationLifetime.ApplicationStopping);
             var cancellationToken = cancellationSource.Token;
 
+            logger.LogInformation($"开始连接：{targetAddress}:{targetPort}");
             await using SocketConnect target = new(connectionFactory, dnsParseService, logger);
             await target.ConnectAsync(targetAddress, targetPort, cancellationToken);
             logger.LogInformation($"成功连接到：{targetAddress}:{targetPort}");
@@ -69,6 +73,8 @@ namespace ServerWebApplication.Impl
 
             CurrentCount.Inc();
 
+            var clientId = context.GetHttpContext().Connection.Id;
+            OnlineClients.TryAdd(clientId, $"{targetAddress}:{targetPort}");
             try
             {
                 //单核CPU
@@ -76,24 +82,34 @@ namespace ServerWebApplication.Impl
                 var taskServer = HandlerServer(responseStream, target, cancellationToken);
                 await foreach (var item in Task.WhenEach(taskClient, taskServer))
                 {
+                    if (item.Exception != null)
+                    {
+                        logger.LogError(item.Exception, "【WhenEach-Item】" + targetAddress + ":" + targetPort);
+                    }
+
                     if (item.Id == taskClient.Id)
                     {
                         break;
                     }
                     else if (item.Id == taskServer.Id)
                     {
-                        await Task.Delay(2000, cancellationToken);
+                        await Task.Delay(500);
+                        if (!cancellationToken.IsCancellationRequested)
+                        {
+                            await Task.Delay(2000, cancellationToken);
+                        }
                         break;
                     }
                 }
             }
             catch (Exception ex)
             {
-                logger.LogError(ex, "服务器出现错误:" + targetAddress + ":" + targetPort);
+                logger.LogError(ex, "【WhenEach】" + targetAddress + ":" + targetPort);
             }
             finally
             {
                 CurrentCount.Dec();
+                OnlineClients.TryRemove(clientId, out var _);
             }
         }
 
