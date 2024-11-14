@@ -110,6 +110,7 @@ namespace ServerWebApplication.Impl
                 await foreach (var message in requestStream.ReadAllAsync(cancellationToken).WithCancellation(cancellationToken))
                 {
                     await target.PipeWriter.WriteAsync(message.Data.Memory, cancellationToken);
+                    await target.PipeWriter.FlushAsync(cancellationToken);
                 }
             }
             finally

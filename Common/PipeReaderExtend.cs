@@ -12,6 +12,7 @@ namespace ServerWebApplication.Common
             {
                 var result = await pipeReader.ReadAsync(cancellationToken).ConfigureAwait(false);
                 var buffer = result.Buffer;
+                var end = buffer.End;
                 if (buffer.IsEmpty)
                 {
                     break;
@@ -30,10 +31,10 @@ namespace ServerWebApplication.Common
                 }
                 finally
                 {
-                    pipeReader.AdvanceTo(buffer.End);
+                    pipeReader.AdvanceTo(end);
                 }
 
-                if (result.IsCompleted)
+                if (result.IsCompleted || result.IsCanceled)
                 {
                     break;
                 }
