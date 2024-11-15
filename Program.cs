@@ -88,33 +88,57 @@ namespace ServerWebApplication
 
             builder.Services.AddGrpc(c =>
             {
-                /*  var brICompressionProvider = new BrICompressionProvider();
-                 c.CompressionProviders.Add(brICompressionProvider);
-                 c.ResponseCompressionAlgorithm = brICompressionProvider.EncodingName;//"gzip";
-                 c.ResponseCompressionLevel = CompressionLevel.SmallestSize; //System.IO.Compression.CompressionLevel.SmallestSize;
-  */
-                //c.ResponseCompressionAlgorithm = "gzip";
-                //c.ResponseCompressionLevel = CompressionLevel.Optimal; //System.IO.Compression.CompressionLevel.SmallestSize;
+                c.ResponseCompressionAlgorithm = "gzip";
+                c.ResponseCompressionLevel = CompressionLevel.SmallestSize; //System.IO.Compression.CompressionLevel.SmallestSize;
+
                 c.MaxReceiveMessageSize = null;
                 c.EnableDetailedErrors = true;
             });
 
+            builder.Services.AddResponseCompression();
             app = builder.Build();
 
             app.Logger.LogInformation("客户端连接密码:" + clientPassword.Password);
 
+            app.UseResponseCompression();
             app.MapGrpcService<ChatImpl>();
             app.MapGrpcService<ProcessImpl>();
 
-            /*app.MapGet("/metrics", new RequestDelegate(async (httpContext) =>
-           {
-               using var memoryStream = new MemoryStream();
-               await Metrics.DefaultRegistry.CollectAndExportAsTextAsync(memoryStream, ExpositionFormat.PrometheusText, httpContext.RequestAborted);
-               var text = Encoding.UTF8.GetString(memoryStream.ToArray());
+            app.MapGet("/", new RequestDelegate(async (httpContext) =>
+            {
 
-               httpContext.Response.ContentType = "text/plain; charset=utf-8";
-               await httpContext.Response.WriteAsync(text);
-           }));*/
+                var text = """
+                <!DOCTYPE html>
+                <html lang="en">
+
+                <head>
+                    <meta charset="UTF-8">
+                    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                    <title>Microsoft</title>
+                </head>
+
+                <body>
+                    <div>
+                        <a href="https://www.microsoft.com/">Microsoft Home</a>
+                    </div>
+                </body>
+
+                </html>
+                """;
+
+                httpContext.Response.ContentType = "text/plain; charset=utf-8";
+                await httpContext.Response.WriteAsync(text.Trim());
+            }));
+
+            //app.MapGet("/metrics", new RequestDelegate(async (httpContext) =>
+            //{
+            //    using var memoryStream = new MemoryStream();
+            //    await Metrics.DefaultRegistry.CollectAndExportAsTextAsync(memoryStream, ExpositionFormat.PrometheusText, httpContext.RequestAborted);
+            //    var text = Encoding.UTF8.GetString(memoryStream.ToArray());
+
+            //    httpContext.Response.ContentType = "text/plain; charset=utf-8";
+            //    await httpContext.Response.WriteAsync(text);
+            //}));
             app.Run();
         }
 
