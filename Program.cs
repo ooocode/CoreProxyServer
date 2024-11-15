@@ -104,7 +104,7 @@ namespace ServerWebApplication
 
             app.MapGet("/", new RequestDelegate(async (httpContext) =>
             {
-                var text = """
+                var text = $"""
                 <!DOCTYPE html>
                 <html lang="en">
 
@@ -117,6 +117,7 @@ namespace ServerWebApplication
                 <body>
                     <div>
                         <a href="https://www.microsoft.com/">Microsoft Home</a>
+                        <p>{DateTimeOffset.UtcNow}</p>
                     </div>
                 </body>
 
