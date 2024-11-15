@@ -1,6 +1,7 @@
 ﻿using Google.Protobuf;
 using Microsoft.AspNetCore.Connections;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
+using Microsoft.Extensions.Options;
 using ServerWebApplication.Impl;
 using System.Diagnostics.CodeAnalysis;
 using System.IO.Compression;
@@ -67,6 +68,7 @@ namespace ServerWebApplication
 
             builder.WebHost.ConfigureKestrel(serverOptions =>
             {
+                serverOptions.AddServerHeader = false; // 禁用 Server 头
                 serverOptions.ConfigureEndpointDefaults(c =>
                 {
                     c.Protocols = HttpProtocols.Http2;
@@ -104,22 +106,31 @@ namespace ServerWebApplication
 
             app.MapGet("/", new RequestDelegate(async (httpContext) =>
             {
-                var text = $"""
+                var text = """
                 <!DOCTYPE html>
-                <html lang="en">
-
+                <html>
                 <head>
-                    <meta charset="UTF-8">
-                    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                    <title>Microsoft</title>
+                <title>Welcome to nginx!</title>
+                <style>
+                html { color-scheme: light dark; }
+                body { width: 35em; margin: 0 auto;
+                font-family: Tahoma, Verdana, Arial, sans-serif; }
+                </style>
                 </head>
-
                 <body>
-                    <div>
-                        <a href="https://www.microsoft.com/">Microsoft Home</a>
-                        <p>{DateTimeOffset.UtcNow}</p>
-                    </div>
+                <h1>Welcome to nginx!</h1>
+                <p>If you see this page, the nginx web server is successfully installed and
+                working. Further configuration is required.</p>
+
+                <p>For online documentation and support please refer to
+                <a href="http://nginx.org/">nginx.org</a>.<br/>
+                Commercial support is available at
+                <a href="http://nginx.com/">nginx.com</a>.</p>
+
+                <p><em>Thank you for using nginx.</em></p>
                 </body>
+                </html>
+                
 
                 </html>
                 """;
