@@ -26,6 +26,7 @@
 
 	<ItemGroup>
 		<PackageReference Include="Grpc.AspNetCore" Version="2.66.0" />
+		<PackageReference Include="Grpc.AspNetCore.Web" Version="2.66.0" />
 		<PackageReference Include="Microsoft.Extensions.Hosting" Version="9.0.0" />
 		<PackageReference Include="Microsoft.Extensions.Hosting.Systemd" Version="9.0.0" />
 		<PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="9.0.0" />
