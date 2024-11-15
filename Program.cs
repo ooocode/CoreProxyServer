@@ -71,7 +71,7 @@ namespace ServerWebApplication
                 serverOptions.AddServerHeader = false; // 禁用 Server 头
                 serverOptions.ConfigureEndpointDefaults(c =>
                 {
-                    c.Protocols = HttpProtocols.Http2;
+                    c.Protocols = HttpProtocols.Http1AndHttp2;
                 });
                 serverOptions.ConfigureHttpsDefaults(c =>
                 {
