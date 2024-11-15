@@ -1,7 +1,6 @@
 ﻿using Google.Protobuf;
 using Microsoft.AspNetCore.Connections;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
-using Microsoft.Extensions.Options;
 using ServerWebApplication.Impl;
 using System.Diagnostics.CodeAnalysis;
 using System.IO.Compression;
@@ -71,7 +70,7 @@ namespace ServerWebApplication
                 serverOptions.AddServerHeader = false; // 禁用 Server 头
                 serverOptions.ConfigureEndpointDefaults(c =>
                 {
-                    c.Protocols = HttpProtocols.Http1AndHttp2;
+                    c.Protocols = HttpProtocols.Http2;
                 });
                 serverOptions.ConfigureHttpsDefaults(c =>
                 {
@@ -101,10 +100,7 @@ namespace ServerWebApplication
             app = builder.Build();
             app.Logger.LogInformation("客户端连接密码:" + clientPassword.Password);
 
-
-
             app.UseGrpcWeb();
-
             app.MapGrpcService<ProcessImpl>().EnableGrpcWeb();
             //app.MapGrpcService<ProcessImpl>();
             //app.MapGrpcService<ChatImpl>();
