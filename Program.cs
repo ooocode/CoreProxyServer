@@ -89,22 +89,16 @@ namespace ServerWebApplication
 
             builder.Services.AddGrpc(c =>
             {
-                c.ResponseCompressionAlgorithm = "gzip";
-                c.ResponseCompressionLevel = CompressionLevel.SmallestSize; //System.IO.Compression.CompressionLevel.SmallestSize;
+                //c.ResponseCompressionAlgorithm = "gzip";
+                //c.ResponseCompressionLevel = CompressionLevel.SmallestSize; //System.IO.Compression.CompressionLevel.SmallestSize;
 
                 c.MaxReceiveMessageSize = null;
                 c.EnableDetailedErrors = true;
             });
 
-            builder.Services.AddResponseCompression(c =>
-            {
-                c.EnableForHttps = true;
-            });
             app = builder.Build();
-
             app.Logger.LogInformation("客户端连接密码:" + clientPassword.Password);
 
-            app.UseResponseCompression();
             app.MapGrpcService<ChatImpl>();
             app.MapGrpcService<ProcessImpl>();
 
