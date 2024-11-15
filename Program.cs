@@ -8,6 +8,7 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
+using System.Text;
 
 namespace ServerWebApplication
 {
@@ -95,7 +96,10 @@ namespace ServerWebApplication
                 c.EnableDetailedErrors = true;
             });
 
-            builder.Services.AddResponseCompression();
+            builder.Services.AddResponseCompression(c =>
+            {
+                c.EnableForHttps = true;
+            });
             app = builder.Build();
 
             app.Logger.LogInformation("客户端连接密码:" + clientPassword.Password);
@@ -106,7 +110,6 @@ namespace ServerWebApplication
 
             app.MapGet("/", new RequestDelegate(async (httpContext) =>
             {
-
                 var text = """
                 <!DOCTYPE html>
                 <html lang="en">
@@ -126,8 +129,8 @@ namespace ServerWebApplication
                 </html>
                 """;
 
-                httpContext.Response.ContentType = "text/plain; charset=utf-8";
-                await httpContext.Response.WriteAsync(text.Trim());
+                httpContext.Response.ContentType = "text/html; charset=utf-8";
+                await httpContext.Response.WriteAsync(text.Trim(), Encoding.UTF8);
             }));
 
             //app.MapGet("/metrics", new RequestDelegate(async (httpContext) =>
