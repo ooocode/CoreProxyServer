@@ -15,18 +15,14 @@
 		<PublishAot>true</PublishAot>
 	</PropertyGroup>
 
-	<PropertyGroup>
-		<EnablePreviewFeatures>True</EnablePreviewFeatures>
-	</PropertyGroup>
-
 	<ItemGroup>
 		<None Remove="proto\TextFile.proto" />
 		<None Remove="proto\chat.proto" />
 	</ItemGroup>
 
 	<ItemGroup>
-		<PackageReference Include="Grpc.AspNetCore" Version="2.66.0" />
-		<PackageReference Include="Grpc.AspNetCore.Web" Version="2.66.0" />
+		<PackageReference Include="Grpc.AspNetCore" Version="2.67.0-pre1" />
+		<PackageReference Include="Grpc.AspNetCore.Web" Version="2.67.0-pre1" />
 		<PackageReference Include="Microsoft.Extensions.Hosting" Version="9.0.0" />
 		<PackageReference Include="Microsoft.Extensions.Hosting.Systemd" Version="9.0.0" />
 		<PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="9.0.0" />

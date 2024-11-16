@@ -6,7 +6,6 @@ using Microsoft.AspNetCore.Connections;
 using Microsoft.Net.Http.Headers;
 using Prometheus;
 using ServerWebApplication.Common;
-using System.Collections.Concurrent;
 using System.Net;
 
 namespace ServerWebApplication.Impl
@@ -26,8 +25,6 @@ namespace ServerWebApplication.Impl
         public static Gauge CurrentTask2Count = Metrics
             .CreateGauge("grpc_stream_clients_task2", "GRPC双向流Task2连接数");
 
-        public static ConcurrentDictionary<string, string> OnlineClients = new ConcurrentDictionary<string, string>();
-
         private void CheckPassword(ServerCallContext context)
         {
             var ipAddress = context.GetHttpContext().Connection.RemoteIpAddress;
@@ -40,9 +37,7 @@ namespace ServerWebApplication.Impl
                ?.Replace("Password ", string.Empty);
             if (string.IsNullOrWhiteSpace(password) || password != clientPassword.Password)
             {
-#if !DEBUG
                 throw new RpcException(new Status(StatusCode.Unauthenticated, string.Empty));
-#endif
             }
         }
 
@@ -73,8 +68,6 @@ namespace ServerWebApplication.Impl
 
             CurrentCount.Inc();
 
-            var clientId = context.GetHttpContext().Connection.Id;
-            OnlineClients.TryAdd(clientId, $"{targetAddress}:{targetPort}");
             try
             {
                 //单核CPU
@@ -93,7 +86,7 @@ namespace ServerWebApplication.Impl
                     }
                     else if (item.Id == taskServer.Id)
                     {
-                        await Task.Delay(500);
+                        await Task.Delay(500, CancellationToken.None);
                         if (!cancellationToken.IsCancellationRequested)
                         {
                             await Task.Delay(2000, cancellationToken);
@@ -109,7 +102,6 @@ namespace ServerWebApplication.Impl
             finally
             {
                 CurrentCount.Dec();
-                OnlineClients.TryRemove(clientId, out var _);
             }
         }
 
