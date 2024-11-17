@@ -56,6 +56,7 @@ namespace ServerWebApplication
             builder.Services.AddSingleton(typeof(IConnectionFactory), factoryType);
 
             builder.Services.AddSingleton(clientPassword);
+            builder.Services.AddSingleton<DnsParseService>();
 
             builder.Services.AddGrpc(c =>
             {

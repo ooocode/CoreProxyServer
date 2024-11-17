@@ -6,7 +6,8 @@ using System.Net.Sockets;
 
 namespace ServerWebApplication.Common
 {
-    public class SocketConnect(IConnectionFactory connectionFactory, ILogger logger) : IAsyncDisposable
+    public class SocketConnect(IConnectionFactory connectionFactory, ILogger logger,
+        DnsParseService dnsParseService) : IAsyncDisposable
     {
         private ConnectionContext? connectionContext = null;
 
@@ -17,16 +18,12 @@ namespace ServerWebApplication.Common
         {
             try
             {
-                System.Net.EndPoint? endpoint = null;
-                if (IPAddress.TryParse(host, out var iPAddress))
+                if (!IPAddress.TryParse(host, out var iPAddress))
                 {
-                    endpoint = new IPEndPoint(iPAddress, port);
-                }
-                else
-                {
-                    endpoint = new DnsEndPoint(host, port);
+                    iPAddress = await dnsParseService.GetIpAsync(host, port, cancellationToken);
                 }
 
+                var endpoint = new IPEndPoint(iPAddress, port);
                 connectionContext = await connectionFactory.ConnectAsync(endpoint, cancellationToken);
             }
             catch (Exception ex) when (ex is SocketException || ex is OperationCanceledException)
