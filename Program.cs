@@ -50,7 +50,6 @@ namespace ServerWebApplication
 
             builder.WebHost.UseKestrelHttpsConfiguration();
 
-            builder.Services.AddSingleton<DnsParseService>();
             const string typeName = "Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets.SocketConnectionFactory";
             var factoryType = typeof(Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets.SocketTransportOptions).Assembly.GetType(typeName);
             ArgumentNullException.ThrowIfNull(factoryType, nameof(factoryType));
