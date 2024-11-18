@@ -70,9 +70,7 @@ namespace ServerWebApplication
             app = builder.Build();
             app.Logger.LogInformation("客户端连接密码:" + clientPassword.Password);
 
-            app.UseGrpcWeb();
-            app.MapGrpcService<ProcessImpl>().EnableGrpcWeb();
-            //app.MapGrpcService<ProcessImpl>();
+            app.MapGrpcService<ProcessImpl>();
             //app.MapGrpcService<ChatImpl>();
 
             app.MapGet("/", new RequestDelegate(async (httpContext) =>
