@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Connections;
 using Microsoft.Net.Http.Headers;
 using Prometheus;
 using ServerWebApplication.Common;
+using ServerWebApplication.Common.DnsHelper;
 using System.Net;
 
 namespace ServerWebApplication.Impl
@@ -55,10 +56,10 @@ namespace ServerWebApplication.Impl
                   context.CancellationToken, hostApplicationLifetime.ApplicationStopping);
             var cancellationToken = cancellationSource.Token;
 
-            logger.LogInformation($"开始连接：{targetAddress}:{targetPort}");
+            Logs.StartConnect(logger, targetAddress, targetPort);
             await using SocketConnect target = new(connectionFactory, logger, dnsParseService);
             await target.ConnectAsync(targetAddress, targetPort, cancellationToken);
-            logger.LogInformation($"成功连接到：{targetAddress}:{targetPort}");
+            Logs.SuccessConnect(logger, targetAddress, targetPort);
 
             //返回成功
             await responseStream.WriteAsync(new SendDataRequest

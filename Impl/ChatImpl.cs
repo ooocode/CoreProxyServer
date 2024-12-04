@@ -6,16 +6,10 @@ using System.Threading.Channels;
 
 namespace ServerWebApplication.Impl
 {
-    public class ChatImpl : ChatGrpc.ChatGrpcBase
+    public class ChatImpl(ILogger<ChatImpl> logger) : ChatGrpc.ChatGrpcBase
     {
-        private readonly ILogger<ChatImpl> logger;
-
-        public ChatImpl(ILogger<ChatImpl> logger)
-        {
-            this.logger = logger;
-        }
-
-        private static ConcurrentDictionary<string, Channel<ExchangeMessagesResponse>> ResponseClients = new();
+        private readonly ILogger<ChatImpl> logger = logger;
+        private static readonly ConcurrentDictionary<string, Channel<ExchangeMessagesResponse>> ResponseClients = new();
 
 
         public override async Task ExchangeMessages(IAsyncStreamReader<ExchangeMessagesRequest> requestStream,

@@ -1,5 +1,6 @@
 ﻿using Grpc.Core;
 using Microsoft.AspNetCore.Connections;
+using ServerWebApplication.Common.DnsHelper;
 using System.IO.Pipelines;
 using System.Net;
 using System.Net.Sockets;

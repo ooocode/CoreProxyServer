@@ -1,17 +1,20 @@
 using Grpc.Net.Compression;
 using System.IO.Compression;
 
-public class BrICompressionProvider : ICompressionProvider
+namespace ServerWebApplication.Common
 {
-    public string EncodingName => "br";
-
-    public Stream CreateCompressionStream(Stream stream, CompressionLevel? compressionLevel)
+    public class BrICompressionProvider : ICompressionProvider
     {
-        return new BrotliStream(stream, compressionLevel ?? CompressionLevel.Optimal);
-    }
+        public string EncodingName => "br";
 
-    public Stream CreateDecompressionStream(Stream stream)
-    {
-        return new BrotliStream(stream, CompressionMode.Decompress);
+        public Stream CreateCompressionStream(Stream stream, CompressionLevel? compressionLevel)
+        {
+            return new BrotliStream(stream, compressionLevel ?? CompressionLevel.Optimal);
+        }
+
+        public Stream CreateDecompressionStream(Stream stream)
+        {
+            return new BrotliStream(stream, CompressionMode.Decompress);
+        }
     }
 }

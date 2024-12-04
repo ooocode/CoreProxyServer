@@ -1,6 +1,8 @@
 ﻿using Microsoft.AspNetCore.Connections;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
+using ServerWebApplication.Common.DnsHelper;
 using ServerWebApplication.Impl;
+using ServerWebApplication.Workers;
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -135,7 +137,7 @@ namespace ServerWebApplication
                 }
             }
 
-            Main(args.ToArray());
+            Main([.. args]);
         }
 
         [UnmanagedCallersOnly(EntryPoint = "ServiceStop", CallConvs = [typeof(CallConvCdecl)])]
@@ -171,10 +173,9 @@ namespace ServerWebApplication
 
         private static CertificatePassword GetCertificatePassword(X509Certificate2 certificate2)
         {
-            using var sha256 = SHA256.Create();
             var cerBytes = certificate2.GetRawCertData().Reverse().ToArray();
-            var bytes = sha256.ComputeHash(cerBytes);
-            var result = BitConverter.ToString(bytes).Replace("-", "");
+            var bytes = SHA256.HashData(cerBytes);
+            var result = Convert.ToHexString(bytes);
 
             string fileName = Path.Combine(AppContext.BaseDirectory, "client-password.txt");
             File.WriteAllText(fileName, result);

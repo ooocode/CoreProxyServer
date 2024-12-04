@@ -3,14 +3,9 @@ using System.Security.Cryptography.X509Certificates;
 
 namespace ServerWebApplication.Common
 {
-    public class RsaService
+    public class RsaService(X509Certificate2 certificate2)
     {
-        private readonly X509Certificate2 certificate2;
-
-        public RsaService(X509Certificate2 certificate2)
-        {
-            this.certificate2 = certificate2;
-        }
+        private readonly X509Certificate2 certificate2 = certificate2;
 
         public byte[] Encrypt(byte[] bytes)
         {
