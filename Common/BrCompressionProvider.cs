@@ -15,7 +15,7 @@ namespace ServerWebApplication.Common
 
         public Stream CreateDecompressionStream(Stream stream)
         {
-            return new BrotliStream(stream, CompressionMode.Decompress);
+            return new BrotliStream(stream, CompressionMode.Decompress, true);
         }
     }
 }
