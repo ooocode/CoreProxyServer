@@ -128,6 +128,9 @@ namespace ServerWebApplication.Impl
             }
         }
 
+        private static readonly bool EnableSlowMode = true;
+
+
         private static async Task HandlerServer(IServerStreamWriter<SendDataRequest> responseStream,
             SocketConnect target, CancellationToken cancellationToken)
         {
@@ -140,14 +143,31 @@ namespace ServerWebApplication.Impl
             {
                 CurrentTask2Count.Inc();
 
-                //从目标服务器读取数据，发送到客户端
-                await foreach (var memory in target.PipeReader.ReadAllAsync(cancellationToken))
+                if (EnableSlowMode)
                 {
-                    //写入到数据通道
-                    await responseStream.WriteAsync(new SendDataRequest
+                    //慢速模式
+                    //从目标服务器读取数据，发送到客户端
+                    await foreach (var memory in DotNext.IO.Pipelines.PipeExtensions.ReadAllAsync(target.PipeReader, cancellationToken))
                     {
-                        Data = UnsafeByteOperations.UnsafeWrap(memory)
-                    }, cancellationToken);
+                        //写入到数据通道
+                        await responseStream.WriteAsync(new SendDataRequest
+                        {
+                            Data = UnsafeByteOperations.UnsafeWrap(memory)
+                        }, cancellationToken);
+                    }
+                }
+                else
+                {
+                    //快速模式
+                    //从目标服务器读取数据，发送到客户端
+                    await foreach (var memory in PipeReaderExtend.ReadAllAsync(target.PipeReader, cancellationToken))
+                    {
+                        //写入到数据通道
+                        await responseStream.WriteAsync(new SendDataRequest
+                        {
+                            Data = UnsafeByteOperations.UnsafeWrap(memory)
+                        }, cancellationToken);
+                    }
                 }
             }
             finally
