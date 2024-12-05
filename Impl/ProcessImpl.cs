@@ -36,7 +36,7 @@ namespace ServerWebApplication.Impl
 
             var password = context.RequestHeaders.GetValue(HeaderNames.Authorization)
                ?.Replace("Password ", string.Empty);
-            if (string.IsNullOrWhiteSpace(password) || password != clientPassword.Password)
+            if (string.IsNullOrWhiteSpace(password) || !string.Equals(password, clientPassword.Password, StringComparison.Ordinal))
             {
                 throw new RpcException(new Status(StatusCode.Unauthenticated, string.Empty));
             }
@@ -50,7 +50,12 @@ namespace ServerWebApplication.Impl
 
             var targetAddress = context.RequestHeaders.GetValue("TargetAddress");
             ArgumentException.ThrowIfNullOrWhiteSpace(targetAddress, nameof(targetAddress));
-            var targetPort = int.Parse(context.RequestHeaders.GetValue("TargetPort")!);
+            var targetPortStr = context.RequestHeaders.GetValue("TargetPort");
+            ArgumentException.ThrowIfNullOrWhiteSpace(targetPortStr, nameof(targetPortStr));
+            if (!int.TryParse(targetPortStr, out var targetPort))
+            {
+                throw new InvalidDataException($"TargetPort={targetPortStr} Invalid");
+            }
 
             using var cancellationSource = CancellationTokenSource.CreateLinkedTokenSource(
                   context.CancellationToken, hostApplicationLifetime.ApplicationStopping);
