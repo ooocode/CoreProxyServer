@@ -11,16 +11,14 @@ namespace ServerWebApplication.Common
         {
             using var publicKey = certificate2.GetRSAPublicKey();
             ArgumentNullException.ThrowIfNull(publicKey, nameof(publicKey));
-            var encryData = publicKey.Encrypt(bytes, RSAEncryptionPadding.Pkcs1);
-            return encryData;
+            return publicKey.Encrypt(bytes, RSAEncryptionPadding.Pkcs1);
         }
 
         public byte[] Decrypt(byte[] bytes)
         {
             using var privateKey = certificate2.GetRSAPrivateKey();
             ArgumentNullException.ThrowIfNull(privateKey, nameof(privateKey));
-            var deBytes = privateKey.Decrypt(bytes, RSAEncryptionPadding.Pkcs1);
-            return deBytes;
+            return privateKey.Decrypt(bytes, RSAEncryptionPadding.Pkcs1);
         }
     }
 }

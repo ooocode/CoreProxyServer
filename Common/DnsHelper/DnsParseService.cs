@@ -4,7 +4,7 @@ namespace ServerWebApplication.Common.DnsHelper
 {
     public class DnsParseService
     {
-        public async Task<IPAddress> GetIpAsync(string hostName, int port, CancellationToken cancellationToken = default)
+        public async Task<IPAddress> GetIpAsync(string hostName, int _, CancellationToken cancellationToken = default)
         {
             var ipAddresses = await Dns.GetHostAddressesAsync(hostName, cancellationToken);
             var iPAddress = ipAddresses.FirstOrDefault(x => x.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork);

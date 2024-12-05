@@ -12,9 +12,12 @@ using System.Text;
 
 namespace ServerWebApplication
 {
-    public class Program
+    public static partial class Program
     {
         private static WebApplication? app = null;
+
+        [LoggerMessage(Level = LogLevel.Information, Message = "客户端连接密码: {password}")]
+        private static partial void LogPassword(ILogger logger, string password);
 
         [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "此调用在运行时安全")]
         [UnconditionalSuppressMessage("Trimming", "IL2072", Justification = "此调用在运行时安全")]
@@ -40,14 +43,8 @@ namespace ServerWebApplication
             builder.WebHost.ConfigureKestrel(serverOptions =>
             {
                 serverOptions.AddServerHeader = false; // 禁用 Server 头
-                serverOptions.ConfigureEndpointDefaults(c =>
-                {
-                    c.Protocols = HttpProtocols.Http2;
-                });
-                serverOptions.ConfigureHttpsDefaults(c =>
-                {
-                    c.ServerCertificate = certificate2;
-                });
+                serverOptions.ConfigureEndpointDefaults(c => c.Protocols = HttpProtocols.Http2);
+                serverOptions.ConfigureHttpsDefaults(c => c.ServerCertificate = certificate2);
             });
 
             builder.WebHost.UseKestrelHttpsConfiguration();
@@ -70,14 +67,13 @@ namespace ServerWebApplication
             });
 
             app = builder.Build();
-            app.Logger.LogInformation("客户端连接密码:" + clientPassword.Password);
+            LogPassword(app.Logger, clientPassword.Password);
 
             app.MapGrpcService<ProcessImpl>();
-            //app.MapGrpcService<ChatImpl>();
 
             app.MapGet("/", new RequestDelegate(async (httpContext) =>
             {
-                var text = """
+                const string text = """
                 <!DOCTYPE html>
                 <html>
                 <head>
@@ -101,9 +97,6 @@ namespace ServerWebApplication
                 <p><em>Thank you for using nginx.</em></p>
                 </body>
                 </html>
-                
-
-                </html>
                 """;
 
                 httpContext.Response.ContentType = "text/html; charset=utf-8";
@@ -121,7 +114,6 @@ namespace ServerWebApplication
             //}));
             app.Run();
         }
-
 
         [UnmanagedCallersOnly(EntryPoint = "ServiceMain", CallConvs = [typeof(CallConvCdecl)])]
 
@@ -149,10 +141,10 @@ namespace ServerWebApplication
         private static X509Certificate2 GetCertificate()
         {
             string fileName = Path.Combine(AppContext.BaseDirectory, "certificate.pfx");
-            string password = "apz8fwga";
+            const string password = "apz8fwga";
             if (File.Exists(fileName))
             {
-                var certificate = new X509Certificate2(fileName, password);
+                var certificate = X509CertificateLoader.LoadPkcs12FromFile(fileName, password);
                 return certificate;
             }
 
@@ -164,7 +156,7 @@ namespace ServerWebApplication
                 var cert = req.CreateSelfSigned(DateTimeOffset.Now.AddDays(-1), DateTimeOffset.Now.AddYears(5));
 
                 var rawBytes = cert.Export(X509ContentType.Pfx, password);
-                var certificate = new X509Certificate2(rawBytes, password, X509KeyStorageFlags.PersistKeySet | X509KeyStorageFlags.Exportable);
+                var certificate = X509CertificateLoader.LoadPkcs12(rawBytes, password, X509KeyStorageFlags.PersistKeySet | X509KeyStorageFlags.Exportable);
 
                 File.WriteAllBytes(fileName, rawBytes);
                 return certificate;

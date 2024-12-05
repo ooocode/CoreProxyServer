@@ -17,13 +17,13 @@ namespace ServerWebApplication.Impl
         IHostApplicationLifetime hostApplicationLifetime,
         DnsParseService dnsParseService) : ProcessGrpc.ProcessGrpcBase
     {
-        public static Gauge CurrentCount = Metrics
+        public static readonly Gauge CurrentCount = Metrics
             .CreateGauge("grpc_stream_clients", "GRPC双向流连接数");
 
-        public static Gauge CurrentTask1Count = Metrics
+        public static readonly Gauge CurrentTask1Count = Metrics
             .CreateGauge("grpc_stream_clients_task1", "GRPC双向流Task1连接数");
 
-        public static Gauge CurrentTask2Count = Metrics
+        public static readonly Gauge CurrentTask2Count = Metrics
             .CreateGauge("grpc_stream_clients_task2", "GRPC双向流Task2连接数");
 
         private void CheckPassword(ServerCallContext context)
@@ -78,7 +78,10 @@ namespace ServerWebApplication.Impl
                 {
                     if (item.Exception != null)
                     {
-                        logger.LogError(item.Exception, "【WhenEach-Item】" + targetAddress + ":" + targetPort);
+                        foreach (var error in item.Exception.InnerExceptions)
+                        {
+                            Logs.RunException(logger, targetAddress, targetPort, error.Message, error.StackTrace);
+                        }
                     }
 
                     if (item.Id == taskClient.Id)
@@ -98,7 +101,7 @@ namespace ServerWebApplication.Impl
             }
             catch (Exception ex)
             {
-                logger.LogError(ex, "【WhenEach】" + targetAddress + ":" + targetPort);
+                Logs.RunException(logger, targetAddress, targetPort, ex.Message, ex.StackTrace);
             }
             finally
             {
