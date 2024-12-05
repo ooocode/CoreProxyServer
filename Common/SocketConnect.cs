@@ -7,13 +7,16 @@ using System.Net.Sockets;
 
 namespace ServerWebApplication.Common
 {
-    public class SocketConnect(IConnectionFactory connectionFactory, ILogger logger,
+    public partial class SocketConnect(IConnectionFactory connectionFactory, ILogger logger,
         DnsParseService dnsParseService) : IAsyncDisposable
     {
         private ConnectionContext? connectionContext = null;
 
         public PipeReader? PipeReader => connectionContext?.Transport.Input;
         public PipeWriter? PipeWriter => connectionContext?.Transport.Output;
+
+        [LoggerMessage(Level = LogLevel.Error, Message = "连接失败：{host}:{port} {errorMessage}")]
+        private static partial void LogConnectFail(ILogger logger, string host, int port, string errorMessage);
 
         public async Task ConnectAsync(string host, int port, CancellationToken cancellationToken)
         {
@@ -29,9 +32,8 @@ namespace ServerWebApplication.Common
             }
             catch (Exception ex) when (ex is SocketException || ex is OperationCanceledException)
             {
-                var err = $"连接失败：{host}:{port} {ex.Message}";
-                logger.LogError(err);
-                throw new RpcException(new Status(StatusCode.Cancelled, err));
+                LogConnectFail(logger, host, port, ex.Message);
+                throw new RpcException(new Status(StatusCode.Cancelled, ex.Message));
             }
         }
 
@@ -44,6 +46,8 @@ namespace ServerWebApplication.Common
 
                 await connectionContext.DisposeAsync();
             }
+
+            GC.SuppressFinalize(this);
         }
     }
 }
