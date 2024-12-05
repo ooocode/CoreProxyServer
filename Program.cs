@@ -1,9 +1,11 @@
 ﻿using Microsoft.AspNetCore.Connections;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
+using ServerWebApplication.Common;
 using ServerWebApplication.Common.DnsHelper;
 using ServerWebApplication.Impl;
 using ServerWebApplication.Workers;
 using System.Diagnostics.CodeAnalysis;
+using System.IO.Compression;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
@@ -59,11 +61,9 @@ namespace ServerWebApplication
 
             builder.Services.AddGrpc(c =>
             {
-                //c.ResponseCompressionAlgorithm = "gzip";
-                //c.ResponseCompressionLevel = CompressionLevel.SmallestSize; //System.IO.Compression.CompressionLevel.SmallestSize;
-
-                c.MaxReceiveMessageSize = null;
-                c.EnableDetailedErrors = true;
+                c.CompressionProviders.Add(new BrCompressionProvider());
+                c.ResponseCompressionAlgorithm = BrCompressionProvider.EncodingNameConst;
+                c.ResponseCompressionLevel = CompressionLevel.Optimal;
             });
 
             app = builder.Build();

@@ -3,13 +3,14 @@ using System.IO.Compression;
 
 namespace ServerWebApplication.Common
 {
-    public class BrICompressionProvider : ICompressionProvider
+    public class BrCompressionProvider : ICompressionProvider
     {
-        public string EncodingName => "br";
+        public const string EncodingNameConst = "br";
+        public string EncodingName => EncodingNameConst;
 
         public Stream CreateCompressionStream(Stream stream, CompressionLevel? compressionLevel)
         {
-            return new BrotliStream(stream, compressionLevel ?? CompressionLevel.Optimal);
+            return new BrotliStream(stream, compressionLevel ?? CompressionLevel.Optimal, true);
         }
 
         public Stream CreateDecompressionStream(Stream stream)
