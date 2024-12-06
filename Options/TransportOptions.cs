@@ -5,6 +5,6 @@
         /// <summary>
         /// 每次最大4096个字节传输
         /// </summary>
-        public bool UseMax4096Bytes { get; set; } = true;
+        public bool UseMax4096Bytes { get; set; }
     }
 }
