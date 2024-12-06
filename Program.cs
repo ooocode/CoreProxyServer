@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Server.Kestrel.Core;
 using ServerWebApplication.Common;
 using ServerWebApplication.Common.DnsHelper;
 using ServerWebApplication.Impl;
+using ServerWebApplication.Options;
 using ServerWebApplication.Workers;
 using System.Diagnostics.CodeAnalysis;
 using System.IO.Compression;
@@ -56,6 +57,7 @@ namespace ServerWebApplication
             ArgumentNullException.ThrowIfNull(factoryType, nameof(factoryType));
             builder.Services.AddSingleton(typeof(IConnectionFactory), factoryType);
 
+            builder.Services.Configure<TransportOptions>(builder.Configuration.GetSection(nameof(TransportOptions)));
             builder.Services.AddSingleton(clientPassword);
             builder.Services.AddSingleton<DnsParseService>();
 

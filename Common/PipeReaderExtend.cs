@@ -6,7 +6,7 @@ namespace ServerWebApplication.Common
 {
     public static class PipeReaderExtend
     {
-        public static async IAsyncEnumerable<ReadOnlyMemory<byte>> ReadAllAsync(this PipeReader pipeReader, [EnumeratorCancellation] CancellationToken cancellationToken)
+        public static async IAsyncEnumerable<ReadOnlyMemory<byte>> ReadAllAsync(PipeReader pipeReader, [EnumeratorCancellation] CancellationToken cancellationToken)
         {
             while (!cancellationToken.IsCancellationRequested)
             {

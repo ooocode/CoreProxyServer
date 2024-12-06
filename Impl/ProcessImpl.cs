@@ -3,10 +3,12 @@ using Google.Protobuf.WellKnownTypes;
 using Grpc.Core;
 using Hello;
 using Microsoft.AspNetCore.Connections;
+using Microsoft.Extensions.Options;
 using Microsoft.Net.Http.Headers;
 using Prometheus;
 using ServerWebApplication.Common;
 using ServerWebApplication.Common.DnsHelper;
+using ServerWebApplication.Options;
 using System.Net;
 
 namespace ServerWebApplication.Impl
@@ -15,8 +17,11 @@ namespace ServerWebApplication.Impl
         IConnectionFactory connectionFactory,
         CertificatePassword clientPassword,
         IHostApplicationLifetime hostApplicationLifetime,
-        DnsParseService dnsParseService) : ProcessGrpc.ProcessGrpcBase
+        DnsParseService dnsParseService,
+        IOptions<TransportOptions> transportOptions) : ProcessGrpc.ProcessGrpcBase
     {
+        private readonly TransportOptions transportOptionsValue = transportOptions.Value;
+
         public static readonly Gauge CurrentCount = Metrics
             .CreateGauge("grpc_stream_clients", "GRPC双向流连接数");
 
@@ -136,10 +141,7 @@ namespace ServerWebApplication.Impl
             }
         }
 
-        private static readonly bool EnableSlowMode = true;
-
-
-        private static async Task HandlerServer(IServerStreamWriter<SendDataRequest> responseStream,
+        private async Task HandlerServer(IServerStreamWriter<SendDataRequest> responseStream,
             SocketConnect target, CancellationToken cancellationToken)
         {
             if (target.PipeReader == null)
@@ -151,9 +153,9 @@ namespace ServerWebApplication.Impl
             {
                 CurrentTask2Count.Inc();
 
-                if (EnableSlowMode)
+                if (transportOptionsValue.UseMax4096Bytes)
                 {
-                    //慢速模式
+                    //慢速模式 每次最多4096个字节
                     //从目标服务器读取数据，发送到客户端
                     await foreach (var memory in DotNext.IO.Pipelines.PipeExtensions.ReadAllAsync(target.PipeReader, cancellationToken))
                     {

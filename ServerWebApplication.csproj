@@ -21,7 +21,7 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<PackageReference Include="DotNext.IO" Version="5.14.0" />
+		<PackageReference Include="DotNext.IO" Version="5.16.0" />
 		<PackageReference Include="Grpc.AspNetCore" Version="2.67.0" />
 		<PackageReference Include="Microsoft.Extensions.Hosting" Version="9.0.0" />
 		<PackageReference Include="Microsoft.Extensions.Hosting.Systemd" Version="9.0.0" />
