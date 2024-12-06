@@ -48,8 +48,6 @@ namespace ServerWebApplication
                 serverOptions.AddServerHeader = false; // 禁用 Server 头
                 serverOptions.ConfigureEndpointDefaults(c => c.Protocols = HttpProtocols.Http2);
                 serverOptions.ConfigureHttpsDefaults(c => c.ServerCertificate = certificate2);
-
-                serverOptions.Limits.Http2.MaxStreamsPerConnection = 5;
             });
 
             builder.WebHost.UseKestrelHttpsConfiguration();
