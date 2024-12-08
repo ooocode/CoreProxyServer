@@ -2,9 +2,9 @@
 using Hello;
 using System.Security.Cryptography;
 
-namespace ServerWebApplication.Common
+namespace ServerWebApplication.Services
 {
-    public static class MakeSendDataRequest
+    public class Aes256GcmEncryptService : IEncryptService
     {
         /// <summary>
         /// AES256-GCM 加密
@@ -12,7 +12,7 @@ namespace ServerWebApplication.Common
         /// <param name="password"></param>
         /// <param name="plaintext"></param>
         /// <returns></returns>
-        public static SendDataRequest Encrypt(string password, ReadOnlyMemory<byte> plaintext)
+        public SendDataRequest Encrypt(string password, ReadOnlyMemory<byte> plaintext)
         {
             ReadOnlyMemory<byte> key = Convert.FromBase64String(password);
 
@@ -41,7 +41,7 @@ namespace ServerWebApplication.Common
         /// <param name="password"></param>
         /// <param name="sendDataRequest"></param>
         /// <returns></returns>
-        public static byte[] Decrypt(string password, SendDataRequest sendDataRequest)
+        public ReadOnlyMemory<byte> Decrypt(string password, SendDataRequest sendDataRequest)
         {
             ReadOnlyMemory<byte> key = Convert.FromBase64String(password);
             // 创建一个 AesGcm 实例

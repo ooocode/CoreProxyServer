@@ -4,10 +4,13 @@ using Grpc.Core;
 using Hello;
 using Microsoft.AspNetCore.Connections;
 using Microsoft.Extensions.Options;
+using Microsoft.Net.Http.Headers;
 using Prometheus;
 using ServerWebApplication.Common;
 using ServerWebApplication.Common.DnsHelper;
 using ServerWebApplication.Options;
+using ServerWebApplication.Services;
+using System.Net;
 using System.Text;
 
 namespace ServerWebApplication.Impl
@@ -17,7 +20,8 @@ namespace ServerWebApplication.Impl
         CertificatePassword clientPassword,
         IHostApplicationLifetime hostApplicationLifetime,
         DnsParseService dnsParseService,
-        IOptions<TransportOptions> transportOptions) : ProcessGrpc.ProcessGrpcBase
+        IOptions<TransportOptions> transportOptions,
+        IEncryptService encryptService) : ProcessGrpc.ProcessGrpcBase
     {
         private readonly TransportOptions transportOptionsValue = transportOptions.Value;
 
@@ -34,14 +38,14 @@ namespace ServerWebApplication.Impl
         {
             var targetAddressHeader = context.RequestHeaders.GetValue("TargetAddress");
             ArgumentException.ThrowIfNullOrWhiteSpace(targetAddressHeader, nameof(targetAddressHeader));
-            var targetAddressBytes = MakeSendDataRequest.Decrypt(clientPassword.Password, SendDataRequest.Parser.ParseFrom(ByteString.FromBase64(targetAddressHeader)));
-            var targetAddress = Encoding.UTF8.GetString(targetAddressBytes);
+            var targetAddressBytes = encryptService.Decrypt(clientPassword.Password, SendDataRequest.Parser.ParseFrom(ByteString.FromBase64(targetAddressHeader)));
+            var targetAddress = Encoding.UTF8.GetString(targetAddressBytes.Span);
             ArgumentException.ThrowIfNullOrWhiteSpace(targetAddress, nameof(targetAddress));
 
             var targetPortStrHeader = context.RequestHeaders.GetValue("TargetPort");
             ArgumentException.ThrowIfNullOrWhiteSpace(targetPortStrHeader, nameof(targetPortStrHeader));
-            var targetPortStrBytes = MakeSendDataRequest.Decrypt(clientPassword.Password, SendDataRequest.Parser.ParseFrom(ByteString.FromBase64(targetPortStrHeader)));
-            var targetPortStr = Encoding.UTF8.GetString(targetPortStrBytes);
+            var targetPortStrBytes = encryptService.Decrypt(clientPassword.Password, SendDataRequest.Parser.ParseFrom(ByteString.FromBase64(targetPortStrHeader)));
+            var targetPortStr = Encoding.UTF8.GetString(targetPortStrBytes.Span);
             if (!int.TryParse(targetPortStr, out var targetPort))
             {
                 throw new InvalidDataException($"TargetPort={targetPortStr} Invalid");
@@ -50,10 +54,28 @@ namespace ServerWebApplication.Impl
             return new(targetAddress, targetPort);
         }
 
+        private void CheckPassword(ServerCallContext context)
+        {
+            var ipAddress = context.GetHttpContext().Connection.RemoteIpAddress;
+            if (ipAddress != null && IPAddress.IsLoopback(ipAddress))
+            {
+                return;
+            }
+
+            var password = context.RequestHeaders.GetValue(HeaderNames.Authorization)
+               ?.Replace("Password ", string.Empty);
+            if (string.IsNullOrWhiteSpace(password) || !string.Equals(password, clientPassword.Password, StringComparison.Ordinal))
+            {
+                throw new RpcException(new Status(StatusCode.Unauthenticated, string.Empty));
+            }
+        }
+
         public override async Task StreamingServer(IAsyncStreamReader<SendDataRequest> requestStream,
             IServerStreamWriter<SendDataRequest> responseStream,
             ServerCallContext context)
         {
+            CheckPassword(context);
+
             var (targetAddress, targetPort) = ParseTargetAddressAndPort(context);
 
             using var cancellationSource = CancellationTokenSource.CreateLinkedTokenSource(
@@ -132,7 +154,7 @@ namespace ServerWebApplication.Impl
                 CurrentTask1Count.Inc();
                 await foreach (var message in requestStream.ReadAllAsync(cancellationToken))
                 {
-                    var bytes = MakeSendDataRequest.Decrypt(clientPassword.Password, message);
+                    var bytes = encryptService.Decrypt(clientPassword.Password, message);
                     await target.PipeWriter.WriteAsync(bytes, cancellationToken);
                     await target.PipeWriter.FlushAsync(cancellationToken);
                 }
@@ -161,7 +183,7 @@ namespace ServerWebApplication.Impl
                     //从目标服务器读取数据，发送到客户端
                     await foreach (var memory in DotNext.IO.Pipelines.PipeExtensions.ReadAllAsync(target.PipeReader, cancellationToken))
                     {
-                        SendDataRequest sendDataRequest = MakeSendDataRequest.Encrypt(clientPassword.Password, memory);
+                        SendDataRequest sendDataRequest = encryptService.Encrypt(clientPassword.Password, memory);
                         //写入到数据通道
                         await responseStream.WriteAsync(sendDataRequest, cancellationToken);
                     }
@@ -172,7 +194,7 @@ namespace ServerWebApplication.Impl
                     //从目标服务器读取数据，发送到客户端
                     await foreach (var memory in PipeReaderExtend.ReadAllAsync(target.PipeReader, cancellationToken))
                     {
-                        SendDataRequest sendDataRequest = MakeSendDataRequest.Encrypt(clientPassword.Password, memory);
+                        SendDataRequest sendDataRequest = encryptService.Encrypt(clientPassword.Password, memory);
                         //写入到数据通道
                         await responseStream.WriteAsync(sendDataRequest, cancellationToken);
                     }
@@ -186,6 +208,8 @@ namespace ServerWebApplication.Impl
 
         public override Task<SendDataRequest> GetServerInfo(Empty request, ServerCallContext context)
         {
+            CheckPassword(context);
+
             ServerInfoRes serverInfoRes = new()
             {
                 ConnectionCount = (uint)CurrentCount.Value,
@@ -193,7 +217,7 @@ namespace ServerWebApplication.Impl
                 CurrentTask2Count = (uint)CurrentTask2Count.Value
             };
 
-            SendDataRequest sendDataRequest = MakeSendDataRequest.Encrypt(clientPassword.Password, serverInfoRes.ToByteArray());
+            SendDataRequest sendDataRequest = encryptService.Encrypt(clientPassword.Password, serverInfoRes.ToByteArray());
             return Task.FromResult(sendDataRequest);
         }
     }

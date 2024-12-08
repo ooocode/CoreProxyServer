@@ -1,9 +1,11 @@
 ﻿using Microsoft.AspNetCore.Connections;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
+using Microsoft.Extensions.Options;
 using ServerWebApplication.Common;
 using ServerWebApplication.Common.DnsHelper;
 using ServerWebApplication.Impl;
 using ServerWebApplication.Options;
+using ServerWebApplication.Services;
 using ServerWebApplication.Workers;
 using System.Diagnostics.CodeAnalysis;
 using System.IO.Compression;
@@ -60,6 +62,19 @@ namespace ServerWebApplication
             builder.Services.Configure<TransportOptions>(builder.Configuration.GetSection(nameof(TransportOptions)));
             builder.Services.AddSingleton(clientPassword);
             builder.Services.AddSingleton<DnsParseService>();
+
+            builder.Services.AddSingleton<IEncryptService>(s =>
+            {
+                var options = s.GetRequiredService<IOptions<TransportOptions>>();
+                if (options.Value.EnableDataEncrypt)
+                {
+                    return new Aes256GcmEncryptService();
+                }
+                else
+                {
+                    return new EmptyEncryptService();
+                }
+            });
 
             builder.Services.AddGrpc(c =>
             {
