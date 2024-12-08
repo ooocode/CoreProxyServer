@@ -24,6 +24,9 @@ namespace ServerWebApplication.Impl
     {
         private readonly TransportOptions transportOptionsValue = transportOptions.Value;
 
+        public static readonly Gauge CurrentConnectingCount = Metrics
+          .CreateGauge("grpc_stream_connecting_clients", "GRPC双向流正在连接数");
+
         public static readonly Gauge CurrentCount = Metrics
             .CreateGauge("grpc_stream_clients", "GRPC双向流连接数");
 
@@ -83,7 +86,17 @@ namespace ServerWebApplication.Impl
 
             Logs.StartConnect(logger, targetAddress, targetPort);
             await using SocketConnect target = new(connectionFactory, logger, dnsParseService);
-            await target.ConnectAsync(targetAddress, targetPort, cancellationToken);
+
+            CurrentConnectingCount.Inc();
+            try
+            {
+                await target.ConnectAsync(targetAddress, targetPort, cancellationToken);
+            }
+            finally
+            {
+                CurrentConnectingCount.Dec();
+            }
+
             Logs.SuccessConnect(logger, targetAddress, targetPort);
 
             //返回成功
@@ -211,6 +224,7 @@ namespace ServerWebApplication.Impl
 
             ServerInfoRes serverInfoRes = new()
             {
+                ConnectingCount = (uint)CurrentConnectingCount.Value,
                 ConnectionCount = (uint)CurrentCount.Value,
                 CurrentTask1Count = (uint)CurrentTask1Count.Value,
                 CurrentTask2Count = (uint)CurrentTask2Count.Value

@@ -25,7 +25,8 @@ message SendDataRequest{
 
 
 message ServerInfoRes{
-    uint32 ConnectionCount = 1;
-    uint32 CurrentTask1Count = 2;
-    uint32 CurrentTask2Count = 3;
+    uint32 ConnectingCount = 1;
+    uint32 ConnectionCount = 2;
+    uint32 CurrentTask1Count = 3;
+    uint32 CurrentTask2Count = 4;
 }
