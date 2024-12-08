@@ -4,12 +4,11 @@ using Grpc.Core;
 using Hello;
 using Microsoft.AspNetCore.Connections;
 using Microsoft.Extensions.Options;
-using Microsoft.Net.Http.Headers;
 using Prometheus;
 using ServerWebApplication.Common;
 using ServerWebApplication.Common.DnsHelper;
 using ServerWebApplication.Options;
-using System.Net;
+using System.Text;
 
 namespace ServerWebApplication.Impl
 {
@@ -31,36 +30,31 @@ namespace ServerWebApplication.Impl
         public static readonly Gauge CurrentTask2Count = Metrics
             .CreateGauge("grpc_stream_clients_task2", "GRPC双向流Task2连接数");
 
-        private void CheckPassword(ServerCallContext context)
+        private (string, int) ParseTargetAddressAndPort(ServerCallContext context)
         {
-            var ipAddress = context.GetHttpContext().Connection.RemoteIpAddress;
-            if (ipAddress != null && IPAddress.IsLoopback(ipAddress))
+            var targetAddressHeader = context.RequestHeaders.GetValue("TargetAddress");
+            ArgumentException.ThrowIfNullOrWhiteSpace(targetAddressHeader, nameof(targetAddressHeader));
+            var targetAddressBytes = MakeSendDataRequest.Decrypt(clientPassword.Password, SendDataRequest.Parser.ParseFrom(ByteString.FromBase64(targetAddressHeader)));
+            var targetAddress = Encoding.UTF8.GetString(targetAddressBytes);
+            ArgumentException.ThrowIfNullOrWhiteSpace(targetAddress, nameof(targetAddress));
+
+            var targetPortStrHeader = context.RequestHeaders.GetValue("TargetPort");
+            ArgumentException.ThrowIfNullOrWhiteSpace(targetPortStrHeader, nameof(targetPortStrHeader));
+            var targetPortStrBytes = MakeSendDataRequest.Decrypt(clientPassword.Password, SendDataRequest.Parser.ParseFrom(ByteString.FromBase64(targetPortStrHeader)));
+            var targetPortStr = Encoding.UTF8.GetString(targetPortStrBytes);
+            if (!int.TryParse(targetPortStr, out var targetPort))
             {
-                return;
+                throw new InvalidDataException($"TargetPort={targetPortStr} Invalid");
             }
 
-            var password = context.RequestHeaders.GetValue(HeaderNames.Authorization)
-               ?.Replace("Password ", string.Empty);
-            if (string.IsNullOrWhiteSpace(password) || !string.Equals(password, clientPassword.Password, StringComparison.Ordinal))
-            {
-                throw new RpcException(new Status(StatusCode.Unauthenticated, string.Empty));
-            }
+            return new(targetAddress, targetPort);
         }
 
         public override async Task StreamingServer(IAsyncStreamReader<SendDataRequest> requestStream,
             IServerStreamWriter<SendDataRequest> responseStream,
             ServerCallContext context)
         {
-            CheckPassword(context);
-
-            var targetAddress = context.RequestHeaders.GetValue("TargetAddress");
-            ArgumentException.ThrowIfNullOrWhiteSpace(targetAddress, nameof(targetAddress));
-            var targetPortStr = context.RequestHeaders.GetValue("TargetPort");
-            ArgumentException.ThrowIfNullOrWhiteSpace(targetPortStr, nameof(targetPortStr));
-            if (!int.TryParse(targetPortStr, out var targetPort))
-            {
-                throw new InvalidDataException($"TargetPort={targetPortStr} Invalid");
-            }
+            var (targetAddress, targetPort) = ParseTargetAddressAndPort(context);
 
             using var cancellationSource = CancellationTokenSource.CreateLinkedTokenSource(
                   context.CancellationToken, hostApplicationLifetime.ApplicationStopping);
@@ -119,7 +113,14 @@ namespace ServerWebApplication.Impl
             }
         }
 
-        private static async Task HandlerClient(IAsyncStreamReader<SendDataRequest> requestStream, SocketConnect target, CancellationToken cancellationToken)
+        /// <summary>
+        /// 处理客户端请求
+        /// </summary>
+        /// <param name="requestStream"></param>
+        /// <param name="target"></param>
+        /// <param name="cancellationToken"></param>
+        /// <returns></returns>
+        private async Task HandlerClient(IAsyncStreamReader<SendDataRequest> requestStream, SocketConnect target, CancellationToken cancellationToken)
         {
             if (target.PipeWriter == null)
             {
@@ -131,7 +132,8 @@ namespace ServerWebApplication.Impl
                 CurrentTask1Count.Inc();
                 await foreach (var message in requestStream.ReadAllAsync(cancellationToken))
                 {
-                    await target.PipeWriter.WriteAsync(message.Data.Memory, cancellationToken);
+                    var bytes = MakeSendDataRequest.Decrypt(clientPassword.Password, message);
+                    await target.PipeWriter.WriteAsync(bytes, cancellationToken);
                     await target.PipeWriter.FlushAsync(cancellationToken);
                 }
             }
@@ -159,11 +161,9 @@ namespace ServerWebApplication.Impl
                     //从目标服务器读取数据，发送到客户端
                     await foreach (var memory in DotNext.IO.Pipelines.PipeExtensions.ReadAllAsync(target.PipeReader, cancellationToken))
                     {
+                        SendDataRequest sendDataRequest = MakeSendDataRequest.Encrypt(clientPassword.Password, memory);
                         //写入到数据通道
-                        await responseStream.WriteAsync(new SendDataRequest
-                        {
-                            Data = UnsafeByteOperations.UnsafeWrap(memory)
-                        }, cancellationToken);
+                        await responseStream.WriteAsync(sendDataRequest, cancellationToken);
                     }
                 }
                 else
@@ -172,11 +172,9 @@ namespace ServerWebApplication.Impl
                     //从目标服务器读取数据，发送到客户端
                     await foreach (var memory in PipeReaderExtend.ReadAllAsync(target.PipeReader, cancellationToken))
                     {
+                        SendDataRequest sendDataRequest = MakeSendDataRequest.Encrypt(clientPassword.Password, memory);
                         //写入到数据通道
-                        await responseStream.WriteAsync(new SendDataRequest
-                        {
-                            Data = UnsafeByteOperations.UnsafeWrap(memory)
-                        }, cancellationToken);
+                        await responseStream.WriteAsync(sendDataRequest, cancellationToken);
                     }
                 }
             }
@@ -188,8 +186,6 @@ namespace ServerWebApplication.Impl
 
         public override Task<ServerInfoRes> GetServerInfo(Empty request, ServerCallContext context)
         {
-            CheckPassword(context);
-
             ServerInfoRes serverInfoRes = new()
             {
                 ConnectionCount = (uint)CurrentCount.Value,
