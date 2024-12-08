@@ -14,7 +14,7 @@ service ProcessGrpc
 {
    rpc StreamingServer (stream SendDataRequest) returns (stream SendDataRequest);
 
-   rpc GetServerInfo(google.protobuf.Empty) returns (ServerInfoRes);
+   rpc GetServerInfo(google.protobuf.Empty) returns (SendDataRequest);
 }
 
 message SendDataRequest{

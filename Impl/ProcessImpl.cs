@@ -184,7 +184,7 @@ namespace ServerWebApplication.Impl
             }
         }
 
-        public override Task<ServerInfoRes> GetServerInfo(Empty request, ServerCallContext context)
+        public override Task<SendDataRequest> GetServerInfo(Empty request, ServerCallContext context)
         {
             ServerInfoRes serverInfoRes = new()
             {
@@ -192,7 +192,9 @@ namespace ServerWebApplication.Impl
                 CurrentTask1Count = (uint)CurrentTask1Count.Value,
                 CurrentTask2Count = (uint)CurrentTask2Count.Value
             };
-            return Task.FromResult(serverInfoRes);
+
+            SendDataRequest sendDataRequest = MakeSendDataRequest.Encrypt(clientPassword.Password, serverInfoRes.ToByteArray());
+            return Task.FromResult(sendDataRequest);
         }
     }
 }
