@@ -1,6 +1,6 @@
 using System.Net;
 
-namespace ServerWebApplication.Common.DnsHelper
+namespace ServerWebApplication.Services
 {
     public class DnsParseService
     {

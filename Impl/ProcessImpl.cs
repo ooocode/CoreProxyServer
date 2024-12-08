@@ -7,7 +7,6 @@ using Microsoft.Extensions.Options;
 using Microsoft.Net.Http.Headers;
 using Prometheus;
 using ServerWebApplication.Common;
-using ServerWebApplication.Common.DnsHelper;
 using ServerWebApplication.Options;
 using ServerWebApplication.Services;
 using System.Net;
