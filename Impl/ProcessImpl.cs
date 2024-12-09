@@ -11,6 +11,7 @@ using ServerWebApplication.Options;
 using ServerWebApplication.Services;
 using System.Net;
 using System.Text;
+using static System.Runtime.InteropServices.JavaScript.JSType;
 
 namespace ServerWebApplication.Impl
 {
@@ -213,6 +214,10 @@ namespace ServerWebApplication.Impl
                     //从目标服务器读取数据，发送到客户端
                     await foreach (var memory in PipeReaderExtend.ReadAllAsync(target.PipeReader, cancellationToken))
                     {
+                        if (memory.Length == 0)
+                        {
+                            break;
+                        }
                         SendDataRequest sendDataRequest = encryptService.Encrypt(clientPassword.Password, memory);
                         //写入到数据通道
                         await responseStream.WriteAsync(sendDataRequest, cancellationToken);
