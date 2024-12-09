@@ -5,9 +5,11 @@ namespace ServerWebApplication.Services
 {
     public class DnsParseService
     {
-        public static readonly LookupClient LookupClient = new(
-            IPAddress.Parse("8.8.4.4"),
-            IPAddress.Parse("8.8.8.8"));
+
+        public static readonly LookupClient LookupClient = new(NameServer.GooglePublicDns,
+            NameServer.GooglePublicDns2,
+            NameServer.Cloudflare,
+            NameServer.Cloudflare2);
 
         private static async Task<IPAddress?> ParseByDnsClientAsync(string hostName, CancellationToken cancellationToken)
         {
