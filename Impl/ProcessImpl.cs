@@ -168,7 +168,6 @@ namespace ServerWebApplication.Impl
                 {
                     var bytes = encryptService.Decrypt(clientPassword.Password, message);
                     await target.PipeWriter.WriteAsync(bytes, cancellationToken);
-                    await target.PipeWriter.FlushAsync(cancellationToken);
                 }
             }
             finally
