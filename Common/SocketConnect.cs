@@ -10,6 +10,9 @@ namespace ServerWebApplication.Common
     public partial class SocketConnect(IConnectionFactory connectionFactory, ILogger logger,
         DnsParseService dnsParseService) : IAsyncDisposable
     {
+        /// <summary>
+        /// Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets/Internal/SocketConnection.cs
+        /// </summary>
         private ConnectionContext? connectionContext = null;
 
         public PipeReader? PipeReader => connectionContext?.Transport.Input;
@@ -41,9 +44,6 @@ namespace ServerWebApplication.Common
         {
             if (connectionContext != null)
             {
-                await connectionContext.Transport.Input.CompleteAsync();
-                await connectionContext.Transport.Output.CompleteAsync();
-
                 await connectionContext.DisposeAsync();
             }
 
