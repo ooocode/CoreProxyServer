@@ -19,8 +19,11 @@ namespace ServerWebApplication.Common
         [LoggerMessage(Level = LogLevel.Error, Message = "连接失败：{host}:{port} {errorMessage}")]
         private static partial void LogConnectFail(ILogger logger, string host, int port, string errorMessage);
 
-        [LoggerMessage(Level = LogLevel.Information, Message = "成功解析DNS：{hostName} -> {ipAddress}")]
-        private static partial void LogDnsParseInfo(ILogger logger, string hostName, string ipAddress);
+        [LoggerMessage(Level = LogLevel.Information, Message = "成功解析IPV6：{hostName} -> {ipAddress}")]
+        private static partial void LogDnsParseInfoV6(ILogger logger, string hostName, string ipAddress);
+
+        [LoggerMessage(Level = LogLevel.Information, Message = "成功解析IPV4：{hostName} -> {ipAddress}")]
+        private static partial void LogDnsParseInfoV4(ILogger logger, string hostName, string ipAddress);
 
         public async Task ConnectAsync(string host, int port, CancellationToken cancellationToken)
         {
@@ -29,9 +32,16 @@ namespace ServerWebApplication.Common
                 if (!IPAddress.TryParse(host, out var iPAddress))
                 {
                     iPAddress = await dnsParseService.GetIpAsync(host, port, cancellationToken);
+                    if (iPAddress.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
+                    {
+                        LogDnsParseInfoV4(logger, host, iPAddress.ToString());
+                    }
+                    else if (iPAddress.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6)
+                    {
+                        LogDnsParseInfoV6(logger, host, iPAddress.ToString());
+                    }
                 }
 
-                LogDnsParseInfo(logger, host, iPAddress.ToString());
                 var endpoint = new IPEndPoint(iPAddress, port);
                 connectionContext = await connectionFactory.ConnectAsync(endpoint, cancellationToken);
             }
