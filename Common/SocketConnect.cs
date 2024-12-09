@@ -1,9 +1,7 @@
-﻿using Grpc.Core;
-using Microsoft.AspNetCore.Connections;
+﻿using Microsoft.AspNetCore.Connections;
 using ServerWebApplication.Services;
 using System.IO.Pipelines;
 using System.Net;
-using System.Net.Sockets;
 
 namespace ServerWebApplication.Common
 {
@@ -33,10 +31,10 @@ namespace ServerWebApplication.Common
                 var endpoint = new IPEndPoint(iPAddress, port);
                 connectionContext = await connectionFactory.ConnectAsync(endpoint, cancellationToken);
             }
-            catch (Exception ex) when (ex is SocketException || ex is OperationCanceledException)
+            catch (Exception ex)
             {
                 LogConnectFail(logger, host, port, ex.Message);
-                throw new RpcException(new Status(StatusCode.Cancelled, ex.Message));
+                throw;
             }
         }
 

@@ -167,6 +167,7 @@ namespace ServerWebApplication.Impl
                 await foreach (var message in requestStream.ReadAllAsync(cancellationToken))
                 {
                     var bytes = encryptService.Decrypt(clientPassword.Password, message);
+                    //发送到目标服务器
                     await target.PipeWriter.WriteAsync(bytes, cancellationToken);
                 }
             }
@@ -176,6 +177,13 @@ namespace ServerWebApplication.Impl
             }
         }
 
+        /// <summary>
+        /// 处理服务端
+        /// </summary>
+        /// <param name="responseStream"></param>
+        /// <param name="target"></param>
+        /// <param name="cancellationToken"></param>
+        /// <returns></returns>
         private async Task HandlerServer(IServerStreamWriter<SendDataRequest> responseStream,
             SocketConnect target, CancellationToken cancellationToken)
         {
