@@ -11,7 +11,6 @@ using ServerWebApplication.Options;
 using ServerWebApplication.Services;
 using System.Net;
 using System.Text;
-using static System.Runtime.InteropServices.JavaScript.JSType;
 
 namespace ServerWebApplication.Impl
 {
