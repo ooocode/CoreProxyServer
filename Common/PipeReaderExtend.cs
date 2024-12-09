@@ -32,7 +32,21 @@ namespace ServerWebApplication.Common
                     }
                     else
                     {
-                        yield return buffer.ToArray();
+                        //yield return buffer.ToArray();
+                        //yield return buffer.ToArray();
+                        // 创建默认的内存池
+                        var memoryPool = MemoryPool<byte>.Shared;
+
+                        var length = (int)buffer.Length;
+                        // 租用一个内存块（至少 1024 字节）
+                        using var memoryOwner = memoryPool.Rent(length);
+
+                        // 获取租用的内存
+                        var memory = memoryOwner.Memory;
+
+                        buffer.CopyTo(memory.Span);
+
+                        yield return memory.Slice(0, length);
                     }
                 }
                 finally
