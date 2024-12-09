@@ -16,16 +16,16 @@ namespace ServerWebApplication.Services
                cancellationToken: cancellationToken);
             var records = result.Answers.ARecords().ToList();
 
-            var ipv6 = records.FirstOrDefault(x => x.RecordType == DnsClient.Protocol.ResourceRecordType.AAAA);
-            if (ipv6 != null)
-            {
-                return ipv6.Address;
-            }
-
             var ipv4 = records.FirstOrDefault(x => x.RecordType == DnsClient.Protocol.ResourceRecordType.A);
             if (ipv4 != null)
             {
                 return ipv4.Address;
+            }
+
+            var ipv6 = records.FirstOrDefault(x => x.RecordType == DnsClient.Protocol.ResourceRecordType.AAAA);
+            if (ipv6 != null)
+            {
+                return ipv6.Address;
             }
 
             return null;
