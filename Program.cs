@@ -1,5 +1,7 @@
 ﻿using Microsoft.AspNetCore.Connections;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.ObjectPool;
 using Microsoft.Extensions.Options;
 using ServerWebApplication.Common;
 using ServerWebApplication.Impl;
@@ -16,6 +18,17 @@ using System.Text;
 
 namespace ServerWebApplication
 {
+    public class ReusableBuffer : IResettable
+    {
+        public byte[] Data { get; } = new byte[1024 * 1024]; // 1 MB
+
+        public bool TryReset()
+        {
+            Array.Clear(Data);
+            return true;
+        }
+    }
+
     public static partial class Program
     {
         private static WebApplication? app = null;
@@ -61,6 +74,15 @@ namespace ServerWebApplication
             builder.Services.Configure<TransportOptions>(builder.Configuration.GetSection(nameof(TransportOptions)));
             builder.Services.AddSingleton(clientPassword);
             builder.Services.AddSingleton<DnsParseService>();
+
+            builder.Services.TryAddSingleton<ObjectPoolProvider, DefaultObjectPoolProvider>();
+
+            builder.Services.TryAddSingleton<ObjectPool<ReusableBuffer>>(serviceProvider =>
+            {
+                var provider = serviceProvider.GetRequiredService<ObjectPoolProvider>();
+                var policy = new DefaultPooledObjectPolicy<ReusableBuffer>();
+                return provider.Create(policy);
+            });
 
             builder.Services.AddSingleton<IEncryptService>(s =>
             {
