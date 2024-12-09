@@ -5,7 +5,6 @@ namespace ServerWebApplication.Services
 {
     public class DnsParseService
     {
-
         public static readonly LookupClient LookupClient = new(NameServer.GooglePublicDns,
             NameServer.GooglePublicDns2,
             NameServer.Cloudflare,
