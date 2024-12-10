@@ -235,10 +235,10 @@ namespace ServerWebApplication.Impl
 
             ServerInfoRes serverInfoRes = new()
             {
-                ConnectingCount = (uint)CurrentConnectingCount.Value,
-                ConnectionCount = (uint)CurrentCount.Value,
-                CurrentTask1Count = (uint)CurrentTask1Count.Value,
-                CurrentTask2Count = (uint)CurrentTask2Count.Value
+                ConnectingCount = (int)CurrentConnectingCount.Value,
+                ConnectionCount = (int)CurrentCount.Value,
+                CurrentTask1Count = (int)CurrentTask1Count.Value,
+                CurrentTask2Count = (int)CurrentTask2Count.Value
             };
 
             SendDataRequest sendDataRequest = encryptService.Encrypt(clientPassword.Password, serverInfoRes.ToByteArray());
