@@ -31,7 +31,7 @@ namespace ServerWebApplication.Common
                         reusableBuffer = ArrayPool<byte>.Shared.Rent(length);
                         buffer.CopyTo(reusableBuffer);
 
-                        yield return reusableBuffer.AsMemory().Slice(0, length);
+                        yield return reusableBuffer.AsMemory()[..length];
                     }
                 }
                 finally
