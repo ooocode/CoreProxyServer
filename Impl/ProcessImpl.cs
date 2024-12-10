@@ -3,7 +3,6 @@ using Google.Protobuf.WellKnownTypes;
 using Grpc.Core;
 using Hello;
 using Microsoft.AspNetCore.Connections;
-using Microsoft.Extensions.ObjectPool;
 using Microsoft.Extensions.Options;
 using Microsoft.Net.Http.Headers;
 using Prometheus;
@@ -21,8 +20,7 @@ namespace ServerWebApplication.Impl
         IHostApplicationLifetime hostApplicationLifetime,
         DnsParseService dnsParseService,
         IOptions<TransportOptions> transportOptions,
-        IEncryptService encryptService,
-        ObjectPool<ReusableBuffer> bufferPool) : ProcessGrpc.ProcessGrpcBase
+        IEncryptService encryptService) : ProcessGrpc.ProcessGrpcBase
     {
         private readonly TransportOptions transportOptionsValue = transportOptions.Value;
 
@@ -213,7 +211,7 @@ namespace ServerWebApplication.Impl
                 {
                     //快速模式
                     //从目标服务器读取数据，发送到客户端
-                    await foreach (var memory in PipeReaderExtend.ReadAllAsync(bufferPool, target.PipeReader, cancellationToken))
+                    await foreach (var memory in PipeReaderExtend.ReadAllAsync(target.PipeReader, cancellationToken))
                     {
                         if (memory.Length == 0)
                         {
