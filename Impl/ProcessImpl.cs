@@ -43,7 +43,7 @@ namespace ServerWebApplication.Impl
             var targetBytes = Convert.FromBase64String(targetBase64);
 
             string target;
-            if (transportOptions.Value.EnableDataEncrypt)
+            if (transportOptionsValue.EnableDataEncrypt)
             {
                 using var rawBytes = Aes256GcmEncryptService.Decrypt(clientPassword.PasswordKey.Span, targetBytes);
                 target = Encoding.UTF8.GetString(rawBytes.Span);

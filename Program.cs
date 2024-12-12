@@ -186,7 +186,7 @@ namespace ServerWebApplication
         public CertificatePassword(string password)
         {
             Password = password;
-            PasswordKey = new Memory<byte>(Convert.FromBase64String(password))[32..];
+            PasswordKey = new Memory<byte>(Convert.FromBase64String(password))[..32];
         }
     };
 }

@@ -32,14 +32,6 @@ namespace ServerWebApplication.Common
                 if (!IPAddress.TryParse(host, out var iPAddress))
                 {
                     iPAddress = await dnsParseService.GetIpAsync(host, port, cancellationToken);
-                    if (iPAddress.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
-                    {
-                        LogDnsParseInfoV4(logger, host, iPAddress.ToString());
-                    }
-                    else if (iPAddress.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6)
-                    {
-                        LogDnsParseInfoV6(logger, host, iPAddress.ToString());
-                    }
                 }
 
                 var endpoint = new IPEndPoint(iPAddress, port);
