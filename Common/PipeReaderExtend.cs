@@ -1,4 +1,5 @@
-﻿using System.Buffers;
+﻿using CommunityToolkit.HighPerformance.Buffers;
+using System.Buffers;
 using System.IO.Pipelines;
 using System.Runtime.CompilerServices;
 
@@ -6,7 +7,19 @@ namespace ServerWebApplication.Common
 {
     public static class PipeReaderExtend
     {
-        public static async IAsyncEnumerable<ReadOnlyMemory<byte>> ReadAllAsync(
+        public static IAsyncEnumerable<ReadOnlyMemory<byte>> ReadAllAsync(bool useMax4096Bytes, PipeReader pipeReader, CancellationToken cancellationToken)
+        {
+            if (useMax4096Bytes)
+            {
+                return DotNext.IO.Pipelines.PipeExtensions.ReadAllAsync(pipeReader, cancellationToken);
+            }
+            else
+            {
+                return ReadAllFastAsync(pipeReader, cancellationToken);
+            }
+        }
+
+        private static async IAsyncEnumerable<ReadOnlyMemory<byte>> ReadAllFastAsync(
             PipeReader reader,
             [EnumeratorCancellation] CancellationToken token = default)
         {
@@ -18,7 +31,6 @@ namespace ServerWebApplication.Common
                 var buffer = result.Buffer;
                 var consumed = buffer.End;
 
-                byte[]? reusableBuffer = null;
                 try
                 {
                     if (buffer.IsSingleSegment)
@@ -27,19 +39,13 @@ namespace ServerWebApplication.Common
                     }
                     else
                     {
-                        var length = (int)buffer.Length;
-                        reusableBuffer = ArrayPool<byte>.Shared.Rent(length);
-                        buffer.CopyTo(reusableBuffer);
-
-                        yield return reusableBuffer.AsMemory()[..length];
+                        using MemoryOwner<byte> reusableBuffer = MemoryOwner<byte>.Allocate((int)buffer.Length);
+                        buffer.CopyTo(reusableBuffer.Span);
+                        yield return reusableBuffer.Memory;
                     }
                 }
                 finally
                 {
-                    if (reusableBuffer != null)
-                    {
-                        ArrayPool<byte>.Shared.Return(reusableBuffer);
-                    }
                     reader.AdvanceTo(consumed);
                 }
             } while (!result.IsCompleted);

@@ -11,7 +11,7 @@ namespace ServerWebApplication.Common
         /// <summary>
         /// Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets/Internal/SocketConnection.cs
         /// </summary>
-        private ConnectionContext? connectionContext = null;
+        private ConnectionContext? connectionContext;
 
         public PipeReader? PipeReader => connectionContext?.Transport.Input;
         public PipeWriter? PipeWriter => connectionContext?.Transport.Output;

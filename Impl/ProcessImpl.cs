@@ -196,31 +196,15 @@ namespace ServerWebApplication.Impl
             {
                 CurrentTask2Count.Inc();
 
-                if (transportOptionsValue.UseMax4096Bytes)
+                await foreach (var memory in PipeReaderExtend.ReadAllAsync(transportOptionsValue.UseMax4096Bytes, target.PipeReader, cancellationToken))
                 {
-                    //慢速模式 每次最多4096个字节
-                    //从目标服务器读取数据，发送到客户端
-                    await foreach (var memory in DotNext.IO.Pipelines.PipeExtensions.ReadAllAsync(target.PipeReader, cancellationToken))
+                    if (memory.Length == 0)
                     {
-                        SendDataRequest sendDataRequest = encryptService.Encrypt(clientPassword.Password, memory);
-                        //写入到数据通道
-                        await responseStream.WriteAsync(sendDataRequest, cancellationToken);
+                        break;
                     }
-                }
-                else
-                {
-                    //快速模式
-                    //从目标服务器读取数据，发送到客户端
-                    await foreach (var memory in PipeReaderExtend.ReadAllAsync(target.PipeReader, cancellationToken))
-                    {
-                        if (memory.Length == 0)
-                        {
-                            break;
-                        }
-                        SendDataRequest sendDataRequest = encryptService.Encrypt(clientPassword.Password, memory);
-                        //写入到数据通道
-                        await responseStream.WriteAsync(sendDataRequest, cancellationToken);
-                    }
+                    SendDataRequest sendDataRequest = encryptService.Encrypt(clientPassword.Password, memory);
+                    //写入到数据通道
+                    await responseStream.WriteAsync(sendDataRequest, cancellationToken);
                 }
             }
             finally
