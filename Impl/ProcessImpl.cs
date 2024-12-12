@@ -19,8 +19,7 @@ namespace ServerWebApplication.Impl
         CertificatePassword clientPassword,
         IHostApplicationLifetime hostApplicationLifetime,
         DnsParseService dnsParseService,
-        IOptions<TransportOptions> transportOptions,
-        IEncryptService encryptService) : ProcessGrpc.ProcessGrpcBase
+        IOptions<TransportOptions> transportOptions) : ProcessGrpc.ProcessGrpcBase
     {
         private readonly TransportOptions transportOptionsValue = transportOptions.Value;
 
@@ -38,22 +37,24 @@ namespace ServerWebApplication.Impl
 
         private (string, int) ParseTargetAddressAndPort(ServerCallContext context)
         {
-            var targetAddressHeader = context.RequestHeaders.GetValue("TargetAddress");
-            ArgumentException.ThrowIfNullOrWhiteSpace(targetAddressHeader, nameof(targetAddressHeader));
-            var targetAddressBytes = encryptService.Decrypt(clientPassword.Password, SendDataRequest.Parser.ParseFrom(ByteString.FromBase64(targetAddressHeader)));
-            var targetAddress = Encoding.UTF8.GetString(targetAddressBytes.Span);
-            ArgumentException.ThrowIfNullOrWhiteSpace(targetAddress, nameof(targetAddress));
+            var targetBase64 = context.RequestHeaders.GetValue("Target");
+            ArgumentException.ThrowIfNullOrWhiteSpace(targetBase64, nameof(targetBase64));
 
-            var targetPortStrHeader = context.RequestHeaders.GetValue("TargetPort");
-            ArgumentException.ThrowIfNullOrWhiteSpace(targetPortStrHeader, nameof(targetPortStrHeader));
-            var targetPortStrBytes = encryptService.Decrypt(clientPassword.Password, SendDataRequest.Parser.ParseFrom(ByteString.FromBase64(targetPortStrHeader)));
-            var targetPortStr = Encoding.UTF8.GetString(targetPortStrBytes.Span);
-            if (!int.TryParse(targetPortStr, out var targetPort))
+            var targetBytes = Convert.FromBase64String(targetBase64);
+
+            string target;
+            if (transportOptions.Value.EnableDataEncrypt)
             {
-                throw new InvalidDataException($"TargetPort={targetPortStr} Invalid");
+                using var rawBytes = Aes256GcmEncryptService.Decrypt(clientPassword.PasswordKey.Span, targetBytes);
+                target = Encoding.UTF8.GetString(rawBytes.Span);
+            }
+            else
+            {
+                target = Encoding.UTF8.GetString(targetBytes);
             }
 
-            return new(targetAddress, targetPort);
+            var arr = target.Split('^');
+            return new(arr[0], int.Parse(arr[1]));
         }
 
         private void CheckPassword(ServerCallContext context)
@@ -166,9 +167,17 @@ namespace ServerWebApplication.Impl
                 CurrentTask1Count.Inc();
                 await foreach (var message in requestStream.ReadAllAsync(cancellationToken))
                 {
-                    var bytes = encryptService.Decrypt(clientPassword.Password, message);
-                    //发送到目标服务器
-                    await target.PipeWriter.WriteAsync(bytes, cancellationToken);
+                    if (transportOptionsValue.EnableDataEncrypt)
+                    {
+                        //解密后发往目标服务器
+                        using var bytes = Aes256GcmEncryptService.Decrypt(clientPassword.PasswordKey.Span, message.Data.Span);
+                        await target.PipeWriter.WriteAsync(bytes.Memory, cancellationToken);
+                    }
+                    else
+                    {
+                        //直接发送到目标服务器
+                        await target.PipeWriter.WriteAsync(message.Data.Memory, cancellationToken);
+                    }
                 }
             }
             finally
@@ -202,9 +211,24 @@ namespace ServerWebApplication.Impl
                     {
                         break;
                     }
-                    SendDataRequest sendDataRequest = encryptService.Encrypt(clientPassword.Password, memory);
-                    //写入到数据通道
-                    await responseStream.WriteAsync(sendDataRequest, cancellationToken);
+
+                    if (transportOptionsValue.EnableDataEncrypt)
+                    {
+                        //加密后发往客户端
+                        using var encrytData = Aes256GcmEncryptService.Encrypt(clientPassword.PasswordKey.Span, memory.Span);
+                        await responseStream.WriteAsync(new SendDataRequest
+                        {
+                            Data = UnsafeByteOperations.UnsafeWrap(encrytData.Memory)
+                        }, cancellationToken);
+                    }
+                    else
+                    {
+                        //直接发往客户端
+                        await responseStream.WriteAsync(new SendDataRequest
+                        {
+                            Data = UnsafeByteOperations.UnsafeWrap(memory)
+                        }, cancellationToken);
+                    }
                 }
             }
             finally
@@ -213,7 +237,7 @@ namespace ServerWebApplication.Impl
             }
         }
 
-        public override Task<SendDataRequest> GetServerInfo(Empty request, ServerCallContext context)
+        public override Task<ServerInfoRes> GetServerInfo(Empty request, ServerCallContext context)
         {
             CheckPassword(context);
 
@@ -225,8 +249,7 @@ namespace ServerWebApplication.Impl
                 CurrentTask2Count = (int)CurrentTask2Count.Value
             };
 
-            SendDataRequest sendDataRequest = encryptService.Encrypt(clientPassword.Password, serverInfoRes.ToByteArray());
-            return Task.FromResult(sendDataRequest);
+            return Task.FromResult(serverInfoRes);
         }
     }
 }

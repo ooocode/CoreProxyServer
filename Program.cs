@@ -1,6 +1,5 @@
 ﻿using Microsoft.AspNetCore.Connections;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
-using Microsoft.Extensions.Options;
 using ServerWebApplication.Common;
 using ServerWebApplication.Impl;
 using ServerWebApplication.Options;
@@ -61,19 +60,6 @@ namespace ServerWebApplication
             builder.Services.Configure<TransportOptions>(builder.Configuration.GetSection(nameof(TransportOptions)));
             builder.Services.AddSingleton(clientPassword);
             builder.Services.AddSingleton<DnsParseService>();
-
-            builder.Services.AddSingleton<IEncryptService>(s =>
-            {
-                var options = s.GetRequiredService<IOptions<TransportOptions>>();
-                if (options.Value.EnableDataEncrypt)
-                {
-                    return new Aes256GcmEncryptService();
-                }
-                else
-                {
-                    return new EmptyEncryptService();
-                }
-            });
 
             builder.Services.AddGrpc(c =>
             {
@@ -191,5 +177,16 @@ namespace ServerWebApplication
         }
     }
 
-    public record CertificatePassword(string Password);
+    public class CertificatePassword
+    {
+        public string Password { get; set; }
+
+        public Memory<byte> PasswordKey { get; }
+
+        public CertificatePassword(string password)
+        {
+            Password = password;
+            PasswordKey = new Memory<byte>(Convert.FromBase64String(password))[32..];
+        }
+    };
 }

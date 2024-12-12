@@ -1,56 +1,55 @@
-﻿using Google.Protobuf;
-using Hello;
+﻿using CommunityToolkit.HighPerformance.Buffers;
 using System.Security.Cryptography;
 
 namespace ServerWebApplication.Services
 {
-    public class Aes256GcmEncryptService : IEncryptService
+    public static class Aes256GcmEncryptService
     {
         /// <summary>
         /// AES256-GCM 加密
         /// </summary>
-        /// <param name="password"></param>
+        /// <param name="passwordKey"></param>
         /// <param name="plaintext"></param>
         /// <returns></returns>
-        public SendDataRequest Encrypt(string password, ReadOnlyMemory<byte> plaintext)
+        public static MemoryOwner<byte> Encrypt(ReadOnlySpan<byte> passwordKey, ReadOnlySpan<byte> plaintext)
         {
-            ReadOnlyMemory<byte> key = Convert.FromBase64String(password);
-
             // 生成一个随机的初始化向量
             byte[] nonce = RandomNumberGenerator.GetBytes(AesGcm.NonceByteSizes.MaxSize);
 
             // 创建一个 AesGcm 实例
-            using AesGcm aesGcm = new(key[32..].Span, AesGcm.TagByteSizes.MaxSize);
+            using AesGcm aesGcm = new(passwordKey, AesGcm.TagByteSizes.MaxSize);
 
-            var ciphertext = new byte[plaintext.Length];
             var tag = new byte[AesGcm.TagByteSizes.MaxSize];
-            // 加密数据
-            aesGcm.Encrypt(nonce, plaintext.Span, ciphertext, tag, null);
 
-            return new SendDataRequest
-            {
-                Data = UnsafeByteOperations.UnsafeWrap(ciphertext),
-                Nonce = UnsafeByteOperations.UnsafeWrap(nonce),
-                Tag = UnsafeByteOperations.UnsafeWrap(tag)
-            };
+            //加密后的数据  nonce-tag-ciphertext
+            var ciphertext = MemoryOwner<byte>.Allocate(nonce.Length + tag.Length + plaintext.Length);
+
+            // 加密数据
+            aesGcm.Encrypt(nonce, plaintext, ciphertext.Span[(nonce.Length + tag.Length)..], tag);
+
+            nonce.CopyTo(ciphertext.Span);
+            tag.CopyTo(ciphertext.Span[nonce.Length..]);
+            return ciphertext;
         }
 
         /// <summary>
         /// 解密
         /// </summary>
-        /// <param name="password"></param>
-        /// <param name="sendDataRequest"></param>
+        /// <param name="passwordKey"></param>
+        /// <param name="ciphertext"></param>
         /// <returns></returns>
-        public ReadOnlyMemory<byte> Decrypt(string password, SendDataRequest sendDataRequest)
+        public static MemoryOwner<byte> Decrypt(ReadOnlySpan<byte> passwordKey, ReadOnlySpan<byte> ciphertext)
         {
-            ReadOnlyMemory<byte> key = Convert.FromBase64String(password);
             // 创建一个 AesGcm 实例
-            using AesGcm aesGcm = new(key[32..].Span, AesGcm.TagByteSizes.MaxSize);
+            using AesGcm aesGcm = new(passwordKey, AesGcm.TagByteSizes.MaxSize);
 
-            var plaintextBytes = new byte[sendDataRequest.Data.Length];
+            var plaintextBytes = MemoryOwner<byte>.Allocate(ciphertext.Length - AesGcm.NonceByteSizes.MaxSize - AesGcm.TagByteSizes.MaxSize);
 
-            // 加密数据
-            aesGcm.Decrypt(sendDataRequest.Nonce.Memory.Span, sendDataRequest.Data.Memory.Span, sendDataRequest.Tag.Memory.Span, plaintextBytes);
+            // 解密数据
+            var nonce = ciphertext[..AesGcm.NonceByteSizes.MaxSize];
+            var tag = ciphertext.Slice(AesGcm.NonceByteSizes.MaxSize, AesGcm.TagByteSizes.MaxSize);
+            var ciphertextData = ciphertext[(AesGcm.NonceByteSizes.MaxSize + AesGcm.TagByteSizes.MaxSize)..];
+            aesGcm.Decrypt(nonce, ciphertextData, tag, plaintextBytes.Span);
             return plaintextBytes;
         }
     }

@@ -14,13 +14,11 @@ service ProcessGrpc
 {
    rpc StreamingServer (stream SendDataRequest) returns (stream SendDataRequest);
 
-   rpc GetServerInfo(google.protobuf.Empty) returns (SendDataRequest);
+   rpc GetServerInfo(google.protobuf.Empty) returns (ServerInfoRes);
 }
 
 message SendDataRequest{
     bytes Data = 1;
-    bytes Nonce = 2;
-    bytes Tag = 3;
 }
 
 
