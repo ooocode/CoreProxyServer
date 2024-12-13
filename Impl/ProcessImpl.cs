@@ -35,6 +35,27 @@ namespace ServerWebApplication.Impl
         public static readonly Gauge CurrentTask2Count = Metrics
             .CreateGauge("grpc_stream_clients_task2", "GRPC双向流Task2连接数");
 
+        private void CheckPassword(ServerCallContext context)
+        {
+            var ipAddress = context.GetHttpContext().Connection.RemoteIpAddress;
+            if (ipAddress != null && IPAddress.IsLoopback(ipAddress))
+            {
+                return;
+            }
+
+            var password = context.RequestHeaders.GetValue(HeaderNames.Authorization)
+               ?.Replace("Password ", string.Empty);
+            if (string.IsNullOrWhiteSpace(password) || !string.Equals(password, clientPassword.Password, StringComparison.Ordinal))
+            {
+                throw new RpcException(new Status(StatusCode.Unauthenticated, string.Empty));
+            }
+        }
+
+        /// <summary>
+        /// 从头部解析出目标地址和端口
+        /// </summary>
+        /// <param name="context"></param>
+        /// <returns></returns>
         private (string, int) ParseTargetAddressAndPort(ServerCallContext context)
         {
             var targetBase64 = context.RequestHeaders.GetValue("Target");
@@ -57,22 +78,15 @@ namespace ServerWebApplication.Impl
             return new(arr[0], int.Parse(arr[1]));
         }
 
-        private void CheckPassword(ServerCallContext context)
-        {
-            var ipAddress = context.GetHttpContext().Connection.RemoteIpAddress;
-            if (ipAddress != null && IPAddress.IsLoopback(ipAddress))
-            {
-                return;
-            }
+        private static readonly SendDataRequest EmptySendDataRequest = new() { Data = ByteString.Empty };
 
-            var password = context.RequestHeaders.GetValue(HeaderNames.Authorization)
-               ?.Replace("Password ", string.Empty);
-            if (string.IsNullOrWhiteSpace(password) || !string.Equals(password, clientPassword.Password, StringComparison.Ordinal))
-            {
-                throw new RpcException(new Status(StatusCode.Unauthenticated, string.Empty));
-            }
-        }
-
+        /// <summary>
+        /// 双向流处理
+        /// </summary>
+        /// <param name="requestStream"></param>
+        /// <param name="responseStream"></param>
+        /// <param name="context"></param>
+        /// <returns></returns>
         public override async Task StreamingServer(IAsyncStreamReader<SendDataRequest> requestStream,
             IServerStreamWriter<SendDataRequest> responseStream,
             ServerCallContext context)
@@ -101,10 +115,7 @@ namespace ServerWebApplication.Impl
             Logs.SuccessConnect(logger, targetAddress, targetPort);
 
             //返回成功
-            await responseStream.WriteAsync(new SendDataRequest
-            {
-                Data = ByteString.Empty
-            }, cancellationToken);
+            await responseStream.WriteAsync(EmptySendDataRequest, cancellationToken);
 
             CurrentCount.Inc();
 
@@ -167,6 +178,11 @@ namespace ServerWebApplication.Impl
                 CurrentTask1Count.Inc();
                 await foreach (var message in requestStream.ReadAllAsync(cancellationToken))
                 {
+                    if (message.Data.Length == 0)
+                    {
+                        break;
+                    }
+
                     if (transportOptionsValue.EnableDataEncrypt)
                     {
                         //解密后发往目标服务器

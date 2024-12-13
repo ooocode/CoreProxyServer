@@ -17,7 +17,7 @@ namespace ServerWebApplication
 {
     public static partial class Program
     {
-        private static WebApplication? app = null;
+        private static WebApplication? app;
 
         [LoggerMessage(Level = LogLevel.Information, Message = "客户端连接密码: {password}")]
         private static partial void LogPassword(ILogger logger, string password);
@@ -42,6 +42,7 @@ namespace ServerWebApplication
 
             var certificate2 = GetCertificate();
             var clientPassword = GetCertificatePassword(certificate2);
+            builder.Services.AddSingleton(clientPassword);
 
             builder.WebHost.ConfigureKestrel(serverOptions =>
             {
@@ -58,7 +59,6 @@ namespace ServerWebApplication
             builder.Services.AddSingleton(typeof(IConnectionFactory), factoryType);
 
             builder.Services.Configure<TransportOptions>(builder.Configuration.GetSection(nameof(TransportOptions)));
-            builder.Services.AddSingleton(clientPassword);
             builder.Services.AddSingleton<DnsParseService>();
 
             builder.Services.AddGrpc(c =>
