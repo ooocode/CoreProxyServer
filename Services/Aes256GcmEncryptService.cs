@@ -14,12 +14,13 @@ namespace ServerWebApplication.Services
         public static MemoryOwner<byte> Encrypt(ReadOnlySpan<byte> passwordKey, ReadOnlySpan<byte> plaintext)
         {
             // 生成一个随机的初始化向量
-            byte[] nonce = RandomNumberGenerator.GetBytes(AesGcm.NonceByteSizes.MaxSize);
+            Span<byte> nonce = stackalloc byte[AesGcm.NonceByteSizes.MaxSize];
+            RandomNumberGenerator.Fill(nonce);
 
             // 创建一个 AesGcm 实例
             using AesGcm aesGcm = new(passwordKey, AesGcm.TagByteSizes.MaxSize);
 
-            var tag = new byte[AesGcm.TagByteSizes.MaxSize];
+            Span<byte> tag = stackalloc byte[AesGcm.TagByteSizes.MaxSize];
 
             //加密后的数据  nonce-tag-ciphertext
             var ciphertext = MemoryOwner<byte>.Allocate(nonce.Length + tag.Length + plaintext.Length);

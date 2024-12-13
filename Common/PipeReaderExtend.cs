@@ -1,4 +1,4 @@
-﻿using CommunityToolkit.HighPerformance.Buffers;
+﻿using DotNext.Buffers;
 using System.Buffers;
 using System.IO.Pipelines;
 using System.Runtime.CompilerServices;
@@ -39,7 +39,8 @@ namespace ServerWebApplication.Common
                     }
                     else
                     {
-                        using MemoryOwner<byte> reusableBuffer = MemoryOwner<byte>.Allocate((int)buffer.Length);
+                        int length = (int)buffer.Length;
+                        using var reusableBuffer = CommunityToolkit.HighPerformance.Buffers.MemoryOwner<byte>.Allocate(length);
                         buffer.CopyTo(reusableBuffer.Span);
                         yield return reusableBuffer.Memory;
                     }
