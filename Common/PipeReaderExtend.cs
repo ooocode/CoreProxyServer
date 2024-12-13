@@ -40,9 +40,9 @@ namespace ServerWebApplication.Common
                     else
                     {
                         int length = (int)buffer.Length;
-                        using var reusableBuffer = CommunityToolkit.HighPerformance.Buffers.MemoryOwner<byte>.Allocate(length);
-                        buffer.CopyTo(reusableBuffer.Span);
-                        yield return reusableBuffer.Memory;
+                        using var reusableBuffer = MemoryPool<byte>.Shared.Rent(length);
+                        buffer.CopyTo(reusableBuffer.Memory.Span);
+                        yield return reusableBuffer.Memory[..length];
                     }
                 }
                 finally
