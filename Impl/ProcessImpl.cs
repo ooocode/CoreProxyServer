@@ -38,7 +38,8 @@ namespace ServerWebApplication.Impl
         private void CheckPassword(ServerCallContext context)
         {
             var ipAddress = context.GetHttpContext().Connection.RemoteIpAddress;
-            if (ipAddress != null && IPAddress.IsLoopback(ipAddress))
+            ArgumentNullException.ThrowIfNull(ipAddress, nameof(ipAddress));
+            if (IPAddress.IsLoopback(ipAddress))
             {
                 return;
             }
