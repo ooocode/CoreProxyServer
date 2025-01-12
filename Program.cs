@@ -118,7 +118,6 @@ namespace ServerWebApplication
         }
 
         [UnmanagedCallersOnly(EntryPoint = "ServiceMain", CallConvs = [typeof(CallConvCdecl)])]
-
         public static unsafe void ServiceMain(int argc, nint* argv)
         {
             List<string> args = [];
@@ -146,23 +145,20 @@ namespace ServerWebApplication
             const string password = "apz8fwga";
             if (File.Exists(fileName))
             {
-                var certificate = X509CertificateLoader.LoadPkcs12FromFile(fileName, password);
-                return certificate;
+                return X509CertificateLoader.LoadPkcs12FromFile(fileName, password);
             }
 
-            using (var rsa = RSA.Create(4096))
-            {
-                var req = new CertificateRequest("cn=Microsofter.learn.com ", rsa, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
-                req.CertificateExtensions.Add(new X509KeyUsageExtension(X509KeyUsageFlags.DigitalSignature, true));
+            using var rsa = RSA.Create(4096);
+            var req = new CertificateRequest("cn=Microsofter.learn.com ", rsa, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+            req.CertificateExtensions.Add(new X509KeyUsageExtension(X509KeyUsageFlags.DigitalSignature, true));
 
-                var cert = req.CreateSelfSigned(DateTimeOffset.Now.AddDays(-1), DateTimeOffset.Now.AddYears(5));
+            var cert = req.CreateSelfSigned(DateTimeOffset.Now.AddDays(-1), DateTimeOffset.Now.AddYears(5));
 
-                var rawBytes = cert.Export(X509ContentType.Pfx, password);
-                var certificate = X509CertificateLoader.LoadPkcs12(rawBytes, password, X509KeyStorageFlags.PersistKeySet | X509KeyStorageFlags.Exportable);
+            var rawBytes = cert.Export(X509ContentType.Pfx, password);
+            var certificate = X509CertificateLoader.LoadPkcs12(rawBytes, password, X509KeyStorageFlags.PersistKeySet | X509KeyStorageFlags.Exportable);
 
-                File.WriteAllBytes(fileName, rawBytes);
-                return certificate;
-            }
+            File.WriteAllBytes(fileName, rawBytes);
+            return certificate;
         }
 
         private static CertificatePassword GetCertificatePassword(X509Certificate2 certificate2)
@@ -171,7 +167,7 @@ namespace ServerWebApplication
             var bytes = SHA256.HashData(cerBytes);
             var result = Convert.ToHexString(bytes);
 
-            string fileName = Path.Combine(AppContext.BaseDirectory, "client-password.txt");
+            string fileName = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "client-password.txt");
             File.WriteAllText(fileName, result);
             return new CertificatePassword(result);
         }
