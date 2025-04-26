@@ -1,6 +1,7 @@
 ﻿using Google.Protobuf;
 using Google.Protobuf.WellKnownTypes;
 using Grpc.Core;
+using Hello;
 using Microsoft.AspNetCore.Connections;
 using Microsoft.Extensions.Options;
 using Microsoft.Net.Http.Headers;
