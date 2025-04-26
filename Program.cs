@@ -182,7 +182,7 @@ namespace ServerWebApplication
         public CertificatePassword(string password)
         {
             Password = password;
-            PasswordKey = Encoding.UTF8.GetBytes(password);
+            PasswordKey = Convert.FromHexString(password);
         }
     };
 }
