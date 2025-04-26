@@ -23,21 +23,21 @@
 	<ItemGroup>
 		<PackageReference Include="CommunityToolkit.HighPerformance" Version="8.4.0" />
 		<PackageReference Include="DnsClient" Version="1.8.0" />
-		<PackageReference Include="DotNext.IO" Version="5.17.2" />
-		<PackageReference Include="Grpc.AspNetCore" Version="2.67.0" />
-		<PackageReference Include="Microsoft.Extensions.Hosting" Version="9.0.0" />
-		<PackageReference Include="Microsoft.Extensions.Hosting.Systemd" Version="9.0.0" />
-		<PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="9.0.0" />
+		<PackageReference Include="DotNext.IO" Version="5.21.0" />
+		<PackageReference Include="Grpc.AspNetCore" Version="2.71.0" />
+		<PackageReference Include="Microsoft.Extensions.Hosting" Version="9.0.4" />
+		<PackageReference Include="Microsoft.Extensions.Hosting.Systemd" Version="9.0.4" />
+		<PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="9.0.4" />
 		<PackageReference Include="prometheus-net" Version="8.2.1" />
-		<PackageReference Include="Roslynator.Analyzers" Version="4.12.10">
+		<PackageReference Include="Roslynator.Analyzers" Version="4.13.1">
 			<PrivateAssets>all</PrivateAssets>
 			<IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
 		</PackageReference>
-		<PackageReference Include="Roslynator.CodeAnalysis.Analyzers" Version="4.12.10">
+		<PackageReference Include="Roslynator.CodeAnalysis.Analyzers" Version="4.13.1">
 			<PrivateAssets>all</PrivateAssets>
 			<IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
 		</PackageReference>
-		<PackageReference Include="Roslynator.Formatting.Analyzers" Version="4.12.10">
+		<PackageReference Include="Roslynator.Formatting.Analyzers" Version="4.13.1">
 			<PrivateAssets>all</PrivateAssets>
 			<IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
 		</PackageReference>
