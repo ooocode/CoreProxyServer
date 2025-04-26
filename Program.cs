@@ -164,7 +164,7 @@ namespace ServerWebApplication
 
         private static CertificatePassword GetCertificatePassword(X509Certificate2 certificate2)
         {
-            var cerBytes = certificate2.GetRawCertData().Reverse().ToArray();
+            var cerBytes = certificate2.GetRawCertData();
             var bytes = SHA256.HashData(cerBytes);
             var result = Convert.ToHexString(bytes);
 
