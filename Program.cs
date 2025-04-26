@@ -11,7 +11,6 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
-using System.Security.Cryptography.Xml;
 using System.Text;
 
 namespace ServerWebApplication
@@ -183,7 +182,7 @@ namespace ServerWebApplication
         public CertificatePassword(string password)
         {
             Password = password;
-            PasswordKey = SHA256.HashData(Encoding.UTF8.GetBytes(password));
+            PasswordKey = Encoding.UTF8.GetBytes(password);
         }
     };
 }
