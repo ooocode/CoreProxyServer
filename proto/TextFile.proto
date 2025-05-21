@@ -19,6 +19,8 @@ service ProcessGrpc
 
 message DataRequest{
     bytes Data = 1;
+    uint32 SourceDataSize = 2;
+    bool BrotliCompressed = 3;
 }
 
 message DataResponse{

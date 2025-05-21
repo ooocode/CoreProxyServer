@@ -1,3 +1,4 @@
+using CommunityToolkit.HighPerformance.Buffers;
 using Google.Protobuf;
 using Google.Protobuf.WellKnownTypes;
 using Grpc.Core;
@@ -185,22 +186,41 @@ namespace ServerWebApplication.Impl
                         break;
                     }
 
-                    if (transportOptionsValue.EnableDataEncrypt)
+                    if (message.BrotliCompressed)
                     {
-                        //解密后发往目标服务器
-                        using var bytes = Aes256GcmEncryptService.Decrypt(clientPassword.PasswordKey.Span, message.Data.Span);
-                        await target.PipeWriter.WriteAsync(bytes.Memory, cancellationToken);
+                        using var reusableBuffer = MemoryOwner<byte>.Allocate((int)message.SourceDataSize);
+                        BrotliDecoder.TryDecompress(message.Data.Span, reusableBuffer.Span, out var _);
+                        await SendToServerAsync(target, reusableBuffer.Memory, cancellationToken);
                     }
                     else
                     {
-                        //直接发送到目标服务器
-                        await target.PipeWriter.WriteAsync(message.Data.Memory, cancellationToken);
+                        await SendToServerAsync(target, message.Data.Memory, cancellationToken);
                     }
                 }
             }
             finally
             {
                 CurrentTask1Count.Dec();
+            }
+        }
+
+        private async Task SendToServerAsync(SocketConnect target, ReadOnlyMemory<byte> data, CancellationToken cancellationToken)
+        {
+            if (target.PipeWriter == null)
+            {
+                return;
+            }
+
+            if (transportOptionsValue.EnableDataEncrypt)
+            {
+                //解密后发往目标服务器
+                using var bytes = Aes256GcmEncryptService.Decrypt(clientPassword.PasswordKey.Span, data.Span);
+                await target.PipeWriter.WriteAsync(bytes.Memory, cancellationToken);
+            }
+            else
+            {
+                //直接发送到目标服务器
+                await target.PipeWriter.WriteAsync(data, cancellationToken);
             }
         }
 
