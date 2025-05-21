@@ -234,18 +234,12 @@ namespace ServerWebApplication.Impl
                     {
                         //加密后发往客户端
                         using var encrytData = Aes256GcmEncryptService.Encrypt(clientPassword.PasswordKey.Span, memory.Span);
-                        await responseStream.WriteAsync(new DataResponse
-                        {
-                            Data = UnsafeByteOperations.UnsafeWrap(CompressData(encrytData.Memory))
-                        }, cancellationToken);
+                        await responseStream.WriteAsync(CompressData(encrytData.Memory), cancellationToken);
                     }
                     else
                     {
                         //直接发往客户端
-                        await responseStream.WriteAsync(new DataResponse
-                        {
-                            Data = UnsafeByteOperations.UnsafeWrap(CompressData(memory))
-                        }, cancellationToken);
+                        await responseStream.WriteAsync(CompressData(memory), cancellationToken);
                     }
                 }
             }
@@ -256,17 +250,25 @@ namespace ServerWebApplication.Impl
         }
 
 
-        private static ReadOnlyMemory<byte> CompressData(ReadOnlyMemory<byte> source)
+        private static DataResponse CompressData(ReadOnlyMemory<byte> source)
         {
             using var reusableBuffer = CommunityToolkit.HighPerformance.Buffers.MemoryOwner<byte>.Allocate(BrotliEncoder.GetMaxCompressedLength(source.Length));
             if (BrotliEncoder.TryCompress(source.Span, reusableBuffer.Span, out var bytesWritten)
                 && bytesWritten < source.Length)
             {
-                return reusableBuffer.Span.Slice(bytesWritten).ToArray();
+                return new DataResponse
+                {
+                    BrotliCompressed = true,
+                    Data = UnsafeByteOperations.UnsafeWrap(reusableBuffer.Memory.Slice(0, bytesWritten))
+                };
             }
             else
             {
-                return source;
+                return new DataResponse
+                {
+                    BrotliCompressed = false,
+                    Data = UnsafeByteOperations.UnsafeWrap(source)
+                };
             }
         }
 
