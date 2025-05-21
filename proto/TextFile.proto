@@ -23,7 +23,7 @@ message DataRequest{
 
 message DataResponse{
     bytes Data = 1;
-    uint32 DataSize = 2;
+    uint32 SourceDataSize = 2;
     bool BrotliCompressed = 3;
 }
 

@@ -260,7 +260,7 @@ namespace ServerWebApplication.Impl
                 {
                     BrotliCompressed = true,
                     Data = UnsafeByteOperations.UnsafeWrap(reusableBuffer.Memory.Slice(0, bytesWritten)),
-                    DataSize = (uint)source.Length
+                    SourceDataSize = (uint)source.Length
                 };
             }
             else
@@ -269,7 +269,7 @@ namespace ServerWebApplication.Impl
                 {
                     BrotliCompressed = false,
                     Data = UnsafeByteOperations.UnsafeWrap(source),
-                    DataSize = (uint)source.Length
+                    SourceDataSize = (uint)source.Length
                 };
             }
         }
