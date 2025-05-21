@@ -230,26 +230,13 @@ namespace ServerWebApplication.Impl
                         break;
                     }
 
-                    using var reusableBuffer = CommunityToolkit.HighPerformance.Buffers.MemoryOwner<byte>.Allocate(BrotliEncoder.GetMaxCompressedLength(memory.Length));
-
-                    ReadOnlySpan<byte> sendDta = null;
-                    if (BrotliEncoder.TryCompress(memory.Span, reusableBuffer.Span, out var bytesWritten)
-                        && bytesWritten < memory.Length)
-                    {
-                        sendDta = reusableBuffer.Span.Slice(bytesWritten);
-                    }
-                    else
-                    {
-                        sendDta = memory.Span;
-                    }
-
                     if (transportOptionsValue.EnableDataEncrypt)
                     {
                         //加密后发往客户端
-                        using var encrytData = Aes256GcmEncryptService.Encrypt(clientPassword.PasswordKey.Span, sendDta);
+                        using var encrytData = Aes256GcmEncryptService.Encrypt(clientPassword.PasswordKey.Span, memory.Span);
                         await responseStream.WriteAsync(new DataResponse
                         {
-                            Data = UnsafeByteOperations.UnsafeWrap(encrytData.Memory)
+                            Data = UnsafeByteOperations.UnsafeWrap(CompressData(encrytData.Span).ToArray())
                         }, cancellationToken);
                     }
                     else
@@ -257,7 +244,7 @@ namespace ServerWebApplication.Impl
                         //直接发往客户端
                         await responseStream.WriteAsync(new DataResponse
                         {
-                            Data = UnsafeByteOperations.UnsafeWrap(sendDta.ToArray())
+                            Data = UnsafeByteOperations.UnsafeWrap(CompressData(memory.Span).ToArray())
                         }, cancellationToken);
                     }
                 }
@@ -265,6 +252,21 @@ namespace ServerWebApplication.Impl
             finally
             {
                 CurrentTask2Count.Dec();
+            }
+        }
+
+
+        private static ReadOnlySpan<byte> CompressData(ReadOnlySpan<byte> source)
+        {
+            using var reusableBuffer = CommunityToolkit.HighPerformance.Buffers.MemoryOwner<byte>.Allocate(BrotliEncoder.GetMaxCompressedLength(source.Length));
+            if (BrotliEncoder.TryCompress(source, reusableBuffer.Span, out var bytesWritten)
+                && bytesWritten < source.Length)
+            {
+                return reusableBuffer.Span.Slice(bytesWritten);
+            }
+            else
+            {
+                return source;
             }
         }
 
