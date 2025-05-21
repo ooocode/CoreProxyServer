@@ -1,4 +1,5 @@
 ﻿using Microsoft.AspNetCore.Connections;
+using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using ServerWebApplication.Common;
 using ServerWebApplication.Impl;
@@ -63,8 +64,7 @@ namespace ServerWebApplication
 
             builder.Services.AddGrpc(c =>
             {
-                c.CompressionProviders.Add(new BrCompressionProvider());
-                c.ResponseCompressionAlgorithm = BrCompressionProvider.EncodingNameConst;
+                c.ResponseCompressionAlgorithm = "gzip";
                 c.ResponseCompressionLevel = CompressionLevel.Optimal;
             });
 
