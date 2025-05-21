@@ -189,8 +189,11 @@ namespace ServerWebApplication.Impl
                     if (message.BrotliCompressed)
                     {
                         using var reusableBuffer = MemoryOwner<byte>.Allocate((int)message.SourceDataSize);
-                        BrotliDecoder.TryDecompress(message.Data.Span, reusableBuffer.Span, out var _);
-                        await SendToServerAsync(target, reusableBuffer.Memory, cancellationToken);
+                        if (!BrotliDecoder.TryDecompress(message.Data.Span, reusableBuffer.Span, out var bytesWritten))
+                        {
+                            throw new Exception("解压失败");
+                        }
+                        await SendToServerAsync(target, reusableBuffer.Memory.Slice(0, bytesWritten), cancellationToken);
                     }
                     else
                     {
@@ -279,7 +282,7 @@ namespace ServerWebApplication.Impl
                 return new DataResponse
                 {
                     BrotliCompressed = true,
-                    Data = UnsafeByteOperations.UnsafeWrap(reusableBuffer.Memory.Slice(0, bytesWritten)),
+                    Data = ByteString.CopyFrom(reusableBuffer.Memory.Slice(0, bytesWritten).ToArray()),
                     SourceDataSize = (uint)source.Length
                 };
             }
