@@ -1,4 +1,4 @@
-﻿using Google.Protobuf;
+using Google.Protobuf;
 using Google.Protobuf.WellKnownTypes;
 using Grpc.Core;
 using Hello;
@@ -236,7 +236,7 @@ namespace ServerWebApplication.Impl
                         using var encrytData = Aes256GcmEncryptService.Encrypt(clientPassword.PasswordKey.Span, memory.Span);
                         await responseStream.WriteAsync(new DataResponse
                         {
-                            Data = UnsafeByteOperations.UnsafeWrap(CompressData(encrytData.Span).ToArray())
+                            Data = UnsafeByteOperations.UnsafeWrap(CompressData(encrytData.Memory))
                         }, cancellationToken);
                     }
                     else
@@ -244,7 +244,7 @@ namespace ServerWebApplication.Impl
                         //直接发往客户端
                         await responseStream.WriteAsync(new DataResponse
                         {
-                            Data = UnsafeByteOperations.UnsafeWrap(CompressData(memory.Span).ToArray())
+                            Data = UnsafeByteOperations.UnsafeWrap(CompressData(memory))
                         }, cancellationToken);
                     }
                 }
@@ -256,13 +256,13 @@ namespace ServerWebApplication.Impl
         }
 
 
-        private static ReadOnlySpan<byte> CompressData(ReadOnlySpan<byte> source)
+        private static ReadOnlyMemory<byte> CompressData(ReadOnlyMemory<byte> source)
         {
             using var reusableBuffer = CommunityToolkit.HighPerformance.Buffers.MemoryOwner<byte>.Allocate(BrotliEncoder.GetMaxCompressedLength(source.Length));
-            if (BrotliEncoder.TryCompress(source, reusableBuffer.Span, out var bytesWritten)
+            if (BrotliEncoder.TryCompress(source.Span, reusableBuffer.Span, out var bytesWritten)
                 && bytesWritten < source.Length)
             {
-                return reusableBuffer.Span.Slice(bytesWritten);
+                return reusableBuffer.Span.Slice(bytesWritten).ToArray();
             }
             else
             {
