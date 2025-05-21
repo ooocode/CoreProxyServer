@@ -1,13 +1,10 @@
 ﻿using Microsoft.AspNetCore.Connections;
-using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
-using ServerWebApplication.Common;
 using ServerWebApplication.Impl;
 using ServerWebApplication.Options;
 using ServerWebApplication.Services;
 using ServerWebApplication.Workers;
 using System.Diagnostics.CodeAnalysis;
-using System.IO.Compression;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
@@ -62,11 +59,7 @@ namespace ServerWebApplication
             builder.Services.Configure<TransportOptions>(builder.Configuration.GetSection(nameof(TransportOptions)));
             builder.Services.AddSingleton<DnsParseService>();
 
-            builder.Services.AddGrpc(c =>
-            {
-                c.ResponseCompressionAlgorithm = "gzip";
-                c.ResponseCompressionLevel = CompressionLevel.Optimal;
-            });
+            builder.Services.AddGrpc();
 
             app = builder.Build();
             LogPassword(app.Logger, clientPassword.Password);

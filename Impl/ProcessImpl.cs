@@ -9,6 +9,7 @@ using Prometheus;
 using ServerWebApplication.Common;
 using ServerWebApplication.Options;
 using ServerWebApplication.Services;
+using System.IO.Compression;
 using System.Net;
 using System.Text;
 
@@ -79,7 +80,7 @@ namespace ServerWebApplication.Impl
             return new(arr[0], int.Parse(arr[1]));
         }
 
-        private static readonly SendDataRequest EmptySendDataRequest = new() { Data = ByteString.Empty };
+        private static readonly DataResponse EmptyDataResponse = new() { Data = ByteString.Empty };
 
         /// <summary>
         /// 双向流处理
@@ -88,8 +89,8 @@ namespace ServerWebApplication.Impl
         /// <param name="responseStream"></param>
         /// <param name="context"></param>
         /// <returns></returns>
-        public override async Task StreamingServer(IAsyncStreamReader<SendDataRequest> requestStream,
-            IServerStreamWriter<SendDataRequest> responseStream,
+        public override async Task StreamingServer(IAsyncStreamReader<DataRequest> requestStream,
+            IServerStreamWriter<DataResponse> responseStream,
             ServerCallContext context)
         {
             CheckPassword(context);
@@ -116,7 +117,7 @@ namespace ServerWebApplication.Impl
             Logs.SuccessConnect(logger, targetAddress, targetPort);
 
             //返回成功
-            await responseStream.WriteAsync(EmptySendDataRequest, cancellationToken);
+            await responseStream.WriteAsync(EmptyDataResponse, cancellationToken);
 
             CurrentCount.Inc();
 
@@ -167,7 +168,7 @@ namespace ServerWebApplication.Impl
         /// <param name="target"></param>
         /// <param name="cancellationToken"></param>
         /// <returns></returns>
-        private async Task HandlerClient(IAsyncStreamReader<SendDataRequest> requestStream, SocketConnect target, CancellationToken cancellationToken)
+        private async Task HandlerClient(IAsyncStreamReader<DataRequest> requestStream, SocketConnect target, CancellationToken cancellationToken)
         {
             if (target.PipeWriter == null)
             {
@@ -210,7 +211,7 @@ namespace ServerWebApplication.Impl
         /// <param name="target"></param>
         /// <param name="cancellationToken"></param>
         /// <returns></returns>
-        private async Task HandlerServer(IServerStreamWriter<SendDataRequest> responseStream,
+        private async Task HandlerServer(IServerStreamWriter<DataResponse> responseStream,
             SocketConnect target, CancellationToken cancellationToken)
         {
             if (target.PipeReader == null)
@@ -229,11 +230,24 @@ namespace ServerWebApplication.Impl
                         break;
                     }
 
+                    using var reusableBuffer = CommunityToolkit.HighPerformance.Buffers.MemoryOwner<byte>.Allocate(BrotliEncoder.GetMaxCompressedLength(memory.Length));
+
+                    ReadOnlySpan<byte> sendDta = null;
+                    if (BrotliEncoder.TryCompress(memory.Span, reusableBuffer.Span, out var bytesWritten)
+                        && bytesWritten < memory.Length)
+                    {
+                        sendDta = reusableBuffer.Span.Slice(bytesWritten);
+                    }
+                    else
+                    {
+                        sendDta = memory.Span;
+                    }
+
                     if (transportOptionsValue.EnableDataEncrypt)
                     {
                         //加密后发往客户端
-                        using var encrytData = Aes256GcmEncryptService.Encrypt(clientPassword.PasswordKey.Span, memory.Span);
-                        await responseStream.WriteAsync(new SendDataRequest
+                        using var encrytData = Aes256GcmEncryptService.Encrypt(clientPassword.PasswordKey.Span, sendDta);
+                        await responseStream.WriteAsync(new DataResponse
                         {
                             Data = UnsafeByteOperations.UnsafeWrap(encrytData.Memory)
                         }, cancellationToken);
@@ -241,9 +255,9 @@ namespace ServerWebApplication.Impl
                     else
                     {
                         //直接发往客户端
-                        await responseStream.WriteAsync(new SendDataRequest
+                        await responseStream.WriteAsync(new DataResponse
                         {
-                            Data = UnsafeByteOperations.UnsafeWrap(memory)
+                            Data = UnsafeByteOperations.UnsafeWrap(sendDta.ToArray())
                         }, cancellationToken);
                     }
                 }

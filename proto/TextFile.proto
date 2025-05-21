@@ -12,15 +12,19 @@ package hello;
 
 service ProcessGrpc
 {
-   rpc StreamingServer (stream SendDataRequest) returns (stream SendDataRequest);
+   rpc StreamingServer (stream DataRequest) returns (stream DataResponse);
 
    rpc GetServerInfo(google.protobuf.Empty) returns (ServerInfoRes);
 }
 
-message SendDataRequest{
+message DataRequest{
     bytes Data = 1;
 }
 
+message DataResponse{
+    bytes Data = 1;
+    bool BrotliCompressed = 2;
+}
 
 message ServerInfoRes{
     sfixed32 ConnectingCount = 1;
