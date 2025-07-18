@@ -45,7 +45,7 @@ namespace CoreProxy.Server.Orleans.Services
         {
             CheckPassword(context);
 
-            string sessionId = Guid.CreateVersion7().ToString();
+            string sessionId = Guid.CreateVersion7().ToString("N");
 
             using var timeoutCancellationTokenSource = new CancellationTokenSource(TimeSpan.FromHours(1));
             using var cancellationSource = CancellationTokenSource.CreateLinkedTokenSource(
