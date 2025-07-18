@@ -1,0 +1,37 @@
+﻿// limitations under the License.
+syntax = "proto3";
+//import "google/protobuf/any.proto";
+import "google/protobuf/empty.proto";
+//import "timestamp.proto";
+//import "any.proto";
+//import "empty.proto";
+
+package hello;
+
+
+
+// The greeting service definition.
+service Greeter {
+  rpc Connect(ConnectRequest) returns (stream HttpData);
+  rpc Send (SendRequest) returns (google.protobuf.Empty);
+  rpc GetStatus(google.protobuf.Empty) returns (StatusReply);
+}
+
+message ConnectRequest{
+  string Host = 1;
+  int32 Port = 2;
+  string SessionId = 3;
+}
+
+message HttpData{
+  bytes Payload = 1;
+}
+
+message SendRequest{
+   string SessionId = 1;
+   bytes Payload = 2;
+}
+
+message StatusReply{
+  int32 SocketCount = 1;
+}

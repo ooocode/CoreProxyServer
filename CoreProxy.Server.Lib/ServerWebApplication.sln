@@ -1,0 +1,31 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.9.34714.143
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "CoreProxy.Server.Lib", "CoreProxy.Server.Lib.csproj", "{2E41E42F-2BE4-41AB-9060-C8B8BABE81DB}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CoreProxy.Server.Orleans", "..\CoreProxy.Server.Orleans\CoreProxy.Server.Orleans.csproj", "{165019CE-FEDA-44F8-A7F8-DD0D740BDFBF}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{2E41E42F-2BE4-41AB-9060-C8B8BABE81DB}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2E41E42F-2BE4-41AB-9060-C8B8BABE81DB}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{2E41E42F-2BE4-41AB-9060-C8B8BABE81DB}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{2E41E42F-2BE4-41AB-9060-C8B8BABE81DB}.Release|Any CPU.Build.0 = Release|Any CPU
+		{165019CE-FEDA-44F8-A7F8-DD0D740BDFBF}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{165019CE-FEDA-44F8-A7F8-DD0D740BDFBF}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{165019CE-FEDA-44F8-A7F8-DD0D740BDFBF}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{165019CE-FEDA-44F8-A7F8-DD0D740BDFBF}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {91F08293-E09B-4CF8-B620-E4B7D98F3AD9}
+	EndGlobalSection
+EndGlobal

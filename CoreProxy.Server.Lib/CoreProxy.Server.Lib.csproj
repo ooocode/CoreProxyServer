@@ -1,0 +1,61 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<TargetFrameworks>net8.0;net9.0</TargetFrameworks>
+		<LangVersion>preview</LangVersion>
+		<ServerGarbageCollection>true</ServerGarbageCollection>
+		<Nullable>enable</Nullable>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<IsAotCompatible>true</IsAotCompatible>
+		<StripSymbols>true</StripSymbols>
+		<InvariantGlobalization>true</InvariantGlobalization>
+		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+		<OutputType>Library</OutputType>
+		<PublishAot>true</PublishAot>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<None Remove="proto\TextFile.proto" />
+		<None Remove="proto\chat.proto" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<PackageReference Include="CommunityToolkit.HighPerformance" Version="8.4.0" />
+		<PackageReference Include="DnsClient" Version="1.8.0" />
+		<PackageReference Include="DotNext.IO" Version="5.21.0" />
+		<PackageReference Include="DotNext.Threading" Version="5.21.0" />
+		<PackageReference Include="Grpc.AspNetCore" Version="2.71.0" />
+		<PackageReference Condition="'$(TargetFramework)' == 'net8.0'" Include="Microsoft.Extensions.Hosting" Version="8.0.1"/>
+		<PackageReference Condition="'$(TargetFramework)' == 'net8.0'" Include="Microsoft.Extensions.Hosting.Systemd" Version="8.0.1" />
+		<PackageReference Condition="'$(TargetFramework)' == 'net9.0'" Include="Microsoft.Extensions.Hosting" Version="9.0.5"/>
+		<PackageReference Condition="'$(TargetFramework)' == 'net9.0'" Include="Microsoft.Extensions.Hosting.Systemd" Version="9.0.5" />
+		<PackageReference Include="prometheus-net" Version="8.2.1" />
+		<PackageReference Include="Roslynator.Analyzers" Version="4.13.1">
+			<PrivateAssets>all</PrivateAssets>
+			<IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+		</PackageReference>
+		<PackageReference Include="Roslynator.CodeAnalysis.Analyzers" Version="4.13.1">
+			<PrivateAssets>all</PrivateAssets>
+			<IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+		</PackageReference>
+		<PackageReference Include="Roslynator.Formatting.Analyzers" Version="4.13.1">
+			<PrivateAssets>all</PrivateAssets>
+			<IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+		</PackageReference>
+	</ItemGroup>
+
+	<ItemGroup>
+		<Protobuf Include="proto\TextFile.proto" GrpcServices="Server" />
+		<Protobuf Include="proto\chat.proto" GrpcServices="Server" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<None Update="proxy.service">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</None>
+	</ItemGroup>
+
+	<ItemGroup>
+		<TrimmerRootAssembly Include="Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets" />
+	</ItemGroup>
+</Project>

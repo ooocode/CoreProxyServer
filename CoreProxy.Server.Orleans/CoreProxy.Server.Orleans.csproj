@@ -1,0 +1,29 @@
+﻿<Project Sdk="Microsoft.NET.Sdk.Web">
+
+	<PropertyGroup>
+		<TargetFramework>net9.0</TargetFramework>
+		<Nullable>enable</Nullable>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<PublishAot>false</PublishAot>
+		<IsAotCompatible>true</IsAotCompatible>
+		<InvariantGlobalization>true</InvariantGlobalization>
+		<IncludeHttpRuleProtos>true</IncludeHttpRuleProtos>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<PackageReference Include="CommunityToolkit.HighPerformance" Version="8.4.0" />
+		<PackageReference Include="DotNext.IO" Version="5.23.0" />
+		<PackageReference Include="Grpc.AspNetCore" Version="2.71.0" />
+		<PackageReference Include="Grpc.AspNetCore.Web" Version="2.71.0" />
+		<PackageReference Include="Microsoft.Extensions.Hosting.Systemd" Version="9.0.7" />
+		<PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="9.0.7" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<Protobuf Include="proto\TextFile.proto" GrpcServices="Server" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<TrimmerRootAssembly Include="Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets" />
+	</ItemGroup>
+</Project>
