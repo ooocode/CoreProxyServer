@@ -44,5 +44,5 @@ jobs:
         prerelease: false
         title: latest
         files: |
-          /bin/Release/net9.0/linux-x64/publish-linux-x64.zip
+          ${{ github.workspace }}/CoreProxy.Server.Orleans/bin/Release/net9.0/linux-x64/publish-linux-x64.zip
 
