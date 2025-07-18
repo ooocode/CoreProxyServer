@@ -122,7 +122,7 @@ public class MyGrpcService(
         CheckPassword(context);
 
         var cs = GlobalState.Sockets.Values
-            .Select(x => $"{x.ClientIpAddress}:{x.DateTime.ToLocalTime():yyyy/M/d HH:mm:ss}")
+            .Select(x => $"{x.ClientIpAddress}:{x.DateTime.ToString("o")}")
             .ToList();
 
         StatusReply reply = new()
