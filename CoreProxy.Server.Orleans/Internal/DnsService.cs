@@ -12,6 +12,11 @@ namespace ServerWebApplication.Common
 
         public static async Task<IPEndPoint> GetIpEndpointAsync(string host, int port, CancellationToken cancellationToken)
         {
+            if (IPAddress.TryParse(host, out var addr))
+            {
+                return new IPEndPoint(addr, port);
+            }
+
             var ipAddresses = await Dns.GetHostAddressesAsync(host, cancellationToken);
             var iPAddress = ipAddresses.FirstOrDefault(x => x.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork);
             iPAddress ??= ipAddresses.FirstOrDefault(x => x.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6);

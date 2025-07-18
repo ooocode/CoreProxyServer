@@ -20,7 +20,6 @@ service Greeter {
 message ConnectRequest{
   string Host = 1;
   int32 Port = 2;
-  string SessionId = 3;
 }
 
 message HttpData{
