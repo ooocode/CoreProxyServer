@@ -48,8 +48,9 @@ public class MyGrpcService(
             throw new RpcException(new Status(StatusCode.AlreadyExists, "SessionId already exists"));
         }
 
+        using var timeoutCancellationTokenSource = new CancellationTokenSource(TimeSpan.FromHours(1));
         using var cancellationSource = CancellationTokenSource.CreateLinkedTokenSource(
-                    context.CancellationToken, hostApplicationLifetime.ApplicationStopping);
+                    context.CancellationToken, hostApplicationLifetime.ApplicationStopping, timeoutCancellationTokenSource.Token);
         var cancellationToken = cancellationSource.Token;
 
         try
