@@ -23,6 +23,8 @@ jobs:
       uses: actions/setup-dotnet@v4
       with:
         dotnet-version: 9.0.x
+    - name: cd
+      run: cd CoreProxy.Server.Orleans
     - name: Restore dependencies
       run: dotnet restore
     - name: Publish
