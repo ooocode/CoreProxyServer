@@ -57,7 +57,15 @@ public class MyGrpcService(
         {
             var endpoint = await DnsService.GetIpEndpointAsync(request.Host, request.Port, cancellationToken);
             await using var connectionContext = await connectionFactory.ConnectAsync(endpoint, cancellationToken);
-            if (!GlobalState.Sockets.TryAdd(request.SessionId, connectionContext))
+
+            var connectItem = new ConnectItem
+            {
+                ClientIpAddress = connectionContext.RemoteEndPoint?.ToString() ?? string.Empty,
+                ConnectionContext = connectionContext,
+                DateTime = DateTimeOffset.Now
+            };
+
+            if (!GlobalState.Sockets.TryAdd(request.SessionId, connectItem))
             {
                 throw new RpcException(new Status(StatusCode.AlreadyExists, "SessionId already exists"));
             }
@@ -105,16 +113,25 @@ public class MyGrpcService(
             throw new RpcException(new Status(StatusCode.NotFound, "SessionId not found"));
         }
 
-        await connectionContext.Transport.Output.WriteAsync(request.Payload.Memory, context.CancellationToken);
+        await connectionContext.ConnectionContext.Transport.Output.WriteAsync(request.Payload.Memory, context.CancellationToken);
         return new Empty();
     }
 
     public override Task<StatusReply> GetStatus(Empty request, ServerCallContext context)
     {
+        CheckPassword(context);
+
+        var cs = GlobalState.Sockets.Values
+            .Select(x => $"{x.ClientIpAddress}:{x.DateTime.ToLocalTime():yyyy/M/d HH:mm:ss}")
+            .ToList();
+
         StatusReply reply = new()
         {
-            SocketCount = GlobalState.Sockets.Count
+            SocketCount = cs.Count
         };
+
+        reply.Connections.AddRange(cs);
+
         return Task.FromResult(reply);
     }
 }

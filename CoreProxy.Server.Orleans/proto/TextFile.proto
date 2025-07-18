@@ -34,4 +34,5 @@ message SendRequest{
 
 message StatusReply{
   int32 SocketCount = 1;
+  repeated string Connections = 2;
 }
