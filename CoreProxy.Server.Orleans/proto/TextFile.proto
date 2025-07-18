@@ -14,7 +14,7 @@ package hello;
 service Greeter {
   rpc Connect(ConnectRequest) returns (stream HttpData);
   rpc Send (SendRequest) returns (google.protobuf.Empty);
-  rpc GetStatus(google.protobuf.Empty) returns (StatusReply);
+  rpc GetStatus(GetStatusRequest) returns (StatusReply);
 }
 
 message ConnectRequest{
@@ -29,6 +29,10 @@ message HttpData{
 message SendRequest{
    string SessionId = 1;
    bytes Payload = 2;
+}
+
+message GetStatusRequest{
+	bool IncludeDetail = 1;
 }
 
 message StatusReply{

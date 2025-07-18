@@ -119,22 +119,33 @@ namespace CoreProxy.Server.Orleans.Services
             return new Empty();
         }
 
-        public override Task<StatusReply> GetStatus(Empty request, ServerCallContext context)
+        public override Task<StatusReply> GetStatus(GetStatusRequest request, ServerCallContext context)
         {
             CheckPassword(context);
 
-            var cs = GlobalState.Sockets.Values
-                .Select(x => $"{x.ClientIpAddress}:{x.DateTime:o}")
-                .ToList();
-
-            StatusReply reply = new()
+            if (request.IncludeDetail)
             {
-                SocketCount = cs.Count
-            };
+                var cs = GlobalState.Sockets.Values
+                  .Select(x => $"{x.ClientIpAddress}:{x.DateTime:o}")
+                  .ToList();
 
-            reply.Connections.AddRange(cs);
+                StatusReply reply = new()
+                {
+                    SocketCount = cs.Count
+                };
 
-            return Task.FromResult(reply);
+                reply.Connections.AddRange(cs);
+
+                return Task.FromResult(reply);
+            }
+            else
+            {
+                StatusReply reply = new()
+                {
+                    SocketCount = GlobalState.Sockets.Count
+                };
+                return Task.FromResult(reply);
+            }
         }
     }
 }
