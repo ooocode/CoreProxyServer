@@ -34,7 +34,7 @@ jobs:
     #     path: ${{ github.workspace }}/bin/Release/net8.0/linux-x64/publish
     - name: Zip
       run: |
-        cd ${{ github.workspace }}/CoreProxy.Server.Orleansbin/Release/net9.0/linux-x64
+        cd ${{ github.workspace }}/CoreProxy.Server.Orleans/bin/Release/net9.0/linux-x64
         zip -r publish-linux-x64.zip publish
     - name: Create GitHub release
       uses: marvinpinto/action-automatic-releases@latest
@@ -44,5 +44,5 @@ jobs:
         prerelease: false
         title: latest
         files: |
-          CoreProxy.Server.Orleans/bin/Release/net9.0/linux-x64/publish-linux-x64.zip
+          /bin/Release/net9.0/linux-x64/publish-linux-x64.zip
 
