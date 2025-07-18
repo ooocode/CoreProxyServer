@@ -23,12 +23,10 @@ jobs:
       uses: actions/setup-dotnet@v4
       with:
         dotnet-version: 9.0.x
-    - name: cd
-      run: cd ./CoreProxy.Server.Orleans
     - name: Restore dependencies
-      run: dotnet restore
+      run: dotnet restore CoreProxy.Server.Orleans
     - name: Publish
-      run: dotnet publish -r linux-x64
+      run: dotnet publish CoreProxy.Server.Orleans -r linux-x64
     # - name: upload result
     #   uses: actions/upload-artifact@v1
     #   with:
@@ -36,7 +34,7 @@ jobs:
     #     path: ${{ github.workspace }}/bin/Release/net8.0/linux-x64/publish
     - name: Zip
       run: |
-        cd ${{ github.workspace }}/bin/Release/net9.0/linux-x64
+        cd ${{ github.workspace }}/CoreProxy.Server.Orleansbin/Release/net9.0/linux-x64
         zip -r publish-linux-x64.zip publish
     - name: Create GitHub release
       uses: marvinpinto/action-automatic-releases@latest
@@ -46,5 +44,5 @@ jobs:
         prerelease: false
         title: latest
         files: |
-          bin/Release/net9.0/linux-x64/publish-linux-x64.zip
+          CoreProxy.Server.Orleans/bin/Release/net9.0/linux-x64/publish-linux-x64.zip
 

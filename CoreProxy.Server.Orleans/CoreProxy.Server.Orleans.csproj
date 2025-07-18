@@ -4,7 +4,7 @@
 		<TargetFramework>net9.0</TargetFramework>
 		<Nullable>enable</Nullable>
 		<ImplicitUsings>enable</ImplicitUsings>
-		<PublishAot>false</PublishAot>
+		<PublishAot>true</PublishAot>
 		<IsAotCompatible>true</IsAotCompatible>
 		<InvariantGlobalization>true</InvariantGlobalization>
 		<IncludeHttpRuleProtos>true</IncludeHttpRuleProtos>
