@@ -60,7 +60,7 @@ public class MyGrpcService(
 
             var connectItem = new ConnectItem
             {
-                ClientIpAddress = connectionContext.RemoteEndPoint?.ToString() ?? string.Empty,
+                ClientIpAddress = context.GetHttpContext().Connection.RemoteIpAddress?.ToString() ?? string.Empty,
                 ConnectionContext = connectionContext,
                 DateTime = DateTimeOffset.Now
             };
