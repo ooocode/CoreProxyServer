@@ -19,11 +19,6 @@ namespace CoreProxy.Server.Orleans.Services
         IConnectionFactory connectionFactory,
         CertificatePassword certificatePassword) : Greeter.GreeterBase
     {
-        private readonly static HttpData EmptyHttpData = new()
-        {
-            Payload = ByteString.Empty
-        };
-
         private void CheckPassword(ServerCallContext context)
         {
             var ipAddress = context.GetHttpContext().Connection.RemoteIpAddress;
@@ -69,7 +64,7 @@ namespace CoreProxy.Server.Orleans.Services
                     throw new RpcException(new Status(StatusCode.AlreadyExists, "SessionId already exists"));
                 }
 
-                //发送空包，表示连接成功
+                //发送包，表示连接成功
                 await responseStream.WriteAsync(new HttpData
                 {
                     Payload = ByteString.CopyFromUtf8(sessionId),
