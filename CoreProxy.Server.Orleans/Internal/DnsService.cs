@@ -23,8 +23,7 @@ namespace ServerWebApplication.Common
 
             ArgumentNullException.ThrowIfNull(iPAddress, nameof(iPAddress));
 
-            var endpoint = new IPEndPoint(iPAddress, port);
-            return endpoint;
+            return new IPEndPoint(iPAddress, port);
         }
     }
 }

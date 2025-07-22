@@ -118,29 +118,18 @@ namespace CoreProxy.Server.Orleans.Services
         {
             CheckPassword(context);
 
+            var reply = new StatusReply
+            {
+                SocketCount = GlobalState.Sockets.Count
+            };
+
             if (request.IncludeDetail)
             {
-                var cs = GlobalState.Sockets.Values
-                  .Select(x => $"{x.ClientIpAddress}:{x.DateTime:o}")
-                  .ToList();
-
-                StatusReply reply = new()
-                {
-                    SocketCount = cs.Count
-                };
-
-                reply.Connections.AddRange(cs);
-
-                return Task.FromResult(reply);
+                reply.Connections.AddRange(GlobalState.Sockets.Values
+                    .Select(x => $"{x.ClientIpAddress}:{x.DateTime:o}"));
             }
-            else
-            {
-                StatusReply reply = new()
-                {
-                    SocketCount = GlobalState.Sockets.Count
-                };
-                return Task.FromResult(reply);
-            }
+
+            return Task.FromResult(reply);
         }
     }
 }

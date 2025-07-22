@@ -3,7 +3,7 @@ using System.Collections.Concurrent;
 
 namespace CoreProxy.Server.Orleans.Internal
 {
-    public class GlobalState
+    public static class GlobalState
     {
         public static readonly ConcurrentDictionary<string, ConnectItem> Sockets = [];
     }

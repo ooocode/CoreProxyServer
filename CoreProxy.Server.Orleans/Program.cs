@@ -16,14 +16,10 @@ builder.WebHost.ConfigureKestrel(serverOptions =>
     serverOptions.AddServerHeader = false; // 禁用 Server 头
     serverOptions.ConfigureEndpointDefaults(c => c.Protocols = HttpProtocols.Http1AndHttp2AndHttp3);
 
-    serverOptions.ConfigureHttpsDefaults(s =>
-    {
-        s.ServerCertificate = certificate2;
-    });
+    serverOptions.ConfigureHttpsDefaults(s => s.ServerCertificate = certificate2);
 });
 
 builder.WebHost.UseKestrelHttpsConfiguration();
-
 
 if (Microsoft.Extensions.Hosting.WindowsServices.WindowsServiceHelpers.IsWindowsService())
 {
@@ -34,17 +30,12 @@ else if (Microsoft.Extensions.Hosting.Systemd.SystemdHelpers.IsSystemdService())
     builder.Host.UseSystemd();
 }
 
-
 const string typeName = "Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets.SocketConnectionFactory";
+
 var factoryType = typeof(Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets.SocketTransportOptions).Assembly.GetType(typeName);
 ArgumentNullException.ThrowIfNull(factoryType, nameof(factoryType));
 builder.Services.AddSingleton(typeof(IConnectionFactory), factoryType);
-
-
-builder.Services.AddGrpc(opt =>
-{
-    opt.EnableDetailedErrors = true;
-});
+builder.Services.AddGrpc(opt => opt.EnableDetailedErrors = true);
 
 var app = builder.Build();
 
