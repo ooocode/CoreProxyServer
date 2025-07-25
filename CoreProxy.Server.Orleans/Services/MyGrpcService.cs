@@ -70,7 +70,7 @@ namespace CoreProxy.Server.Orleans.Services
                     Payload = ByteString.CopyFromUtf8(sessionId),
                 }, cancellationToken);
 
-                await foreach (var item in connectionContext.Transport.Input.ReadAllAsync(cancellationToken))
+                await foreach (var item in connectionContext.Transport.Input.ReadAllAsync(cancellationToken).WithCancellation(cancellationToken))
                 {
                     HttpData httpData = new()
                     {
