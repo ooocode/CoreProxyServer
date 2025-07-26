@@ -2,7 +2,7 @@
 syntax = "proto3";
 //import "google/protobuf/any.proto";
 import "google/protobuf/empty.proto";
-//import "timestamp.proto";
+import "google/protobuf/timestamp.proto";
 //import "any.proto";
 //import "empty.proto";
 
@@ -37,5 +37,10 @@ message GetStatusRequest{
 
 message StatusReply{
   int32 SocketCount = 1;
-  repeated string Connections = 2;
+  repeated StatusDetail Connections = 2;
+}
+
+message StatusDetail{
+  string IpAddress = 1;
+  google.protobuf.Timestamp DateTime = 2;
 }

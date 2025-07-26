@@ -127,7 +127,11 @@ namespace CoreProxy.Server.Orleans.Services
             if (request.IncludeDetail)
             {
                 reply.Connections.AddRange(GlobalState.Sockets.Values
-                    .Select(x => $"{x.ClientIpAddress}:{x.DateTime:o}"));
+                    .Select(x => new StatusDetail
+                    {
+                        IpAddress = x.ClientIpAddress,
+                        DateTime = Timestamp.FromDateTimeOffset(x.DateTime)
+                    }));
             }
 
             return Task.FromResult(reply);
