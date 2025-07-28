@@ -29,6 +29,7 @@ builder.WebHost.ConfigureKestrel(serverOptions =>
     });
 });
 
+builder.WebHost.UseQuic();
 builder.WebHost.UseKestrelHttpsConfiguration();
 
 if (Microsoft.Extensions.Hosting.WindowsServices.WindowsServiceHelpers.IsWindowsService())
