@@ -15,7 +15,7 @@ builder.Services.AddSingleton(certificatePassword);
 builder.WebHost.ConfigureKestrel(serverOptions =>
 {
     serverOptions.AddServerHeader = false; // 禁用 Server 头
-    serverOptions.ConfigureEndpointDefaults(c => c.Protocols = HttpProtocols.Http1AndHttp2AndHttp3);
+    serverOptions.ConfigureEndpointDefaults(c => c.Protocols = HttpProtocols.Http2);
 
     serverOptions.ConfigureHttpsDefaults(s => s.ServerCertificate = certificate2);
 });
