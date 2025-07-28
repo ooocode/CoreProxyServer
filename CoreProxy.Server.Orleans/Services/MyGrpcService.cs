@@ -116,8 +116,6 @@ namespace CoreProxy.Server.Orleans.Services
 
         public override async Task<Empty> Send(SendRequest request, ServerCallContext context)
         {
-            CheckPassword(context);
-
             if (!GlobalState.Sockets.TryGetValue(request.SessionId, out var connectionContext))
             {
                 throw new RpcException(new Status(StatusCode.NotFound, "SessionId not found"));
