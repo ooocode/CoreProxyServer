@@ -6,6 +6,7 @@ using Google.Protobuf.WellKnownTypes;
 using Grpc.Core;
 using Hello;
 using Microsoft.AspNetCore.Connections;
+using Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets;
 using Microsoft.Net.Http.Headers;
 using ServerWebApplication.Common;
 using System.Net;
@@ -16,7 +17,7 @@ namespace CoreProxy.Server.Orleans.Services
     public class MyGrpcService(
         ILogger<MyGrpcService> logger,
         IHostApplicationLifetime hostApplicationLifetime,
-        IConnectionFactory connectionFactory,
+        SocketConnectionContextFactory connectionFactory,
         CertificatePassword certificatePassword) : Greeter.GreeterBase
     {
         private void CheckPassword(ServerCallContext context)
@@ -47,10 +48,21 @@ namespace CoreProxy.Server.Orleans.Services
                         context.CancellationToken, hostApplicationLifetime.ApplicationStopping, timeoutCancellationTokenSource.Token);
             var cancellationToken = cancellationSource.Token;
 
+            var iPAddresses = await DnsService.GetIpAddressesAsync(request.Host, cancellationToken);
+            if (iPAddresses == null || iPAddresses.Length == 0)
+            {
+                throw new RpcException(new Status(StatusCode.InvalidArgument, $"Host[{request.Host}] not found"));
+            }
+
             try
             {
-                var endpoint = await DnsService.GetIpEndpointAsync(request.Host, request.Port, cancellationToken);
-                await using var connectionContext = await connectionFactory.ConnectAsync(endpoint, cancellationToken);
+                using var socket = new Socket(SocketType.Stream, ProtocolType.Tcp)
+                {
+                    NoDelay = true
+                };
+
+                await socket.ConnectAsync(iPAddresses, request.Port, CancellationToken.None);
+                await using var connectionContext = connectionFactory.Create(socket);
 
                 var connectItem = new ConnectItem
                 {

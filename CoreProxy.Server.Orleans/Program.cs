@@ -3,6 +3,8 @@ using CoreProxy.Server.Orleans.Services;
 using CoreProxy.ViewModels;
 using Microsoft.AspNetCore.Connections;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
+using Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets;
+using Microsoft.Extensions.Options;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
@@ -37,6 +39,21 @@ var factoryType = typeof(Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets.S
 ArgumentNullException.ThrowIfNull(factoryType, nameof(factoryType));
 builder.Services.AddSingleton(typeof(IConnectionFactory), factoryType);
 builder.Services.AddGrpc(opt => opt.EnableDetailedErrors = true);
+
+
+builder.Services.AddSingleton(s =>
+{
+    var opt = s.GetRequiredService<IOptions<SocketTransportOptions>>();
+    var logger = s.GetRequiredService<ILogger<SocketConnectionContextFactory>>();
+    return new SocketConnectionContextFactory(new SocketConnectionFactoryOptions
+    {
+        IOQueueCount = opt.Value.IOQueueCount,
+        MaxReadBufferSize = opt.Value.MaxReadBufferSize,
+        MaxWriteBufferSize = opt.Value.MaxWriteBufferSize,
+        UnsafePreferInlineScheduling = opt.Value.UnsafePreferInlineScheduling,
+        WaitForDataBeforeAllocatingBuffer = opt.Value.WaitForDataBeforeAllocatingBuffer,
+    }, logger);
+});
 
 builder.Services.AddSignalR().AddJsonProtocol(opt => opt.PayloadSerializerOptions = AppJsonSerializerContext.Default.Options);
 var app = builder.Build();

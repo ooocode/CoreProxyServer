@@ -25,5 +25,15 @@ namespace ServerWebApplication.Common
 
             return new IPEndPoint(iPAddress, port);
         }
+
+        public static async Task<IPAddress[]> GetIpAddressesAsync(string host, CancellationToken cancellationToken)
+        {
+            if (IPAddress.TryParse(host, out var addr))
+            {
+                return [addr];
+            }
+
+            return await Dns.GetHostAddressesAsync(host, cancellationToken);
+        }
     }
 }
