@@ -78,7 +78,10 @@ app.MapGet("/", new RequestDelegate(async (httpContext) =>
 
 app.UseGrpcWeb();
 app.MapGrpcService<MyGrpcService>().EnableGrpcWeb();
-app.MapHub<ChatHub>("/ChatHub");
+app.MapHub<ChatHub>("/ChatHub", options =>
+{
+    options.Transports = Microsoft.AspNetCore.Http.Connections.HttpTransportType.WebSockets;
+});
 app.Run();
 
 static X509Certificate2 GetCertificate()
