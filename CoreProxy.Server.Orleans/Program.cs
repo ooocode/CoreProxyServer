@@ -1,7 +1,13 @@
+using CoreProxy.Server.Orleans.Internal;
 using CoreProxy.Server.Orleans.Models;
 using CoreProxy.Server.Orleans.Services;
 using CoreProxy.ViewModels;
+using DotNext.IO.Pipelines;
+using Google.Protobuf.WellKnownTypes;
+using Grpc.Core;
+using Hello;
 using Microsoft.AspNetCore.Connections;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets;
 using Microsoft.Extensions.Options;
@@ -24,6 +30,10 @@ builder.WebHost.ConfigureKestrel(serverOptions =>
 
 builder.WebHost.UseQuic();
 builder.WebHost.UseKestrelHttpsConfiguration();
+builder.Services.ConfigureHttpJsonOptions(options =>
+{
+    options.SerializerOptions.TypeInfoResolverChain.Insert(0, AppJsonSerializerContext.Default);
+});
 
 if (Microsoft.Extensions.Hosting.WindowsServices.WindowsServiceHelpers.IsWindowsService())
 {
@@ -90,6 +100,18 @@ app.MapGet("/", new RequestDelegate(async (httpContext) =>
     httpContext.Response.ContentType = "text/html; charset=utf-8";
     await httpContext.Response.WriteAsync(text.Trim(), Encoding.UTF8);
 }));
+app.MapPost("/send-http", async ([FromBody] HttpSendJson request, HttpContext httpContext) =>
+{
+    if (!GlobalState.Sockets.TryGetValue(request.SessionId, out var connectionContext))
+    {
+        throw new RpcException(new Status(StatusCode.NotFound, "SessionId not found"));
+    }
+
+    ArgumentNullException.ThrowIfNull(connectionContext.ConnectionContext, "ConnectionContext is not initialized. Please call Connect method first.");
+
+    var payload = Convert.FromBase64String(request.Payload);
+    await connectionContext.ConnectionContext.Transport.Output.WriteAsync(payload, httpContext.RequestAborted);
+});
 
 app.UseGrpcWeb();
 app.MapGrpcService<MyGrpcService>().EnableGrpcWeb();
@@ -138,4 +160,10 @@ static CertificatePassword GetCertificatePassword(X509Certificate2 certificate2)
     {
         Password = result
     };
+}
+
+public record HttpSendJson
+{
+    public required string SessionId { get; set; }
+    public required string Payload { get; set; }
 }
