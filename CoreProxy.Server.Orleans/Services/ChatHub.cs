@@ -1,5 +1,4 @@
 ﻿using CoreProxy.Server.Orleans.Internal;
-using CoreProxy.Server.Orleans.Models;
 using DotNext.IO.Pipelines;
 using Grpc.Core;
 using Hello;
@@ -10,22 +9,14 @@ using System.Runtime.CompilerServices;
 
 namespace CoreProxy.Server.Orleans.Services
 {
-    public class ChatHub : Hub
+    public class ChatHub(
+        ILogger<MyGrpcService> logger,
+        IHostApplicationLifetime hostApplicationLifetime,
+        IConnectionFactory connectionFactory) : Hub
     {
-        private readonly ILogger<MyGrpcService> logger;
-        private readonly IHostApplicationLifetime hostApplicationLifetime;
-        private readonly IConnectionFactory connectionFactory;
-
-        public ChatHub(
-            ILogger<MyGrpcService> logger,
-            IHostApplicationLifetime hostApplicationLifetime,
-            IConnectionFactory connectionFactory,
-            CertificatePassword certificatePassword)
-        {
-            this.logger = logger;
-            this.hostApplicationLifetime = hostApplicationLifetime;
-            this.connectionFactory = connectionFactory;
-        }
+        private readonly ILogger<MyGrpcService> logger = logger;
+        private readonly IHostApplicationLifetime hostApplicationLifetime = hostApplicationLifetime;
+        private readonly IConnectionFactory connectionFactory = connectionFactory;
 
         public override Task OnConnectedAsync()
         {

@@ -15,7 +15,7 @@ builder.Services.AddSingleton(certificatePassword);
 builder.WebHost.ConfigureKestrel(serverOptions =>
 {
     serverOptions.AddServerHeader = false; // 禁用 Server 头
-    serverOptions.ConfigureEndpointDefaults(c => c.Protocols = HttpProtocols.Http2);
+    serverOptions.ConfigureEndpointDefaults(c => c.Protocols = HttpProtocols.Http1AndHttp2AndHttp3);
 
     serverOptions.ConfigureHttpsDefaults(s => s.ServerCertificate = certificate2);
 });
@@ -38,10 +38,7 @@ ArgumentNullException.ThrowIfNull(factoryType, nameof(factoryType));
 builder.Services.AddSingleton(typeof(IConnectionFactory), factoryType);
 builder.Services.AddGrpc(opt => opt.EnableDetailedErrors = true);
 
-builder.Services.AddSignalR().AddJsonProtocol(opt =>
-{
-    opt.PayloadSerializerOptions = AppJsonSerializerContext.Default.Options;
-});
+builder.Services.AddSignalR().AddJsonProtocol(opt => opt.PayloadSerializerOptions = AppJsonSerializerContext.Default.Options);
 var app = builder.Build();
 
 app.MapGet("/", new RequestDelegate(async (httpContext) =>
@@ -78,10 +75,7 @@ app.MapGet("/", new RequestDelegate(async (httpContext) =>
 
 app.UseGrpcWeb();
 app.MapGrpcService<MyGrpcService>().EnableGrpcWeb();
-app.MapHub<ChatHub>("/ChatHub", options =>
-{
-    options.Transports = Microsoft.AspNetCore.Http.Connections.HttpTransportType.WebSockets;
-});
+app.MapHub<ChatHub>("/ChatHub");
 app.Run();
 
 static X509Certificate2 GetCertificate()
