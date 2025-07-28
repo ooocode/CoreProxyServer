@@ -20,6 +20,13 @@ builder.WebHost.ConfigureKestrel(serverOptions =>
     serverOptions.ConfigureEndpointDefaults(c => c.Protocols = HttpProtocols.Http1AndHttp2AndHttp3);
 
     serverOptions.ConfigureHttpsDefaults(s => s.ServerCertificate = certificate2);
+
+
+    serverOptions.ListenAnyIP(8088, listenOptions =>
+    {
+        listenOptions.Protocols = HttpProtocols.Http3;
+        listenOptions.UseHttps();
+    });
 });
 
 builder.WebHost.UseKestrelHttpsConfiguration();
