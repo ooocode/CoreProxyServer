@@ -10,7 +10,7 @@ namespace CoreProxy.Server.Orleans.Internal
 
     public class ConnectItem
     {
-        public required ConnectionContext ConnectionContext { get; set; }
+        public ConnectionContext? ConnectionContext { get; set; }
         public required string ClientIpAddress { get; set; }
 
         public required DateTimeOffset DateTime { get; set; }

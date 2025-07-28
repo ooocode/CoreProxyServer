@@ -1,5 +1,6 @@
 using CoreProxy.Server.Orleans.Models;
 using CoreProxy.Server.Orleans.Services;
+using CoreProxy.ViewModels;
 using Microsoft.AspNetCore.Connections;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using System.Security.Cryptography;
@@ -37,6 +38,10 @@ ArgumentNullException.ThrowIfNull(factoryType, nameof(factoryType));
 builder.Services.AddSingleton(typeof(IConnectionFactory), factoryType);
 builder.Services.AddGrpc(opt => opt.EnableDetailedErrors = true);
 
+builder.Services.AddSignalR().AddJsonProtocol(opt =>
+{
+    opt.PayloadSerializerOptions = AppJsonSerializerContext.Default.Options;
+});
 var app = builder.Build();
 
 app.MapGet("/", new RequestDelegate(async (httpContext) =>
@@ -73,7 +78,7 @@ app.MapGet("/", new RequestDelegate(async (httpContext) =>
 
 app.UseGrpcWeb();
 app.MapGrpcService<MyGrpcService>().EnableGrpcWeb();
-
+app.MapHub<ChatHub>("/ChatHub");
 app.Run();
 
 static X509Certificate2 GetCertificate()

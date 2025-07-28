@@ -111,6 +111,8 @@ namespace CoreProxy.Server.Orleans.Services
                 throw new RpcException(new Status(StatusCode.NotFound, "SessionId not found"));
             }
 
+            ArgumentNullException.ThrowIfNull(connectionContext.ConnectionContext, "ConnectionContext is not initialized. Please call Connect method first.");
+
             await connectionContext.ConnectionContext.Transport.Output.WriteAsync(request.Payload.Memory, context.CancellationToken);
             return new Empty();
         }
