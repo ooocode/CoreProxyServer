@@ -3,8 +3,10 @@ using DotNext.IO.Pipelines;
 using Grpc.Core;
 using Hello;
 using Microsoft.AspNetCore.Connections;
+using Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets;
 using Microsoft.AspNetCore.SignalR;
 using ServerWebApplication.Common;
+using System.Net.Sockets;
 using System.Runtime.CompilerServices;
 
 namespace CoreProxy.Server.Orleans.Services
@@ -12,11 +14,10 @@ namespace CoreProxy.Server.Orleans.Services
     public class ChatHub(
         ILogger<MyGrpcService> logger,
         IHostApplicationLifetime hostApplicationLifetime,
-        IConnectionFactory connectionFactory) : Hub
+        SocketConnectionContextFactory connectionFactory) : Hub
     {
         private readonly ILogger<MyGrpcService> logger = logger;
         private readonly IHostApplicationLifetime hostApplicationLifetime = hostApplicationLifetime;
-        private readonly IConnectionFactory connectionFactory = connectionFactory;
 
         public override Task OnConnectedAsync()
         {
@@ -42,8 +43,19 @@ namespace CoreProxy.Server.Orleans.Services
                         ctx, hostApplicationLifetime.ApplicationStopping);
             var cancellationToken = cancellationSource.Token;
 
-            var endpoint = await DnsService.GetIpEndpointAsync(request.Host, request.Port, cancellationToken);
-            await using var connectionContext = await connectionFactory.ConnectAsync(endpoint, cancellationToken);
+            var iPAddresses = await DnsService.GetIpAddressesAsync(request.Host, cancellationToken);
+            if (iPAddresses == null || iPAddresses.Length == 0)
+            {
+                throw new RpcException(new Status(StatusCode.InvalidArgument, $"Host[{request.Host}] not found"));
+            }
+
+            using var socket = new Socket(SocketType.Stream, ProtocolType.Tcp)
+            {
+                NoDelay = true
+            };
+
+            await socket.ConnectAsync(iPAddresses, request.Port, CancellationToken.None);
+            await using var connectionContext = connectionFactory.Create(socket);
 
             Context.Items[nameof(ConnectionContext)] = connectionContext;
 

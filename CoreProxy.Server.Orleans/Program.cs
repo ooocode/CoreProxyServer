@@ -3,10 +3,7 @@ using CoreProxy.Server.Orleans.Models;
 using CoreProxy.Server.Orleans.Services;
 using CoreProxy.ViewModels;
 using DotNext.IO.Pipelines;
-using Google.Protobuf.WellKnownTypes;
 using Grpc.Core;
-using Hello;
-using Microsoft.AspNetCore.Connections;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets;
@@ -44,12 +41,11 @@ else if (Microsoft.Extensions.Hosting.Systemd.SystemdHelpers.IsSystemdService())
     builder.Host.UseSystemd();
 }
 
-const string typeName = "Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets.SocketConnectionFactory";
-
-var factoryType = typeof(Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets.SocketTransportOptions).Assembly.GetType(typeName);
-ArgumentNullException.ThrowIfNull(factoryType, nameof(factoryType));
-builder.Services.AddSingleton(typeof(IConnectionFactory), factoryType);
-builder.Services.AddGrpc(opt => opt.EnableDetailedErrors = true);
+//const string typeName = "Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets.SocketConnectionFactory";
+//var factoryType = typeof(Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets.SocketTransportOptions).Assembly.GetType(typeName);
+//ArgumentNullException.ThrowIfNull(factoryType, nameof(factoryType));
+//builder.Services.AddSingleton(typeof(IConnectionFactory), factoryType);
+//
 
 
 builder.Services.AddSingleton(s =>
@@ -66,6 +62,7 @@ builder.Services.AddSingleton(s =>
     }, logger);
 });
 
+builder.Services.AddGrpc(opt => opt.EnableDetailedErrors = true);
 builder.Services.AddSignalR().AddJsonProtocol(opt => opt.PayloadSerializerOptions = AppJsonSerializerContext.Default.Options);
 var app = builder.Build();
 
