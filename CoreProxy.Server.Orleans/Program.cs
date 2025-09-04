@@ -1,6 +1,5 @@
 using CoreProxy.Server.Orleans.Models;
 using CoreProxy.Server.Orleans.Services;
-using CoreProxy.ViewModels;
 using DotNext.IO.Pipelines;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets;
@@ -24,10 +23,6 @@ builder.WebHost.ConfigureKestrel(serverOptions =>
 
 //builder.WebHost.UseQuic();
 builder.WebHost.UseKestrelHttpsConfiguration();
-builder.Services.ConfigureHttpJsonOptions(options =>
-{
-    options.SerializerOptions.TypeInfoResolverChain.Insert(0, AppJsonSerializerContext.Default);
-});
 
 if (Microsoft.Extensions.Hosting.WindowsServices.WindowsServiceHelpers.IsWindowsService())
 {
@@ -59,7 +54,6 @@ builder.Services.AddSingleton(s =>
 });
 
 builder.Services.AddGrpc(opt => opt.EnableDetailedErrors = true);
-builder.Services.AddSignalR().AddJsonProtocol(opt => opt.PayloadSerializerOptions = AppJsonSerializerContext.Default.Options);
 var app = builder.Build();
 
 app.MapGet("/", new RequestDelegate(async (httpContext) =>
@@ -96,7 +90,6 @@ app.MapGet("/", new RequestDelegate(async (httpContext) =>
 
 
 app.MapGrpcService<MyGrpcService>();
-//app.MapHub<ChatHub>("/ChatHub");
 app.Run();
 
 static X509Certificate2 GetCertificate()
