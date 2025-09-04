@@ -12,23 +12,13 @@ package hello;
 
 // The greeting service definition.
 service Greeter {
-  rpc Connect(ConnectRequest) returns (stream HttpData);
-  rpc Send (SendRequest) returns (google.protobuf.Empty);
+  rpc StreamHandler(stream HttpData) returns (stream HttpData);
   rpc GetStatus(GetStatusRequest) returns (StatusReply);
 }
 
-message ConnectRequest{
-  string Host = 1;
-  int32 Port = 2;
-}
 
 message HttpData{
   bytes Payload = 1;
-}
-
-message SendRequest{
-   string SessionId = 1;
-   bytes Payload = 2;
 }
 
 message GetStatusRequest{

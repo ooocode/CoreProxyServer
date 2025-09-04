@@ -112,7 +112,7 @@ app.MapPost("/send-http", async ([FromBody] HttpSendJson request, HttpContext ht
 
 app.UseGrpcWeb();
 app.MapGrpcService<MyGrpcService>().EnableGrpcWeb();
-app.MapHub<ChatHub>("/ChatHub");
+//app.MapHub<ChatHub>("/ChatHub");
 app.Run();
 
 static X509Certificate2 GetCertificate()

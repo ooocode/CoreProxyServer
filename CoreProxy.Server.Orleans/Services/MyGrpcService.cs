@@ -11,6 +11,7 @@ using Microsoft.Net.Http.Headers;
 using ServerWebApplication.Common;
 using System.Net;
 using System.Net.Sockets;
+using System.Threading;
 
 namespace CoreProxy.Server.Orleans.Services
 {
@@ -37,21 +38,28 @@ namespace CoreProxy.Server.Orleans.Services
             }
         }
 
-        public override async Task Connect(ConnectRequest request, IServerStreamWriter<HttpData> responseStream, ServerCallContext context)
+        public override async Task StreamHandler(IAsyncStreamReader<HttpData> requestStream, IServerStreamWriter<HttpData> responseStream, ServerCallContext context)
         {
             CheckPassword(context);
+            var hostAndPort = context.RequestHeaders.GetValue(HeaderNames.XRequestedWith);
+            if (string.IsNullOrWhiteSpace(hostAndPort))
+            {
+                throw new RpcException(new Status(StatusCode.InvalidArgument, string.Empty));
+            }
 
-            string sessionId = Guid.CreateVersion7().ToString("N");
+            Uri uri = new($"tcp://{hostAndPort}");
+            var host = uri.Host;
+            var port = uri.Port;
 
             using var timeoutCancellationTokenSource = new CancellationTokenSource(TimeSpan.FromHours(1));
             using var cancellationSource = CancellationTokenSource.CreateLinkedTokenSource(
                         context.CancellationToken, hostApplicationLifetime.ApplicationStopping, timeoutCancellationTokenSource.Token);
             var cancellationToken = cancellationSource.Token;
 
-            var iPAddresses = await DnsService.GetIpAddressesAsync(request.Host, cancellationToken);
+            var iPAddresses = await DnsService.GetIpAddressesAsync(host, cancellationToken);
             if (iPAddresses == null || iPAddresses.Length == 0)
             {
-                throw new RpcException(new Status(StatusCode.InvalidArgument, $"Host[{request.Host}] not found"));
+                throw new RpcException(new Status(StatusCode.InvalidArgument, $"Host[{host}] not found"));
             }
 
             try
@@ -61,35 +69,32 @@ namespace CoreProxy.Server.Orleans.Services
                     NoDelay = true
                 };
 
-                await socket.ConnectAsync(iPAddresses, request.Port, CancellationToken.None);
-                await using var connectionContext = connectionFactory.Create(socket);
-
-                var connectItem = new ConnectItem
-                {
-                    ClientIpAddress = context.GetHttpContext().Connection.RemoteIpAddress?.ToString() ?? string.Empty,
-                    ConnectionContext = connectionContext,
-                    DateTime = DateTimeOffset.Now
-                };
-
-                if (!GlobalState.Sockets.TryAdd(sessionId, connectItem))
-                {
-                    throw new RpcException(new Status(StatusCode.AlreadyExists, "SessionId already exists"));
-                }
+                await socket.ConnectAsync(iPAddresses, port, cancellationToken);
+                await using ConnectionContext connectionContext = connectionFactory.Create(socket);
 
                 //发送包，表示连接成功
                 await responseStream.WriteAsync(new HttpData
                 {
-                    Payload = ByteString.CopyFromUtf8(sessionId),
+                    Payload = ByteString.Empty,
                 }, cancellationToken);
 
-                //读取目标服务器数据
-                await foreach (var item in connectionContext.Transport.Input.ReadAllAsync(cancellationToken))
+
+                var taskClient = HandlerClientAsync(connectionContext, requestStream, cancellationToken);
+                var taskServer = HandlerServerAsync(connectionContext, responseStream, cancellationToken);
+
+                await foreach (var task in Task.WhenEach(taskClient, taskServer))
                 {
-                    HttpData httpData = new()
+                    if (task.Id == taskClient.Id)
                     {
-                        Payload = UnsafeByteOperations.UnsafeWrap(item)
-                    };
-                    await responseStream.WriteAsync(httpData, cancellationToken);
+                        //客户端退出
+                        break;
+                    }
+                    else
+                    {
+                        //服务器退出
+                        await Task.Delay(1500);
+                        break;
+                    }
                 }
             }
             catch (ConnectionResetException)
@@ -108,24 +113,30 @@ namespace CoreProxy.Server.Orleans.Services
             {
                 logger.LogError(ex, "Connect error");
             }
-            finally
-            {
-                GlobalState.Sockets.TryRemove(sessionId, out _);
-            }
         }
 
-        public override async Task<Empty> Send(SendRequest request, ServerCallContext context)
+        private static async Task HandlerClientAsync(ConnectionContext connectionContext, IAsyncStreamReader<HttpData> requestStream, CancellationToken cancellationToken)
         {
-            if (!GlobalState.Sockets.TryGetValue(request.SessionId, out var connectionContext))
+            //读取客户端数据
+            await foreach (var item in requestStream.ReadAllAsync(cancellationToken))
             {
-                throw new RpcException(new Status(StatusCode.NotFound, "SessionId not found"));
+                await connectionContext.Transport.Output.WriteAsync(item.Payload.Memory, cancellationToken);
             }
-
-            ArgumentNullException.ThrowIfNull(connectionContext.ConnectionContext, "ConnectionContext is not initialized. Please call Connect method first.");
-
-            await connectionContext.ConnectionContext.Transport.Output.WriteAsync(request.Payload.Memory, context.CancellationToken);
-            return new Empty();
         }
+
+        private static async Task HandlerServerAsync(ConnectionContext connectionContext, IServerStreamWriter<HttpData> responseStream, CancellationToken cancellationToken)
+        {
+            //读取目标服务器数据
+            await foreach (var item in connectionContext.Transport.Input.ReadAllAsync(cancellationToken))
+            {
+                HttpData httpData = new()
+                {
+                    Payload = UnsafeByteOperations.UnsafeWrap(item)
+                };
+                await responseStream.WriteAsync(httpData, cancellationToken);
+            }
+        }
+
 
         public override Task<StatusReply> GetStatus(GetStatusRequest request, ServerCallContext context)
         {
