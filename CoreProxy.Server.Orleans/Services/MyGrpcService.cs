@@ -8,7 +8,6 @@ using Hello;
 using Microsoft.AspNetCore.Connections;
 using Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets;
 using Microsoft.Net.Http.Headers;
-using ServerWebApplication.Common;
 using System.Net;
 using System.Net.Sockets;
 
@@ -91,7 +90,11 @@ namespace CoreProxy.Server.Orleans.Services
                     else
                     {
                         //服务器退出
-                        await Task.Delay(1500);
+                        await Task.Delay(1000, CancellationToken.None);
+                        if (!cancellationToken.IsCancellationRequested)
+                        {
+                            await Task.Delay(2000, cancellationToken);
+                        }
                         break;
                     }
                 }
