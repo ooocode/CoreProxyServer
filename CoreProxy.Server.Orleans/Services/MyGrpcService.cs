@@ -60,8 +60,16 @@ namespace CoreProxy.Server.Orleans.Services
                 throw new RpcException(new Status(StatusCode.InvalidArgument, $"Host[{host}] not found"));
             }
 
+            string connectionId = context.GetHttpContext().Connection.Id;
             try
             {
+                //添加连接信息
+                GlobalState.Sockets.TryAdd(connectionId, new ConnectItem
+                {
+                    ClientIpAddress = context.GetHttpContext().Connection.RemoteIpAddress?.ToString() ?? string.Empty,
+                    DateTime = DateTimeOffset.UtcNow
+                });
+
                 using var socket = new Socket(SocketType.Stream, ProtocolType.Tcp)
                 {
                     NoDelay = true
@@ -114,6 +122,10 @@ namespace CoreProxy.Server.Orleans.Services
             catch (Exception ex)
             {
                 logger.LogError(ex, "Connect error");
+            }
+            finally
+            {
+                GlobalState.Sockets.TryRemove(connectionId, out var _);
             }
         }
 
