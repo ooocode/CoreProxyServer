@@ -60,7 +60,7 @@ namespace CoreProxy.Server.Orleans.Services
                 throw new RpcException(new Status(StatusCode.InvalidArgument, $"Host[{host}] not found"));
             }
 
-            string connectionId = context.GetHttpContext().Connection.Id;
+            string connectionId = Guid.CreateVersion7().ToString("N");
             try
             {
                 //添加连接信息
