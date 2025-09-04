@@ -11,7 +11,6 @@ using Microsoft.Net.Http.Headers;
 using ServerWebApplication.Common;
 using System.Net;
 using System.Net.Sockets;
-using System.Threading;
 
 namespace CoreProxy.Server.Orleans.Services
 {

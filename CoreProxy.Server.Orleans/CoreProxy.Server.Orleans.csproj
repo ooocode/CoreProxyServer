@@ -14,9 +14,8 @@
 		<PackageReference Include="CommunityToolkit.HighPerformance" Version="8.4.0" />
 		<PackageReference Include="DotNext.IO" Version="5.24.0" />
 		<PackageReference Include="Grpc.AspNetCore" Version="2.71.0" />
-		<PackageReference Include="Grpc.AspNetCore.Web" Version="2.71.0" />
-		<PackageReference Include="Microsoft.Extensions.Hosting.Systemd" Version="9.0.7" />
-		<PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="9.0.7" />
+		<PackageReference Include="Microsoft.Extensions.Hosting.Systemd" Version="9.0.8" />
+		<PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="9.0.8" />
 		<PackageReference Include="Roslynator.Analyzers" Version="4.14.0">
 		  <PrivateAssets>all</PrivateAssets>
 		  <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
