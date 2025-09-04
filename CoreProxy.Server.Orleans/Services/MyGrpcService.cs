@@ -45,7 +45,7 @@ namespace CoreProxy.Server.Orleans.Services
                 throw new RpcException(new Status(StatusCode.InvalidArgument, string.Empty));
             }
 
-            Uri uri = new($"tcp://{hostAndPort}");
+            Uri uri = new(hostAndPort);
             var host = uri.Host;
             var port = uri.Port;
 
