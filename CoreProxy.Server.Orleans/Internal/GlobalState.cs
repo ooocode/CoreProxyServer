@@ -1,4 +1,3 @@
-using Microsoft.AspNetCore.Connections;
 using System.Collections.Concurrent;
 
 namespace CoreProxy.Server.Orleans.Internal

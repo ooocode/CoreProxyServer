@@ -14,7 +14,6 @@ using System.Net.Sockets;
 namespace CoreProxy.Server.Orleans.Services
 {
     public class MyGrpcService(
-        ILogger<MyGrpcService> logger,
         IHostApplicationLifetime hostApplicationLifetime,
         SocketConnectionContextFactory connectionFactory,
         CertificatePassword certificatePassword) : Greeter.GreeterBase
@@ -22,8 +21,7 @@ namespace CoreProxy.Server.Orleans.Services
         private void CheckPassword(ServerCallContext context)
         {
             var ipAddress = context.GetHttpContext().Connection.RemoteIpAddress;
-            ArgumentNullException.ThrowIfNull(ipAddress, nameof(ipAddress));
-            if (IPAddress.IsLoopback(ipAddress))
+            if (ipAddress == null || IPAddress.IsLoopback(ipAddress))
             {
                 return;
             }
@@ -54,19 +52,14 @@ namespace CoreProxy.Server.Orleans.Services
                         context.CancellationToken, hostApplicationLifetime.ApplicationStopping, timeoutCancellationTokenSource.Token);
             var cancellationToken = cancellationSource.Token;
 
-            var iPAddresses = await DnsService.GetIpAddressesAsync(host, cancellationToken);
-            if (iPAddresses == null || iPAddresses.Length == 0)
-            {
-                throw new RpcException(new Status(StatusCode.InvalidArgument, $"Host[{host}] not found"));
-            }
-
             string connectionId = Guid.CreateVersion7().ToString("N");
+
             try
             {
                 //添加连接信息
                 GlobalState.Sockets.TryAdd(connectionId, new ConnectItem
                 {
-                    ClientIpAddress = context.GetHttpContext().Connection.RemoteIpAddress?.ToString() ?? string.Empty,
+                    ClientIpAddress = context.Peer,
                     DateTime = DateTimeOffset.UtcNow
                 });
 
@@ -75,10 +68,10 @@ namespace CoreProxy.Server.Orleans.Services
                     NoDelay = true
                 };
 
-                await socket.ConnectAsync(iPAddresses, port, cancellationToken);
+                await socket.ConnectAsync(host, port, cancellationToken);
                 await using ConnectionContext connectionContext = connectionFactory.Create(socket);
 
-                //发送包，表示连接成功
+                //发送空包，表示连接成功
                 await responseStream.WriteAsync(new HttpData
                 {
                     Payload = ByteString.Empty,
@@ -107,21 +100,9 @@ namespace CoreProxy.Server.Orleans.Services
                     }
                 }
             }
-            catch (ConnectionResetException)
-            {
-                // ignored
-            }
-            catch (SocketException)
-            {
-                // ignored
-            }
-            catch (OperationCanceledException)
-            {
-                // ignored
-            }
             catch (Exception ex)
             {
-                logger.LogError(ex, "Connect error");
+                throw new RpcException(new Status(StatusCode.Unknown, "StreamHandler", ex));
             }
             finally
             {
