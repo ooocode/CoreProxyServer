@@ -1,3 +1,4 @@
+using CoreProxy.Server.Orleans.BackgroundServices;
 using CoreProxy.Server.Orleans.Models;
 using CoreProxy.Server.Orleans.Services;
 using DotNext.IO.Pipelines;
@@ -66,6 +67,10 @@ namespace CoreProxy.Server.Orleans
             });
 
             builder.Services.AddGrpc(opt => opt.EnableDetailedErrors = true);
+
+            //添加Linux测试工具
+            builder.Services.AddHostedService<LinuxTestBackgroundService>();
+
             var app = builder.Build();
 
             app.MapGet("/", new RequestDelegate(async (httpContext) =>
