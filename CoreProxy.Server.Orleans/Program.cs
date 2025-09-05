@@ -22,10 +22,10 @@ namespace CoreProxy.Server.Orleans
             builder.WebHost.ConfigureKestrel(serverOptions =>
             {
                 //如果服务器在此时间段内没有收到任何帧，则服务器会向客户端发送保持活动 ping
-                serverOptions.Limits.Http2.KeepAlivePingDelay = TimeSpan.FromSeconds(60);
+                serverOptions.Limits.Http2.KeepAlivePingDelay = TimeSpan.FromSeconds(45);
 
                 //如果服务器在此超时期间没有收到任何帧（如响应 ping），则连接将关闭。
-                serverOptions.Limits.Http2.KeepAlivePingTimeout = TimeSpan.FromSeconds(180);
+                serverOptions.Limits.Http2.KeepAlivePingTimeout = TimeSpan.FromSeconds(135);
 
                 serverOptions.AddServerHeader = false; // 禁用 Server 头
                 serverOptions.ConfigureEndpointDefaults(c => c.Protocols = HttpProtocols.Http2);
