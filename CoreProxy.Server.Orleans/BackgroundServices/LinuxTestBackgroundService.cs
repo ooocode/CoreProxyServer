@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using System.Security.AccessControl;
 
 namespace CoreProxy.Server.Orleans.BackgroundServices
 {
@@ -11,6 +12,7 @@ namespace CoreProxy.Server.Orleans.BackgroundServices
                 var Content = $"lsof -i -a -p {Environment.ProcessId} -r 2";
                 var fileName = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "test-lsof.sh");
                 await File.WriteAllTextAsync(fileName, Content, stoppingToken);
+                File.SetUnixFileMode(fileName, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
             }
         }
     }
