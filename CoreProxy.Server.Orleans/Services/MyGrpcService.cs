@@ -77,7 +77,6 @@ namespace CoreProxy.Server.Orleans.Services
                     Payload = ByteString.Empty,
                 }, cancellationToken);
 
-
                 var taskClient = HandlerClientAsync(connectionContext, requestStream, cancellationToken);
                 var taskServer = HandlerServerAsync(connectionContext, responseStream, cancellationToken);
 
@@ -102,7 +101,7 @@ namespace CoreProxy.Server.Orleans.Services
             }
             catch (Exception ex)
             {
-                throw new RpcException(new Status(StatusCode.Unknown, "StreamHandler", ex));
+                throw new RpcException(new Status(StatusCode.Cancelled, "StreamHandler", ex));
             }
             finally
             {
@@ -131,7 +130,6 @@ namespace CoreProxy.Server.Orleans.Services
                 await responseStream.WriteAsync(httpData, cancellationToken);
             }
         }
-
 
         public override Task<StatusReply> GetStatus(GetStatusRequest request, ServerCallContext context)
         {
