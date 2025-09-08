@@ -37,25 +37,24 @@ namespace CoreProxy.Server.Orleans.Services
         public override async Task StreamHandler(IAsyncStreamReader<HttpData> requestStream, IServerStreamWriter<HttpData> responseStream, ServerCallContext context)
         {
             CheckPassword(context);
-            var hostAndPort = context.RequestHeaders.GetValue(HeaderNames.XRequestedWith);
-            if (string.IsNullOrWhiteSpace(hostAndPort))
+            var uriString = context.RequestHeaders.GetValue(HeaderNames.XRequestedWith);
+            if (string.IsNullOrWhiteSpace(uriString))
             {
                 throw new RpcException(new Status(StatusCode.InvalidArgument, string.Empty));
             }
 
-            Uri uri = new(hostAndPort);
-            var host = uri.Host;
-            var port = uri.Port;
-
-            using var timeoutCancellationTokenSource = new CancellationTokenSource(TimeSpan.FromHours(1));
-            using var cancellationSource = CancellationTokenSource.CreateLinkedTokenSource(
-                        context.CancellationToken, hostApplicationLifetime.ApplicationStopping, timeoutCancellationTokenSource.Token);
-            var cancellationToken = cancellationSource.Token;
-
             string connectionId = Guid.CreateVersion7().ToString("N");
-
             try
             {
+                Uri uri = new(uriString);
+                var host = uri.Host;
+                var port = uri.Port;
+
+                using var timeoutCancellationTokenSource = new CancellationTokenSource(TimeSpan.FromHours(1));
+                using var cancellationSource = CancellationTokenSource.CreateLinkedTokenSource(
+                            context.CancellationToken, hostApplicationLifetime.ApplicationStopping, timeoutCancellationTokenSource.Token);
+                var cancellationToken = cancellationSource.Token;
+
                 //添加连接信息
                 GlobalState.Sockets.TryAdd(connectionId, new ConnectItem
                 {
@@ -98,6 +97,10 @@ namespace CoreProxy.Server.Orleans.Services
                         break;
                     }
                 }
+            }
+            catch (UriFormatException)
+            {
+                throw new RpcException(new Status(StatusCode.InvalidArgument, uriString));
             }
             catch (Exception ex)
             {
