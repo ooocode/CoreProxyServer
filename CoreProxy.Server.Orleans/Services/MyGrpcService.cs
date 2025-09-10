@@ -1,15 +1,15 @@
 using CoreProxy.Server.Orleans.Internal;
 using CoreProxy.Server.Orleans.Models;
+using DotNext.Collections.Generic;
 using DotNext.IO.Pipelines;
 using Google.Protobuf;
 using Google.Protobuf.WellKnownTypes;
 using Grpc.Core;
 using Hello;
-using Microsoft.AspNetCore.Connections;
 using Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets;
 using Microsoft.Net.Http.Headers;
 using System.Net;
-using System.Net.Sockets;
+using System.Threading.Channels;
 
 namespace CoreProxy.Server.Orleans.Services
 {
@@ -62,13 +62,8 @@ namespace CoreProxy.Server.Orleans.Services
                     DateTime = DateTimeOffset.UtcNow
                 });
 
-                using var socket = new Socket(SocketType.Stream, ProtocolType.Tcp)
-                {
-                    NoDelay = true
-                };
-
-                await socket.ConnectAsync(host, port, cancellationToken);
-                await using ConnectionContext connectionContext = connectionFactory.Create(socket);
+                await using TcpConnectTargetServerService tcpConnectTargetServerService = new(connectionFactory, host, port);
+                await tcpConnectTargetServerService.ConnectAsync(cancellationToken);
 
                 //发送空包，表示连接成功
                 await responseStream.WriteAsync(new HttpData
@@ -76,8 +71,8 @@ namespace CoreProxy.Server.Orleans.Services
                     Payload = ByteString.Empty,
                 }, cancellationToken);
 
-                var taskClient = HandlerClientAsync(connectionContext, requestStream, cancellationToken);
-                var taskServer = HandlerServerAsync(connectionContext, responseStream, cancellationToken);
+                var taskClient = HandlerClientAsync(tcpConnectTargetServerService, requestStream, cancellationToken);
+                var taskServer = HandlerServerAsync(tcpConnectTargetServerService, responseStream, cancellationToken);
 
                 await foreach (var task in Task.WhenEach(taskClient, taskServer))
                 {
@@ -112,19 +107,19 @@ namespace CoreProxy.Server.Orleans.Services
             }
         }
 
-        private static async Task HandlerClientAsync(ConnectionContext connectionContext, IAsyncStreamReader<HttpData> requestStream, CancellationToken cancellationToken)
+        private static async Task HandlerClientAsync(TcpConnectTargetServerService tcpConnectTargetServerService, IAsyncStreamReader<HttpData> requestStream, CancellationToken cancellationToken)
         {
             //读取客户端数据
             await foreach (var item in requestStream.ReadAllAsync(cancellationToken))
             {
-                await connectionContext.Transport.Output.WriteAsync(item.Payload.Memory, cancellationToken);
+                await tcpConnectTargetServerService.SendAsync(item.Payload.Memory, cancellationToken);
             }
         }
 
-        private static async Task HandlerServerAsync(ConnectionContext connectionContext, IServerStreamWriter<HttpData> responseStream, CancellationToken cancellationToken)
+        private static async Task HandlerServerAsync(TcpConnectTargetServerService tcpConnectTargetServerService, IServerStreamWriter<HttpData> responseStream, CancellationToken cancellationToken)
         {
             //读取目标服务器数据
-            await foreach (var item in connectionContext.Transport.Input.ReadAllAsync(cancellationToken))
+            await foreach (var item in tcpConnectTargetServerService.ReceiveAsync(cancellationToken))
             {
                 HttpData httpData = new()
                 {
@@ -154,6 +149,103 @@ namespace CoreProxy.Server.Orleans.Services
             }
 
             return Task.FromResult(reply);
+        }
+
+        /// <summary>
+        /// p2p
+        /// </summary>
+        /// <param name="requestStream"></param>
+        /// <param name="responseStream"></param>
+        /// <param name="context"></param>
+        /// <returns></returns>
+        public override async Task P2PStreamHandler(IAsyncStreamReader<HttpData> requestStream, IServerStreamWriter<HttpData> responseStream, ServerCallContext context)
+        {
+            string? current = context.RequestHeaders.GetValue("current-user")?.Trim().ToUpper();
+            ArgumentException.ThrowIfNullOrWhiteSpace(current, nameof(current));
+            string? target = context.RequestHeaders.GetValue("target-user")?.Trim().ToUpper();
+            ArgumentException.ThrowIfNullOrWhiteSpace(target, nameof(target));
+
+            if (string.Compare(current, target, true) == 0)
+            {
+                throw new Exception("当前和目标不能相同");
+            }
+
+            using var timeoutCancellationTokenSource = new CancellationTokenSource(TimeSpan.FromHours(1));
+            using var cancellationSource = CancellationTokenSource.CreateLinkedTokenSource(
+                        context.CancellationToken, hostApplicationLifetime.ApplicationStopping, timeoutCancellationTokenSource.Token);
+            var cancellationToken = cancellationSource.Token;
+
+            var sessionId = string.Join('^', new List<string> { current, target }.Order());
+
+            try
+            {
+                Channel<byte[]>? channelReader = null;
+                Channel<byte[]>? channelWrite = null;
+
+                if (!GloableSessionsManager.SessionList.TryGetValue(sessionId, out SessionInfo? sessionInfo))
+                {
+                    //创建会话
+                    sessionInfo = new()
+                    {
+                        Creator = current,
+                        ChannelWait = Channel.CreateBounded<string>(1),
+                        ChannelA = Channel.CreateUnbounded<byte[]>(),
+                        ChannelB = Channel.CreateUnbounded<byte[]>(),
+                    };
+
+                    GloableSessionsManager.SessionList.TryAdd(sessionId, sessionInfo);
+
+                    //等待对方加入
+                    var targetWait = await sessionInfo.ChannelWait.Reader.ReadAsync(cancellationToken);
+                    if (string.Compare(target, targetWait) != 0)
+                    {
+                        throw new Exception($"不允许 {targetWait} 加入");
+                    }
+
+                    channelReader = sessionInfo.ChannelB;
+                    channelWrite = sessionInfo.ChannelA;
+                }
+                else
+                {
+                    //加入会话
+                    await sessionInfo.ChannelWait.Writer.WriteAsync(current, cancellationToken);
+
+                    channelReader = sessionInfo.ChannelA;
+                    channelWrite = sessionInfo.ChannelB;
+                }
+
+                var taskWrite = HandlerChannelWrite(requestStream, channelWrite, cancellationToken);
+                var taskRead = HandlerChannelReader(channelReader, responseStream, cancellationToken);
+                await Task.WhenAny(taskWrite, taskRead);
+            }
+            finally
+            {
+                if (GloableSessionsManager.SessionList.TryRemove(sessionId, out var s))
+                {
+                    s.ChannelWait.Writer.Complete();
+                    s.ChannelA.Writer.Complete();
+                    s.ChannelB.Writer.Complete();
+                }
+            }
+        }
+
+        private static async Task HandlerChannelWrite(IAsyncStreamReader<HttpData> requestStream, Channel<byte[]> channelWrite, CancellationToken cancellationToken)
+        {
+            await foreach (var item in requestStream.ReadAllAsync(cancellationToken))
+            {
+                await channelWrite.Writer.WriteAsync(item.Payload.ToArray(), cancellationToken);
+            }
+        }
+
+        private static async Task HandlerChannelReader(Channel<byte[]> channelReader, IServerStreamWriter<HttpData> responseStream, CancellationToken cancellationToken)
+        {
+            await foreach (var item in channelReader.Reader.ReadAllAsync(cancellationToken))
+            {
+                await responseStream.WriteAsync(new HttpData
+                {
+                    Payload = ByteString.CopyFrom(item)
+                }, cancellationToken);
+            }
         }
     }
 }

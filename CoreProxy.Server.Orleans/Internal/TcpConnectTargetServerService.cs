@@ -1,0 +1,56 @@
+using DotNext.IO.Pipelines;
+using Microsoft.AspNetCore.Connections;
+using Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets;
+using System.Net.Sockets;
+using System.Runtime.CompilerServices;
+
+namespace CoreProxy.Server.Orleans.Internal
+{
+    public class TcpConnectTargetServerService(SocketConnectionContextFactory connectionFactory, string host, int port) : IConnectTargetServerService
+    {
+        private Socket? socket;
+        private ConnectionContext? connectionContext;
+
+        public async Task ConnectAsync(CancellationToken cancellationToken)
+        {
+            socket = new Socket(SocketType.Stream, ProtocolType.Tcp)
+            {
+                NoDelay = true
+            };
+            await socket.ConnectAsync(host, port, cancellationToken);
+            connectionContext = connectionFactory.Create(socket);
+        }
+
+        public async Task SendAsync(ReadOnlyMemory<byte> data, CancellationToken cancellationToken)
+        {
+            ArgumentNullException.ThrowIfNull(connectionContext, "ConnectionContext is not initialized. Please call Connect method first.");
+            await connectionContext.Transport.Output.WriteAsync(data, cancellationToken);
+        }
+
+        public async IAsyncEnumerable<ReadOnlyMemory<byte>> ReceiveAsync([EnumeratorCancellation] CancellationToken cancellationToken)
+        {
+            ArgumentNullException.ThrowIfNull(connectionContext, "ConnectionContext is not initialized. Please call Connect method first.");
+            //读取目标服务器数据
+            await foreach (var item in connectionContext.Transport.Input.ReadAllAsync(cancellationToken))
+            {
+                yield return item;
+            }
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            if (connectionContext == null && socket != null)
+            {
+                socket.Shutdown(SocketShutdown.Both);
+                socket?.Dispose();
+            }
+            else
+            {
+                if (connectionContext != null)
+                {
+                    await connectionContext.DisposeAsync();
+                }
+            }
+        }
+    }
+}
