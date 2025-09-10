@@ -167,7 +167,7 @@ namespace CoreProxy.Server.Orleans.Services
 
             if (string.Compare(current, target, true) == 0)
             {
-                throw new Exception("当前和目标不能相同");
+                throw new RpcException(new Status(StatusCode.Cancelled, "当前和目标不能相同"));
             }
 
             using var timeoutCancellationTokenSource = new CancellationTokenSource(TimeSpan.FromHours(1));
@@ -179,8 +179,8 @@ namespace CoreProxy.Server.Orleans.Services
 
             try
             {
-                Channel<byte[]>? channelReader = null;
-                Channel<byte[]>? channelWrite = null;
+                Channel<ReadOnlyMemory<byte>>? channelReader = null;
+                Channel<ReadOnlyMemory<byte>>? channelWrite = null;
 
                 if (!GloableSessionsManager.SessionList.TryGetValue(sessionId, out SessionInfo? sessionInfo))
                 {
@@ -189,8 +189,8 @@ namespace CoreProxy.Server.Orleans.Services
                     {
                         Creator = current,
                         ChannelWait = Channel.CreateBounded<string>(1),
-                        ChannelA = Channel.CreateUnbounded<byte[]>(),
-                        ChannelB = Channel.CreateUnbounded<byte[]>(),
+                        ChannelA = Channel.CreateUnbounded<ReadOnlyMemory<byte>>(),
+                        ChannelB = Channel.CreateUnbounded<ReadOnlyMemory<byte>>(),
                     };
 
                     GloableSessionsManager.SessionList.TryAdd(sessionId, sessionInfo);
@@ -199,7 +199,7 @@ namespace CoreProxy.Server.Orleans.Services
                     var targetWait = await sessionInfo.ChannelWait.Reader.ReadAsync(cancellationToken);
                     if (string.Compare(target, targetWait) != 0)
                     {
-                        throw new Exception($"不允许 {targetWait} 加入");
+                        throw new RpcException(new Status(StatusCode.Cancelled, $"不允许 {targetWait} 加入"));
                     }
 
                     channelReader = sessionInfo.ChannelB;
@@ -229,21 +229,21 @@ namespace CoreProxy.Server.Orleans.Services
             }
         }
 
-        private static async Task HandlerChannelWrite(IAsyncStreamReader<HttpData> requestStream, Channel<byte[]> channelWrite, CancellationToken cancellationToken)
+        private static async Task HandlerChannelWrite(IAsyncStreamReader<HttpData> requestStream, Channel<ReadOnlyMemory<byte>> channelWrite, CancellationToken cancellationToken)
         {
             await foreach (var item in requestStream.ReadAllAsync(cancellationToken))
             {
-                await channelWrite.Writer.WriteAsync(item.Payload.ToArray(), cancellationToken);
+                await channelWrite.Writer.WriteAsync(item.Payload.Memory, cancellationToken);
             }
         }
 
-        private static async Task HandlerChannelReader(Channel<byte[]> channelReader, IServerStreamWriter<HttpData> responseStream, CancellationToken cancellationToken)
+        private static async Task HandlerChannelReader(Channel<ReadOnlyMemory<byte>> channelReader, IServerStreamWriter<HttpData> responseStream, CancellationToken cancellationToken)
         {
             await foreach (var item in channelReader.Reader.ReadAllAsync(cancellationToken))
             {
                 await responseStream.WriteAsync(new HttpData
                 {
-                    Payload = ByteString.CopyFrom(item)
+                    Payload = UnsafeByteOperations.UnsafeWrap(item)
                 }, cancellationToken);
             }
         }

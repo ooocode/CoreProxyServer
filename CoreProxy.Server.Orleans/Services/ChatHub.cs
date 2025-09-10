@@ -9,9 +9,6 @@ namespace CoreProxy.Server.Orleans.Services
         IHostApplicationLifetime hostApplicationLifetime,
         SocketConnectionContextFactory connectionFactory) : Hub
     {
-        private readonly ILogger<MyGrpcService> logger = logger;
-        private readonly IHostApplicationLifetime hostApplicationLifetime = hostApplicationLifetime;
-
         public override Task OnConnectedAsync()
         {
             string sessionId = Context.ConnectionId;
