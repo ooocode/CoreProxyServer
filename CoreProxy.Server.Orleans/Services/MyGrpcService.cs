@@ -161,13 +161,13 @@ namespace CoreProxy.Server.Orleans.Services
         /// <returns></returns>
         public override async Task P2PStreamHandler(IAsyncStreamReader<HttpData> requestStream, IServerStreamWriter<HttpData> responseStream, ServerCallContext context)
         {
-            string? current = context.RequestHeaders.GetValue("current-user")?.Trim().ToUpper();
+            string? current = context.RequestHeaders.GetValue("current-user")?.Trim();
             ArgumentException.ThrowIfNullOrWhiteSpace(current, nameof(current));
 
-            string? target = context.RequestHeaders.GetValue("target-user")?.Trim().ToUpper();
+            string? target = context.RequestHeaders.GetValue("target-user")?.Trim();
             ArgumentException.ThrowIfNullOrWhiteSpace(target, nameof(target));
 
-            string? currentRole = context.RequestHeaders.GetValue("current-role")?.Trim().ToUpper();
+            string? currentRole = context.RequestHeaders.GetValue("current-role")?.Trim();
             ArgumentException.ThrowIfNullOrWhiteSpace(currentRole, nameof(currentRole));
 
             if (string.Compare(current, target, true) == 0)
@@ -180,7 +180,7 @@ namespace CoreProxy.Server.Orleans.Services
                         context.CancellationToken, hostApplicationLifetime.ApplicationStopping, timeoutCancellationTokenSource.Token);
             var cancellationToken = cancellationSource.Token;
 
-            var sessionId = string.Join('^', new List<string> { current, target }.Order());
+            var sessionId = string.Join('^', new List<string> { current.ToUpper(), target.ToUpper() }.Order());
 
             try
             {
