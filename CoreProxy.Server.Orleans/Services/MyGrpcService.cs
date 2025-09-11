@@ -187,7 +187,7 @@ namespace CoreProxy.Server.Orleans.Services
                 Channel<ReadOnlyMemory<byte>>? channelReader = null;
                 Channel<ReadOnlyMemory<byte>>? channelWrite = null;
 
-                if (currentRole == "master")
+                if (string.Compare(currentRole, "master", true) == 0)
                 {
                     //主控 创建会话
                     var sessionInfo = new SessionInfo()
@@ -216,7 +216,7 @@ namespace CoreProxy.Server.Orleans.Services
                     channelReader = sessionInfo.ChannelB;
                     channelWrite = sessionInfo.ChannelA;
                 }
-                else if (currentRole == "slave")
+                else if (string.Compare(currentRole, "slave", true) == 0)
                 {
                     //被控 加入会话
                     if (!GloableSessionsManager.SessionList.TryGetValue(sessionId, out var sessionInfo))
