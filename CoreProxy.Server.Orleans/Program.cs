@@ -70,7 +70,7 @@ namespace CoreProxy.Server.Orleans
 
             //添加Linux测试工具
             builder.Services.AddHostedService<LinuxTestBackgroundService>();
-            //builder.Services.AddSignalR();
+            builder.Services.AddSignalR();
             var app = builder.Build();
 
             app.MapGet("/", new RequestDelegate(async (httpContext) =>
@@ -107,7 +107,7 @@ namespace CoreProxy.Server.Orleans
 
 
             app.MapGrpcService<MyGrpcService>();
-            //app.MapHub<ChatHub>("/chathub");
+            app.MapHub<ChatHub>("/chathub");
             app.Run();
         }
 

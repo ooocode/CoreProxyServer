@@ -1,12 +1,12 @@
 using CoreProxy.Server.Orleans.Internal;
 using CoreProxy.Server.Orleans.Models;
-using DotNext.Collections.Generic;
 using DotNext.IO.Pipelines;
 using Google.Protobuf;
 using Google.Protobuf.WellKnownTypes;
 using Grpc.Core;
 using Hello;
 using Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.Net.Http.Headers;
 using System.Net;
 using System.Threading.Channels;
@@ -16,7 +16,8 @@ namespace CoreProxy.Server.Orleans.Services
     public class MyGrpcService(
         IHostApplicationLifetime hostApplicationLifetime,
         SocketConnectionContextFactory connectionFactory,
-        CertificatePassword certificatePassword) : Greeter.GreeterBase
+        CertificatePassword certificatePassword,
+        IHubContext<ChatHub> hubContext) : Greeter.GreeterBase
     {
         private void CheckPassword(ServerCallContext context)
         {
@@ -162,8 +163,12 @@ namespace CoreProxy.Server.Orleans.Services
         {
             string? current = context.RequestHeaders.GetValue("current-user")?.Trim().ToUpper();
             ArgumentException.ThrowIfNullOrWhiteSpace(current, nameof(current));
+
             string? target = context.RequestHeaders.GetValue("target-user")?.Trim().ToUpper();
             ArgumentException.ThrowIfNullOrWhiteSpace(target, nameof(target));
+
+            string? currentRole = context.RequestHeaders.GetValue("current-role")?.Trim().ToUpper();
+            ArgumentException.ThrowIfNullOrWhiteSpace(currentRole, nameof(currentRole));
 
             if (string.Compare(current, target, true) == 0)
             {
@@ -182,10 +187,10 @@ namespace CoreProxy.Server.Orleans.Services
                 Channel<ReadOnlyMemory<byte>>? channelReader = null;
                 Channel<ReadOnlyMemory<byte>>? channelWrite = null;
 
-                if (!GloableSessionsManager.SessionList.TryGetValue(sessionId, out SessionInfo? sessionInfo))
+                if (currentRole == "master")
                 {
-                    //创建会话
-                    sessionInfo = new()
+                    //主控 创建会话
+                    var sessionInfo = new SessionInfo()
                     {
                         Creator = current,
                         ChannelWait = Channel.CreateBounded<string>(1),
@@ -193,7 +198,13 @@ namespace CoreProxy.Server.Orleans.Services
                         ChannelB = Channel.CreateUnbounded<ReadOnlyMemory<byte>>(),
                     };
 
-                    GloableSessionsManager.SessionList.TryAdd(sessionId, sessionInfo);
+                    if (!GloableSessionsManager.SessionList.TryAdd(sessionId, sessionInfo))
+                    {
+                        throw new Exception("重复创建会话");
+                    }
+
+                    //通知对方加入
+                    await hubContext.Clients.Client(target).InvokeAsync<string>("JoinSession", current, cancellationToken);
 
                     //等待对方加入
                     var targetWait = await sessionInfo.ChannelWait.Reader.ReadAsync(cancellationToken);
@@ -205,15 +216,26 @@ namespace CoreProxy.Server.Orleans.Services
                     channelReader = sessionInfo.ChannelB;
                     channelWrite = sessionInfo.ChannelA;
                 }
-                else
+                else if (currentRole == "slave")
                 {
+                    //被控 加入会话
+                    if (!GloableSessionsManager.SessionList.TryGetValue(sessionId, out var sessionInfo))
+                    {
+                        throw new Exception("不存在会话");
+                    }
+
                     //加入会话
                     await sessionInfo.ChannelWait.Writer.WriteAsync(current, cancellationToken);
 
                     channelReader = sessionInfo.ChannelA;
                     channelWrite = sessionInfo.ChannelB;
                 }
+                else
+                {
+                    throw new Exception($"不支持的角色类型{currentRole}");
+                }
 
+                //开始读写循环
                 var taskWrite = HandlerChannelWrite(requestStream, channelWrite, cancellationToken);
                 var taskRead = HandlerChannelReader(channelReader, responseStream, cancellationToken);
                 await Task.WhenAny(taskWrite, taskRead);
