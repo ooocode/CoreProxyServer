@@ -8,6 +8,7 @@ using Microsoft.Extensions.Options;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
+using System.Text.Json.Serialization;
 
 namespace CoreProxy.Server.Orleans
 {
@@ -70,7 +71,11 @@ namespace CoreProxy.Server.Orleans
 
             //添加Linux测试工具
             builder.Services.AddHostedService<LinuxTestBackgroundService>();
-            builder.Services.AddSignalR();
+            builder.Services.AddSignalR()
+                .AddJsonProtocol(opt =>
+                {
+                opt.PayloadSerializerOptions = AppJsonSerializerContext.Default.Options;
+                });
             var app = builder.Build();
 
             app.MapGet("/", new RequestDelegate(async (httpContext) =>
@@ -155,4 +160,7 @@ namespace CoreProxy.Server.Orleans
             };
         }
     }
+
+    [JsonSerializable(typeof(string))]
+    internal partial class AppJsonSerializerContext : JsonSerializerContext;
 }
