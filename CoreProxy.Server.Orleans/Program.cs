@@ -4,6 +4,7 @@ using CoreProxy.Server.Orleans.Services;
 using DotNext.IO.Pipelines;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Options;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
@@ -74,7 +75,7 @@ namespace CoreProxy.Server.Orleans
             builder.Services.AddSignalR()
                 .AddJsonProtocol(opt =>
                 {
-                opt.PayloadSerializerOptions = AppJsonSerializerContext.Default.Options;
+                    opt.PayloadSerializerOptions = AppJsonSerializerContext.Default.Options;
                 });
             var app = builder.Build();
 
@@ -106,6 +107,16 @@ namespace CoreProxy.Server.Orleans
                 </html>
                 """;
 
+                //var ctx = httpContext.RequestServices.GetRequiredService<IHubContext<ChatHub>>();
+                // var xsa=await ctx.Clients.Client(ChatHub.OnlineClients.First().Key).InvokeAsync<string>("JoinSession", "1", CancellationToken.None);
+                httpContext.Response.ContentType = "text/html; charset=utf-8";
+                await httpContext.Response.WriteAsync(text.Trim(), Encoding.UTF8);
+            }));
+
+
+            app.MapGet("/clients", new RequestDelegate(async (httpContext) =>
+            {
+                string text = string.Join("<br/>", ChatHub.OnlineClients.Select(x => x.Key));
                 httpContext.Response.ContentType = "text/html; charset=utf-8";
                 await httpContext.Response.WriteAsync(text.Trim(), Encoding.UTF8);
             }));
