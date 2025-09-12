@@ -176,6 +176,16 @@ namespace CoreProxy.Server.Orleans.Services
                 throw new RpcException(new Status(StatusCode.Cancelled, "当前和目标不能相同"));
             }
 
+            if (!GloableSessionsManager.SignalrOnlineClients.TryGetValue(current, out var _))
+            {
+                throw new RpcException(new Status(StatusCode.Cancelled, $"{current}没有signalr在线"));
+            }
+
+            if (!GloableSessionsManager.SignalrOnlineClients.TryGetValue(target, out var targetConnectionId))
+            {
+                throw new RpcException(new Status(StatusCode.Cancelled, $"{targetConnectionId}没有signalr在线"));
+            }
+
             using var timeoutCancellationTokenSource = new CancellationTokenSource(TimeSpan.FromHours(1));
             using var cancellationSource = CancellationTokenSource.CreateLinkedTokenSource(
                         context.CancellationToken, hostApplicationLifetime.ApplicationStopping, timeoutCancellationTokenSource.Token);
@@ -205,7 +215,7 @@ namespace CoreProxy.Server.Orleans.Services
 
                     //通知对方加入
                     logger.LogInformation($"开始调用SignalR客户端：JoinSession({target},{current},slave)");
-                    await hubContext.Clients.Client(target).InvokeAsync<string>(
+                    await hubContext.Clients.Client(targetConnectionId).InvokeAsync<string>(
                         "JoinSession", target, current, "slave", cancellationToken);
 
                     channelReader = sessionInfo.ChannelB;

@@ -17,5 +17,10 @@ namespace CoreProxy.Server.Orleans.Services
     public static class GloableSessionsManager
     {
         public static readonly System.Collections.Concurrent.ConcurrentDictionary<string, SessionInfo> SessionList = [];
+
+        /// <summary>
+        /// signalr在线客户端 [username-connectionId]
+        /// </summary>
+        public static readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> SignalrOnlineClients = [];
     }
 }

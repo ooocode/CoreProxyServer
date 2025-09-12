@@ -73,11 +73,8 @@ namespace CoreProxy.Server.Orleans
 
             //添加Linux测试工具
             builder.Services.AddHostedService<LinuxTestBackgroundService>();
-            builder.Services.AddSignalR()
-                .AddJsonProtocol(opt =>
-                {
-                    opt.PayloadSerializerOptions = AppJsonSerializerContext.Default.Options;
-                });
+            builder.Services.AddSignalR(opt => opt.EnableDetailedErrors = true)
+                .AddJsonProtocol(opt => opt.PayloadSerializerOptions = AppJsonSerializerContext.Default.Options);
 
             builder.Services.AddDataProtection();
 
@@ -119,7 +116,7 @@ namespace CoreProxy.Server.Orleans
 
             app.MapGet("/clients", new RequestDelegate(async (httpContext) =>
             {
-                string text = string.Join("<br/>", ChatHub.OnlineClients.Select(x => x.Key));
+                string text = string.Join("<br/>", GloableSessionsManager.SignalrOnlineClients.Select(x => x.Key));
                 httpContext.Response.ContentType = "text/html; charset=utf-8";
                 await httpContext.Response.WriteAsync(text.Trim(), Encoding.UTF8);
             }));
