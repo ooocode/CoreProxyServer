@@ -17,6 +17,7 @@ namespace CoreProxy.Server.Orleans.Services
         IHostApplicationLifetime hostApplicationLifetime,
         SocketConnectionContextFactory connectionFactory,
         CertificatePassword certificatePassword,
+        ILogger<MyGrpcService> logger,
         IHubContext<ChatHub> hubContext) : Greeter.GreeterBase
     {
         private void CheckPassword(ServerCallContext context)
@@ -204,6 +205,7 @@ namespace CoreProxy.Server.Orleans.Services
                     }
 
                     //通知对方加入
+                    logger.LogInformation($"开始调用SignalR客户端：JoinSession({current})");
                     await hubContext.Clients.Client(target).InvokeAsync<string>("JoinSession", current, cancellationToken);
 
                     //等待对方加入
