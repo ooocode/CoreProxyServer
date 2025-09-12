@@ -194,7 +194,6 @@ namespace CoreProxy.Server.Orleans.Services
                     var sessionInfo = new SessionInfo()
                     {
                         Creator = current,
-                        ChannelWait = Channel.CreateBounded<string>(1),
                         ChannelA = Channel.CreateUnbounded<ReadOnlyMemory<byte>>(),
                         ChannelB = Channel.CreateUnbounded<ReadOnlyMemory<byte>>(),
                     };
@@ -209,13 +208,6 @@ namespace CoreProxy.Server.Orleans.Services
                     await hubContext.Clients.Client(target).InvokeAsync<string>(
                         "JoinSession", target, current, "slave", cancellationToken);
 
-                    //等待对方加入
-                    var targetWait = await sessionInfo.ChannelWait.Reader.ReadAsync(cancellationToken);
-                    if (string.Compare(target, targetWait) != 0)
-                    {
-                        throw new RpcException(new Status(StatusCode.Cancelled, $"不允许 {targetWait} 加入"));
-                    }
-
                     channelReader = sessionInfo.ChannelB;
                     channelWrite = sessionInfo.ChannelA;
                 }
@@ -226,9 +218,6 @@ namespace CoreProxy.Server.Orleans.Services
                     {
                         throw new Exception("不存在会话");
                     }
-
-                    //加入会话
-                    await sessionInfo.ChannelWait.Writer.WriteAsync(current, cancellationToken);
 
                     channelReader = sessionInfo.ChannelA;
                     channelWrite = sessionInfo.ChannelB;
@@ -247,7 +236,6 @@ namespace CoreProxy.Server.Orleans.Services
             {
                 if (GloableSessionsManager.SessionList.TryRemove(sessionId, out var s))
                 {
-                    s.ChannelWait.Writer.Complete();
                     s.ChannelA.Writer.Complete();
                     s.ChannelB.Writer.Complete();
                 }

@@ -9,11 +9,6 @@ namespace CoreProxy.Server.Orleans.Services
         /// </summary>
         public required string Creator { get; set; }
 
-        /// <summary>
-        /// 等待加入
-        /// </summary>
-        public required Channel<string> ChannelWait { get; set; }
-
         public required Channel<ReadOnlyMemory<byte>> ChannelA { get; set; }
 
         public required Channel<ReadOnlyMemory<byte>> ChannelB { get; set; }
