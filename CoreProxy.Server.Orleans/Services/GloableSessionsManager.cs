@@ -1,4 +1,5 @@
-﻿using System.Threading.Channels;
+﻿using Hello;
+using System.Threading.Channels;
 
 namespace CoreProxy.Server.Orleans.Services
 {
@@ -19,8 +20,8 @@ namespace CoreProxy.Server.Orleans.Services
         public static readonly System.Collections.Concurrent.ConcurrentDictionary<string, SessionInfo> SessionList = [];
 
         /// <summary>
-        /// signalr在线客户端 [username-connectionId]
+        /// signalr在线客户端 [deviceId-SignalrOnlineClient]
         /// </summary>
-        public static readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> SignalrOnlineClients = [];
+        public static readonly System.Collections.Concurrent.ConcurrentDictionary<string, SignalrOnlineClient> SignalrOnlineClients = [];
     }
 }

@@ -108,15 +108,6 @@ namespace CoreProxy.Server.Orleans
                 </html>
                 """;
 
-                //var ctx = httpContext.RequestServices.GetRequiredService<IHubContext<ChatHub>>();
-                // var xsa=await ctx.Clients.Client(ChatHub.OnlineClients.First().Key).InvokeAsync<string>("JoinSession", "1", CancellationToken.None);
-                httpContext.Response.ContentType = "text/html; charset=utf-8";
-                await httpContext.Response.WriteAsync(text.Trim(), Encoding.UTF8);
-            }));
-
-            app.MapGet("/clients", new RequestDelegate(async (httpContext) =>
-            {
-                string text = string.Join("<br/>", GloableSessionsManager.SignalrOnlineClients.Select(x => x.Key));
                 httpContext.Response.ContentType = "text/html; charset=utf-8";
                 await httpContext.Response.WriteAsync(text.Trim(), Encoding.UTF8);
             }));

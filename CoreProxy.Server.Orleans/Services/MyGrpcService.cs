@@ -181,9 +181,9 @@ namespace CoreProxy.Server.Orleans.Services
                 throw new RpcException(new Status(StatusCode.Cancelled, $"{current}没有signalr在线"));
             }
 
-            if (!GloableSessionsManager.SignalrOnlineClients.TryGetValue(target, out var targetConnectionId))
+            if (!GloableSessionsManager.SignalrOnlineClients.TryGetValue(target, out var targetDevice))
             {
-                throw new RpcException(new Status(StatusCode.Cancelled, $"{targetConnectionId}没有signalr在线"));
+                throw new RpcException(new Status(StatusCode.Cancelled, $"{target}没有signalr在线"));
             }
 
             using var timeoutCancellationTokenSource = new CancellationTokenSource(TimeSpan.FromHours(1));
@@ -215,7 +215,7 @@ namespace CoreProxy.Server.Orleans.Services
 
                     //通知对方加入
                     logger.LogInformation($"开始调用SignalR客户端：JoinSession({target},{current},slave)");
-                    await hubContext.Clients.Client(targetConnectionId).InvokeAsync<string>(
+                    await hubContext.Clients.Client(targetDevice.ConnectionId).InvokeAsync<string>(
                         "JoinSession", target, current, "slave", cancellationToken);
 
                     channelReader = sessionInfo.ChannelB;
@@ -269,6 +269,13 @@ namespace CoreProxy.Server.Orleans.Services
                     Payload = UnsafeByteOperations.UnsafeWrap(item)
                 }, cancellationToken);
             }
+        }
+
+        public override Task<SignalrOnlineClients> GetSignalrOnlineClients(Empty request, ServerCallContext context)
+        {
+            var result = new SignalrOnlineClients();
+            result.Clients.AddRange(GloableSessionsManager.SignalrOnlineClients.Values);
+            return Task.FromResult(result);
         }
     }
 }

@@ -1,4 +1,6 @@
-﻿using Microsoft.AspNetCore.SignalR;
+﻿using Google.Protobuf;
+using Hello;
+using Microsoft.AspNetCore.SignalR;
 
 namespace CoreProxy.Server.Orleans.Services
 {
@@ -6,28 +8,34 @@ namespace CoreProxy.Server.Orleans.Services
     {
         public override Task OnConnectedAsync()
         {
-            string sessionId = Context.ConnectionId;
-            string? userName = Context.GetHttpContext()?.Request.Query["username"].ToString().Trim();
-            if (string.IsNullOrWhiteSpace(userName))
+            string? info = Context.GetHttpContext()?.Request.Query["info"].ToString().Trim();
+            if (string.IsNullOrWhiteSpace(info))
             {
-                throw new Exception("缺少username");
+                throw new Exception("缺少info");
             }
 
-            if (!GloableSessionsManager.SignalrOnlineClients.TryAdd(userName, sessionId))
+            var client = SignalrOnlineClient.Parser.ParseFrom(ByteString.FromBase64(info));
+            client.ConnectionId = Context.ConnectionId;
+
+            if (!GloableSessionsManager.SignalrOnlineClients.TryAdd(client.DeviceId, client))
             {
-                throw new Exception($"用户{userName}重复上线");
+                throw new Exception($"设备{client.DeviceId}重复上线");
             }
 
-            logger.LogInformation($"用户上线: {userName} {sessionId}");
+            logger.LogInformation($"设备上线: {client.DeviceId} {client.ConnectionId}");
             return base.OnConnectedAsync();
         }
 
         public override async Task OnDisconnectedAsync(Exception? exception)
         {
-            string? userName = Context.GetHttpContext()?.Request.Query["username"].ToString().Trim();
-            if (!string.IsNullOrWhiteSpace(userName) && GloableSessionsManager.SignalrOnlineClients.TryRemove(userName, out var sessionId))
+            string? info = Context.GetHttpContext()?.Request.Query["info"].ToString().Trim();
+            if (!string.IsNullOrWhiteSpace(info))
             {
-                logger.LogError($"用户离线: {userName} {sessionId}");
+                var client = SignalrOnlineClient.Parser.ParseFrom(ByteString.FromBase64(info));
+                if (GloableSessionsManager.SignalrOnlineClients.TryRemove(client.DeviceId, out var d))
+                {
+                    logger.LogError($"设备离线: {d.DeviceId} {d.ConnectionId}");
+                }
             }
 
             await base.OnDisconnectedAsync(exception);
