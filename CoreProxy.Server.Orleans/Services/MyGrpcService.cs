@@ -205,8 +205,9 @@ namespace CoreProxy.Server.Orleans.Services
                     }
 
                     //通知对方加入
-                    logger.LogInformation($"开始调用SignalR客户端：JoinSession({current})");
-                    await hubContext.Clients.Client(target).InvokeAsync<string>("JoinSession", current, cancellationToken);
+                    logger.LogInformation($"开始调用SignalR客户端：JoinSession({target},{current},slave)");
+                    await hubContext.Clients.Client(target).InvokeAsync<string>(
+                        "JoinSession", target, current, "slave", cancellationToken);
 
                     //等待对方加入
                     var targetWait = await sessionInfo.ChannelWait.Reader.ReadAsync(cancellationToken);
