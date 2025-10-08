@@ -42,6 +42,7 @@ if (Microsoft.Extensions.Hosting.WindowsServices.WindowsServiceHelpers.IsWindows
 else if (Microsoft.Extensions.Hosting.Systemd.SystemdHelpers.IsSystemdService())
 {
     builder.Host.UseSystemd();
+    builder.Services.AddHostedService<AutoExitBackgroundService>();
 }
 
 //const string typeName = "Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets.SocketConnectionFactory";
