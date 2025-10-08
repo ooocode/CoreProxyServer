@@ -2,7 +2,6 @@ using DotNext.IO.Pipelines;
 using Microsoft.AspNetCore.Connections;
 using Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets;
 using System.Net.Sockets;
-using System.Runtime.CompilerServices;
 
 namespace CoreProxy.Server.Orleans.Internal
 {
@@ -27,14 +26,10 @@ namespace CoreProxy.Server.Orleans.Internal
             await connectionContext.Transport.Output.WriteAsync(data, cancellationToken);
         }
 
-        public async IAsyncEnumerable<ReadOnlyMemory<byte>> ReceiveAsync([EnumeratorCancellation] CancellationToken cancellationToken)
+        public IAsyncEnumerable<ReadOnlyMemory<byte>> ReceiveAsync(CancellationToken cancellationToken)
         {
             ArgumentNullException.ThrowIfNull(connectionContext, "ConnectionContext is not initialized. Please call Connect method first.");
-            //读取目标服务器数据
-            await foreach (var item in connectionContext.Transport.Input.ReadAllAsync(cancellationToken))
-            {
-                yield return item;
-            }
+            return connectionContext.Transport.Input.ReadAllAsync(cancellationToken);
         }
 
         public async ValueTask DisposeAsync()
@@ -44,12 +39,9 @@ namespace CoreProxy.Server.Orleans.Internal
                 socket.Shutdown(SocketShutdown.Both);
                 socket?.Dispose();
             }
-            else
+            else if (connectionContext != null)
             {
-                if (connectionContext != null)
-                {
-                    await connectionContext.DisposeAsync();
-                }
+                await connectionContext.DisposeAsync();
             }
         }
     }

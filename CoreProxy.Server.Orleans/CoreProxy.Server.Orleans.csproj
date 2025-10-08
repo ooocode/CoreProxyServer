@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk.Web">
 
 	<PropertyGroup>
-		<TargetFramework Condition=" '$(Configuration)'=='Debug' ">net9.0</TargetFramework>
+		<TargetFramework Condition=" '$(Configuration)'=='Debug' ">net10.0</TargetFramework>
 		<TargetFramework Condition=" '$(Configuration)'=='Release' ">net10.0</TargetFramework>
 		<Nullable>enable</Nullable>
 		<ImplicitUsings>enable</ImplicitUsings>
@@ -15,19 +15,19 @@
 
 	<ItemGroup>
 		<PackageReference Include="CommunityToolkit.HighPerformance" Version="8.4.0" />
-		<PackageReference Include="DotNext.IO" Version="5.24.0" />
+		<PackageReference Include="DotNext.IO" Version="5.25.0" />
 		<PackageReference Include="Grpc.AspNetCore" Version="2.71.0" />
-		<PackageReference Include="Microsoft.Extensions.Hosting.Systemd" Version="9.0.9" />
-		<PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="9.0.9" />
-		<PackageReference Include="Roslynator.Analyzers" Version="4.14.0">
+		<PackageReference Include="Microsoft.Extensions.Hosting.Systemd" Version="10.0.0-rc.1.25451.107" />
+		<PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="10.0.0-rc.1.25451.107" />
+		<PackageReference Include="Roslynator.Analyzers" Version="4.14.1">
 			<PrivateAssets>all</PrivateAssets>
 			<IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
 		</PackageReference>
-		<PackageReference Include="Roslynator.CodeAnalysis.Analyzers" Version="4.14.0">
+		<PackageReference Include="Roslynator.CodeAnalysis.Analyzers" Version="4.14.1">
 			<PrivateAssets>all</PrivateAssets>
 			<IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
 		</PackageReference>
-		<PackageReference Include="Roslynator.Formatting.Analyzers" Version="4.14.0">
+		<PackageReference Include="Roslynator.Formatting.Analyzers" Version="4.14.1">
 			<PrivateAssets>all</PrivateAssets>
 			<IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
 		</PackageReference>
