@@ -5,7 +5,9 @@ using System.Net.Sockets;
 
 namespace CoreProxy.Server.Orleans.Internal
 {
-    public class TcpConnectTargetServerService(SocketConnectionContextFactory connectionFactory, string host, int port) : IConnectTargetServerService
+    public class TcpConnectTargetServerService(
+        SocketConnectionContextFactory connectionFactory,
+        string host, int port) : IConnectTargetServerService
     {
         private Socket? socket;
         private ConnectionContext? connectionContext;
@@ -16,8 +18,15 @@ namespace CoreProxy.Server.Orleans.Internal
             {
                 NoDelay = true
             };
-            await socket.ConnectAsync(host, port, cancellationToken);
-            connectionContext = connectionFactory.Create(socket);
+            try
+            {
+                await socket.ConnectAsync(host, port, cancellationToken);
+                connectionContext = connectionFactory.Create(socket);
+            }
+            catch (SocketException ex)
+            {
+                throw new Exception($"Failed to connect to target server {host}:{port} {ex.Message}", ex);
+            }
         }
 
         public async Task SendAsync(ReadOnlyMemory<byte> data, CancellationToken cancellationToken)
