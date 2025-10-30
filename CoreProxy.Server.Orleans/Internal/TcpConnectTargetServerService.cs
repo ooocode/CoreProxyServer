@@ -41,6 +41,7 @@ namespace CoreProxy.Server.Orleans.Internal
             return connectionContext.Transport.Input.ReadAllAsync(cancellationToken);
         }
 
+#pragma warning disable CA1816
         public async ValueTask DisposeAsync()
         {
             if (connectionContext == null && socket != null)
@@ -53,5 +54,6 @@ namespace CoreProxy.Server.Orleans.Internal
                 await connectionContext.DisposeAsync();
             }
         }
+#pragma warning restore CA1816
     }
 }

@@ -22,7 +22,11 @@ namespace CoreProxy.Server.Orleans.Services
                 throw new Exception($"设备{client.DeviceId}重复上线");
             }
 
-            logger.LogInformation($"设备上线: {client.DeviceId} {client.ConnectionId}");
+            if (logger.IsEnabled(LogLevel.Information))
+            {
+                logger.LogInformation("设备上线: {deviceId} {connectionId}", client.DeviceId, client.ConnectionId);
+            }
+
             return base.OnConnectedAsync();
         }
 
@@ -34,7 +38,10 @@ namespace CoreProxy.Server.Orleans.Services
                 var client = SignalrOnlineClient.Parser.ParseFrom(ByteString.FromBase64(info));
                 if (GloableSessionsManager.SignalrOnlineClients.TryRemove(client.DeviceId, out var d))
                 {
-                    logger.LogError($"设备离线: {d.DeviceId} {d.ConnectionId}");
+                    if (logger.IsEnabled(LogLevel.Error))
+                    {
+                        logger.LogError("设备离线: {d.DeviceId} {d.ConnectionId}", d.DeviceId, d.ConnectionId);
+                    }
                 }
             }
 
