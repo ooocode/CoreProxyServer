@@ -36,6 +36,8 @@ namespace CoreProxy.Server.Orleans.Services
             }
         }
 
+        private static readonly HttpData EmptyHttpData = new() { Payload = ByteString.Empty };
+
         public override async Task StreamHandler(IAsyncStreamReader<HttpData> requestStream, IServerStreamWriter<HttpData> responseStream, ServerCallContext context)
         {
             CheckPassword(context);
@@ -46,16 +48,17 @@ namespace CoreProxy.Server.Orleans.Services
             }
 
             string connectionId = Guid.CreateVersion7().ToString("N");
+
+            using var cancellationSource = CancellationTokenSource.CreateLinkedTokenSource(
+                        context.CancellationToken, hostApplicationLifetime.ApplicationStopping);
+            cancellationSource.CancelAfter(TimeSpan.FromHours(1));
+            var cancellationToken = cancellationSource.Token;
+
             try
             {
                 Uri uri = new(uriString);
                 var host = uri.Host;
                 var port = uri.Port;
-
-                using var timeoutCancellationTokenSource = new CancellationTokenSource(TimeSpan.FromHours(1));
-                using var cancellationSource = CancellationTokenSource.CreateLinkedTokenSource(
-                            context.CancellationToken, hostApplicationLifetime.ApplicationStopping, timeoutCancellationTokenSource.Token);
-                var cancellationToken = cancellationSource.Token;
 
                 //添加连接信息
                 GlobalState.Sockets.TryAdd(connectionId, new ConnectItem
@@ -68,10 +71,7 @@ namespace CoreProxy.Server.Orleans.Services
                 await tcpConnectTargetServerService.ConnectAsync(cancellationToken);
 
                 //发送空包，表示连接成功
-                await responseStream.WriteAsync(new HttpData
-                {
-                    Payload = ByteString.Empty,
-                }, cancellationToken);
+                await responseStream.WriteAsync(EmptyHttpData, cancellationToken);
 
                 var taskClient = HandlerClientAsync(tcpConnectTargetServerService, requestStream, cancellationToken);
                 var taskServer = HandlerServerAsync(tcpConnectTargetServerService, responseStream, cancellationToken);
@@ -106,6 +106,10 @@ namespace CoreProxy.Server.Orleans.Services
             finally
             {
                 GlobalState.Sockets.TryRemove(connectionId, out var _);
+                if (!cancellationSource.IsCancellationRequested)
+                {
+                    cancellationSource.Cancel();
+                }
             }
         }
 
@@ -186,9 +190,9 @@ namespace CoreProxy.Server.Orleans.Services
                 throw new RpcException(new Status(StatusCode.Cancelled, $"{target}没有signalr在线"));
             }
 
-            using var timeoutCancellationTokenSource = new CancellationTokenSource(TimeSpan.FromHours(1));
             using var cancellationSource = CancellationTokenSource.CreateLinkedTokenSource(
-                        context.CancellationToken, hostApplicationLifetime.ApplicationStopping, timeoutCancellationTokenSource.Token);
+                        context.CancellationToken, hostApplicationLifetime.ApplicationStopping);
+            cancellationSource.CancelAfter(TimeSpan.FromHours(1));
             var cancellationToken = cancellationSource.Token;
 
             var sessionId = string.Join('^', new List<string> { current.ToUpper(), target.ToUpper() }.Order());
@@ -248,6 +252,10 @@ namespace CoreProxy.Server.Orleans.Services
                 {
                     s.ChannelA.Writer.Complete();
                     s.ChannelB.Writer.Complete();
+                }
+                if (!cancellationSource.IsCancellationRequested)
+                {
+                    cancellationSource.Cancel();
                 }
             }
         }
