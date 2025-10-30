@@ -129,7 +129,7 @@ X509Certificate2 GetHttpsCertificate()
 #if NET9_0_OR_GREATER
         return X509CertificateLoader.LoadPkcs12FromFile(pdxFileName, passowrd);
 #else
-                return new X509Certificate2(pdxFileName, password);
+        return new X509Certificate2(pdxFileName, password);
 #endif
     }
 
@@ -146,7 +146,7 @@ X509Certificate2 GetHttpsCertificate()
 #if NET9_0_OR_GREATER
     var certificate = X509CertificateLoader.LoadPkcs12(rawBytes, password, X509KeyStorageFlags.PersistKeySet | X509KeyStorageFlags.Exportable);
 #else
-            var certificate = new X509Certificate2(rawBytes, password);
+    var certificate = new X509Certificate2(rawBytes, password);
 #endif
     File.WriteAllBytes(pdxFileName, rawBytes);
     File.WriteAllText(passwordFileName, password);
