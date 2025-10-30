@@ -60,6 +60,11 @@ namespace CoreProxy.Server.Orleans.Services
                 var host = uri.Host;
                 var port = uri.Port;
 
+                if (logger.IsEnabled(LogLevel.Information))
+                {
+                    logger.LogInformation("开始连接目标服务器 {host}:{port}，ConnectionId:{connectionId}", host, port, connectionId);
+                }
+
                 //添加连接信息
                 GlobalState.Sockets.TryAdd(connectionId, new ConnectItem
                 {
@@ -109,6 +114,11 @@ namespace CoreProxy.Server.Orleans.Services
                 if (!cancellationSource.IsCancellationRequested)
                 {
                     cancellationSource.Cancel();
+                }
+
+                if (logger.IsEnabled(LogLevel.Information))
+                {
+                    logger.LogInformation("结束连接目标服务器 ConnectionId:{connectionId}", connectionId);
                 }
             }
         }
