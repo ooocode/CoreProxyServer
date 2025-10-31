@@ -26,6 +26,11 @@ builder.WebHost.ConfigureKestrel(serverOptions =>
     //如果服务器在此超时期间没有收到任何帧（如响应 ping），则连接将关闭。
     serverOptions.Limits.Http2.KeepAlivePingTimeout = TimeSpan.FromSeconds(135);
 
+    if (int.TryParse(builder.Configuration["Http2MaxStreamsPerConnection"], out int maxStreams) && maxStreams > 0)
+    {
+        serverOptions.Limits.Http2.MaxStreamsPerConnection = maxStreams;
+    }
+
     serverOptions.AddServerHeader = false; // 禁用 Server 头
     serverOptions.ConfigureEndpointDefaults(c => c.Protocols = HttpProtocols.Http2);
 
