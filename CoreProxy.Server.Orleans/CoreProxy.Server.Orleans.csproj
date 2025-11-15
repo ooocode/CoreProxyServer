@@ -14,10 +14,10 @@
 	</PropertyGroup>
 
 	<ItemGroup>
-		<PackageReference Include="DotNext.IO" Version="5.26.0" />
+		<PackageReference Include="DotNext.IO" Version="5.26.1" />
 		<PackageReference Include="Grpc.AspNetCore" Version="2.71.0" />
-		<PackageReference Include="Microsoft.Extensions.Hosting.Systemd" Version="10.0.0-rc.2.25502.107" />
-		<PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="10.0.0-rc.2.25502.107" />
+		<PackageReference Include="Microsoft.Extensions.Hosting.Systemd" Version="10.0.0" />
+		<PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="10.0.0" />
 		<PackageReference Include="Roslynator.Analyzers" Version="4.14.1">
 			<PrivateAssets>all</PrivateAssets>
 			<IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
