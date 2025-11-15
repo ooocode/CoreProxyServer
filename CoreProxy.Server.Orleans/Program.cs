@@ -2,7 +2,6 @@ using CoreProxy.Server.Orleans;
 using CoreProxy.Server.Orleans.BackgroundServices;
 using CoreProxy.Server.Orleans.Models;
 using CoreProxy.Server.Orleans.Services;
-using DotNext.IO.Pipelines;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets;
 using Microsoft.Extensions.Options;
@@ -81,7 +80,7 @@ builder.Services.AddDataProtection();
 
 var app = builder.Build();
 
-app.MapGet("/", new RequestDelegate(async (httpContext) =>
+app.MapGet("/", () =>
 {
     const string text = """
                 <!DOCTYPE html>
@@ -108,10 +107,8 @@ app.MapGet("/", new RequestDelegate(async (httpContext) =>
                 </body>
                 </html>
                 """;
-
-    httpContext.Response.ContentType = "text/html; charset=utf-8";
-    await httpContext.Response.WriteAsync(text.Trim(), Encoding.UTF8);
-}));
+    return TypedResults.Content(text, "text/html", Encoding.UTF8);
+});
 
 app.MapGrpcService<MyGrpcService>();
 app.MapHub<ChatHub>("/chathub");

@@ -1,5 +1,4 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk.Web">
-
 	<PropertyGroup>
 		<TargetFramework Condition=" '$(Configuration)'=='Debug' ">net10.0</TargetFramework>
 		<TargetFramework Condition=" '$(Configuration)'=='Release' ">net10.0</TargetFramework>
