@@ -1,5 +1,6 @@
 using CoreProxy.Server.Orleans;
 using CoreProxy.Server.Orleans.BackgroundServices;
+using CoreProxy.Server.Orleans.Internal;
 using CoreProxy.Server.Orleans.Models;
 using CoreProxy.Server.Orleans.Services;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
@@ -11,7 +12,7 @@ using System.Text;
 using System.Text.Json.Serialization;
 
 var builder = WebApplication.CreateSlimBuilder(args);
-
+builder.Logging.AddFileLogger();
 var certificate2 = GetHttpsCertificate();
 var certificatePassword = GetCertificatePassword(certificate2);
 
