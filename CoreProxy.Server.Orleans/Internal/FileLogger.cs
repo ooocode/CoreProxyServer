@@ -18,11 +18,7 @@ namespace CoreProxy.Server.Orleans.Internal
 
         public bool IsEnabled(LogLevel logLevel)
         {
-            if (logLevel >= LogLevel.Information)
-            {
-                return true;
-            }
-            return false;
+            return logLevel >= LogLevel.Information;
         }
 
         public void Log<TState>(LogLevel logLevel, EventId eventId,
@@ -48,7 +44,7 @@ namespace CoreProxy.Server.Orleans.Internal
 
         public void Dispose()
         {
-
+            GC.SuppressFinalize(this);
         }
     }
 
