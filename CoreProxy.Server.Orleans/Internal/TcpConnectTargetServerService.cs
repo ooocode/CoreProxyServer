@@ -48,8 +48,10 @@ namespace CoreProxy.Server.Orleans.Internal
             {
                 socket.Shutdown(SocketShutdown.Both);
                 socket?.Dispose();
+                return;
             }
-            else if (connectionContext != null)
+
+            if (connectionContext != null)
             {
                 await connectionContext.DisposeAsync();
             }

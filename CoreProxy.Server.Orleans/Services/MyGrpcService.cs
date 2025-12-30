@@ -66,7 +66,7 @@ namespace CoreProxy.Server.Orleans.Services
                 }
 
                 //添加连接信息
-                GlobalState.Sockets.TryAdd(connectionId, new ConnectItem
+                GlobalState.Connections.TryAdd(connectionId, new ConnectItem
                 {
                     ClientIpAddress = context.Peer,
                     DateTime = DateTimeOffset.UtcNow
@@ -110,7 +110,7 @@ namespace CoreProxy.Server.Orleans.Services
             }
             finally
             {
-                GlobalState.Sockets.TryRemove(connectionId, out var _);
+                GlobalState.Connections.TryRemove(connectionId, out var _);
                 if (!cancellationSource.IsCancellationRequested)
                 {
                     cancellationSource.Cancel();
@@ -151,12 +151,12 @@ namespace CoreProxy.Server.Orleans.Services
 
             var reply = new StatusReply
             {
-                SocketCount = GlobalState.Sockets.Count
+                SocketCount = GlobalState.Connections.Count
             };
 
             if (request.IncludeDetail)
             {
-                reply.Connections.AddRange(GlobalState.Sockets.Values
+                reply.Connections.AddRange(GlobalState.Connections.Values
                     .Select(x => new StatusDetail
                     {
                         IpAddress = x.ClientIpAddress,

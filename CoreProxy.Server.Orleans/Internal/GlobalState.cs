@@ -4,7 +4,7 @@ namespace CoreProxy.Server.Orleans.Internal
 {
     public static class GlobalState
     {
-        public static readonly ConcurrentDictionary<string, ConnectItem> Sockets = [];
+        public static readonly ConcurrentDictionary<string, ConnectItem> Connections = [];
     }
 
     public class ConnectItem
