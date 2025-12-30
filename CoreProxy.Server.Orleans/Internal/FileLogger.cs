@@ -81,7 +81,6 @@ namespace CoreProxy.Server.Orleans.Internal
         }
     }
 
-
     public static class FileLogExtensions
     {
         public static ILoggingBuilder AddFileLogger(this ILoggingBuilder builder)

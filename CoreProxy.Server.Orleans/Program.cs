@@ -40,13 +40,12 @@ builder.WebHost.ConfigureKestrel(serverOptions =>
 //builder.WebHost.UseQuic();
 builder.WebHost.UseKestrelHttpsConfiguration();
 
-if (Microsoft.Extensions.Hosting.WindowsServices.WindowsServiceHelpers.IsWindowsService())
+builder.Host.UseWindowsService();
+builder.Host.UseSystemd();
+
+if (Microsoft.Extensions.Hosting.Systemd.SystemdHelpers.IsSystemdService())
 {
-    builder.Host.UseWindowsService();
-}
-else if (Microsoft.Extensions.Hosting.Systemd.SystemdHelpers.IsSystemdService())
-{
-    builder.Host.UseSystemd();
+    //添加自动重启服务
     builder.Services.AddHostedService<AutoExitBackgroundService>();
 }
 
