@@ -47,7 +47,7 @@ namespace CoreProxy.Server.Orleans.Internal
             if (connectionContext == null && socket != null)
             {
                 socket.Shutdown(SocketShutdown.Both);
-                socket?.Dispose();
+                socket.Dispose();
                 return;
             }
 
