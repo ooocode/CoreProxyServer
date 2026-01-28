@@ -106,7 +106,7 @@ namespace CoreProxy.Server.Orleans.Services
             }
             catch (Exception ex)
             {
-                throw new RpcException(new Status(StatusCode.Cancelled, "StreamHandler", ex));
+                throw new RpcException(new Status(StatusCode.Cancelled, ex.InnerException?.Message ?? ex.Message));
             }
             finally
             {
