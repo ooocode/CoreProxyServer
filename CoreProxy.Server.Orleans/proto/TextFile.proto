@@ -23,7 +23,7 @@ service Greeter {
 
 message HttpData{
   bytes Payload = 1;
-  uint32 Crc32= 2;
+  uint32 Crc32 = 2;
 }
 
 message GetStatusRequest{
