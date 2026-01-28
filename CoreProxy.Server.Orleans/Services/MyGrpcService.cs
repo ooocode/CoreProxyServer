@@ -138,7 +138,8 @@ namespace CoreProxy.Server.Orleans.Services
             {
                 HttpData httpData = new()
                 {
-                    Payload = UnsafeByteOperations.UnsafeWrap(item)
+                    Payload = UnsafeByteOperations.UnsafeWrap(item),
+                    Crc32 = System.IO.Hashing.Crc32.HashToUInt32(item.Span),
                 };
                 await responseStream.WriteAsync(httpData, cancellationToken);
             }
