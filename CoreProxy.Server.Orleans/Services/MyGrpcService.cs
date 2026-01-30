@@ -105,7 +105,7 @@ namespace CoreProxy.Server.Orleans.Services
             }
             catch (Exception ex)
             {
-                throw new RpcException(new Status(StatusCode.Cancelled, ex.InnerException?.Message ?? ex.Message));
+                throw new RpcException(new Status(StatusCode.Internal, ex.InnerException?.Message ?? ex.Message));
             }
             finally
             {
