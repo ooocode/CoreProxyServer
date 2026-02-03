@@ -5,7 +5,9 @@ using CoreProxy.Server.Orleans.Models;
 using CoreProxy.Server.Orleans.Services;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Options;
+using Namespace2;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
@@ -112,6 +114,9 @@ app.MapGet("/", () =>
 
 app.MapGrpcService<MyGrpcService>();
 app.MapHub<ChatHub>("/chathub");
+app.MapHub<StreamHub>("/StreamHub");
+Namespace.ControllerHandler.MapSSE(app);
+
 app.Run();
 
 X509Certificate2 GetHttpsCertificate()
