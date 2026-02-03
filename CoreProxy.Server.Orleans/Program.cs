@@ -74,7 +74,11 @@ builder.Services.AddGrpc(opt => opt.EnableDetailedErrors = true);
 
 //添加Linux测试工具
 builder.Services.AddHostedService<LinuxTestBackgroundService>();
-builder.Services.AddSignalR(opt => opt.EnableDetailedErrors = true)
+builder.Services.AddSignalR(opt =>
+{
+    opt.EnableDetailedErrors = true;
+    opt.MaximumParallelInvocationsPerClient = 1024;
+})
     .AddJsonProtocol(opt => opt.PayloadSerializerOptions = AppJsonSerializerContext.Default.Options);
 
 builder.Services.AddDataProtection();
