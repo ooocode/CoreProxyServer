@@ -5,7 +5,7 @@ using Google.Protobuf;
 using Hello;
 using Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets;
 
-namespace Namespace
+namespace CoreProxy.Server.Orleans
 {
     public class ControllerHandler
     {

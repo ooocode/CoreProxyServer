@@ -1,12 +1,13 @@
 using System.Buffers.Text;
 using System.Runtime.CompilerServices;
+using System.Threading.Channels;
 using CoreProxy.Server.Orleans.Internal;
 using Google.Protobuf;
 using Hello;
 using Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets;
 using Microsoft.AspNetCore.SignalR;
 
-namespace Namespace2
+namespace CoreProxy.Server.Orleans.Services
 {
     public class StreamHub(IHostApplicationLifetime hostApplicationLifetime,
                      SocketConnectionContextFactory connectionFactory,
@@ -15,7 +16,7 @@ namespace Namespace2
         // 双向流方法：接收 clientStream，返回 IAsyncEnumerable
         public async IAsyncEnumerable<string> EchoStream(
             string host, string port,
-            IAsyncEnumerable<string> clientStream,
+            ChannelReader<string> clientStream,
             [EnumeratorCancellation] CancellationToken cancellationToken)
         {
             using var cancellationSource = CancellationTokenSource.CreateLinkedTokenSource(
@@ -42,17 +43,17 @@ namespace Namespace2
             //读取目标服务器数据
             await foreach (var item in tcpConnectTargetServerService.ReceiveAsync(cancellationTokenEx))
             {
-                yield return $"data:{Convert.ToBase64String(item.Span)}";
+                yield return Convert.ToBase64String(item.Span);
             }
 
             await taskClient;
         }
 
         private static async Task HandlerClientAsync(TcpConnectTargetServerService tcpConnectTargetServerService,
-         IAsyncEnumerable<string> clientStream, CancellationToken cancellationToken)
+         ChannelReader<string> clientStream, CancellationToken cancellationToken)
         {
             //读取客户端数据
-            await foreach (var item in clientStream.WithCancellation(cancellationToken))
+            await foreach (var item in clientStream.ReadAllAsync(cancellationToken))
             {
                 await tcpConnectTargetServerService.SendAsync(Convert.FromBase64String(item), cancellationToken);
             }
