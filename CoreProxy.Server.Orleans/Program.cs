@@ -77,9 +77,9 @@ builder.Services.AddHostedService<LinuxTestBackgroundService>();
 builder.Services.AddSignalR(opt =>
 {
     opt.EnableDetailedErrors = true;
-    opt.MaximumReceiveMessageSize = int.MaxValue;
-    opt.MaximumParallelInvocationsPerClient = int.MaxValue;
-    opt.StreamBufferCapacity = int.MaxValue;
+    opt.MaximumReceiveMessageSize = int.MaxValue / 2;
+    opt.MaximumParallelInvocationsPerClient = int.MaxValue / 2;
+    opt.StreamBufferCapacity = int.MaxValue / 2;
 })
     .AddJsonProtocol(opt => opt.PayloadSerializerOptions = AppJsonSerializerContext.Default.Options);
 
