@@ -11,6 +11,7 @@ using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Text.Json.Serialization;
+//https://www.zhifeiya.cn/post/2026/2/1/d6a548a1
 
 var builder = WebApplication.CreateSlimBuilder(args);
 builder.Logging.AddFileLogger();
@@ -36,6 +37,11 @@ builder.WebHost.ConfigureKestrel(serverOptions =>
     serverOptions.ConfigureEndpointDefaults(c => c.Protocols = HttpProtocols.Http2);
 
     serverOptions.ConfigureHttpsDefaults(s => s.ServerCertificate = certificate2);
+
+
+    serverOptions.Limits.MaxConcurrentConnections = 20000;
+    serverOptions.Limits.MaxConcurrentUpgradedConnections = 10000;
+    serverOptions.Limits.MaxRequestBodySize = 100_000_000; // 100MB
 });
 
 //builder.WebHost.UseQuic();
@@ -70,7 +76,11 @@ builder.Services.AddSingleton(s =>
     }, logger);
 });
 
-builder.Services.AddGrpc(opt => opt.EnableDetailedErrors = true);
+builder.Services.AddGrpc(opt =>
+{
+    opt.EnableDetailedErrors = true;
+    opt.MaxReceiveMessageSize = null;
+});
 
 //添加Linux测试工具
 builder.Services.AddHostedService<LinuxTestBackgroundService>();
@@ -78,7 +88,7 @@ builder.Services.AddSignalR(opt =>
 {
     opt.EnableDetailedErrors = true;
     opt.MaximumReceiveMessageSize = int.MaxValue / 2;
-    opt.MaximumParallelInvocationsPerClient = 8192*10;
+    opt.MaximumParallelInvocationsPerClient = 8192 * 10;
     opt.StreamBufferCapacity = int.MaxValue / 2;
 })
     .AddJsonProtocol(opt => opt.PayloadSerializerOptions = AppJsonSerializerContext.Default.Options);
