@@ -77,7 +77,9 @@ builder.Services.AddHostedService<LinuxTestBackgroundService>();
 builder.Services.AddSignalR(opt =>
 {
     opt.EnableDetailedErrors = true;
-    opt.MaximumParallelInvocationsPerClient = 1024;
+    opt.MaximumReceiveMessageSize = int.MaxValue;
+    opt.MaximumParallelInvocationsPerClient = int.MaxValue;
+    opt.StreamBufferCapacity = int.MaxValue;
 })
     .AddJsonProtocol(opt => opt.PayloadSerializerOptions = AppJsonSerializerContext.Default.Options);
 
@@ -118,7 +120,6 @@ app.MapGet("/", () =>
 app.MapGrpcService<MyGrpcService>();
 app.MapHub<ChatHub>("/chathub");
 app.MapHub<StreamHub>("/StreamHub");
-ControllerHandler.MapSSE(app);
 
 app.Run();
 
