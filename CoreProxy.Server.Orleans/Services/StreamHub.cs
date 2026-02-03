@@ -31,22 +31,32 @@ namespace CoreProxy.Server.Orleans.Services
                 logger.LogInformation("开始连接目标服务器 {host}:{port}，ConnectionId:{connectionId}", host, port, connectionId);
             }
 
-            await using TcpConnectTargetServerService tcpConnectTargetServerService = new(connectionFactory, host, int.Parse(port));
-            await tcpConnectTargetServerService.ConnectAsync(cancellationTokenEx);
-
-            //发送id，表示连接成功
-            yield return $"id:{connectionId}";
-
-            //读取客户端数据
-            var taskClient = HandlerClientAsync(tcpConnectTargetServerService, clientStream, cancellationTokenEx);
-
-            //读取目标服务器数据
-            await foreach (var item in tcpConnectTargetServerService.ReceiveAsync(cancellationTokenEx))
+            try
             {
-                yield return Convert.ToBase64String(item.Span);
-            }
+                await using TcpConnectTargetServerService tcpConnectTargetServerService = new(connectionFactory, host, int.Parse(port));
+                await tcpConnectTargetServerService.ConnectAsync(cancellationTokenEx);
 
-            await taskClient;
+                //发送id，表示连接成功
+                yield return $"id:{connectionId}";
+
+                //读取客户端数据
+                var taskClient = HandlerClientAsync(tcpConnectTargetServerService, clientStream, cancellationTokenEx);
+
+                //读取目标服务器数据
+                await foreach (var item in tcpConnectTargetServerService.ReceiveAsync(cancellationTokenEx))
+                {
+                    yield return Convert.ToBase64String(item.Span);
+                }
+
+                await taskClient;
+            }
+            finally
+            {
+                if (!cancellationSource.IsCancellationRequested)
+                {
+                    cancellationSource.Cancel();
+                }
+            }
         }
 
         private static async Task HandlerClientAsync(TcpConnectTargetServerService tcpConnectTargetServerService,
