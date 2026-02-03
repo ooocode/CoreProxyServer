@@ -58,5 +58,17 @@ namespace CoreProxy.Server.Orleans.Services
                 await tcpConnectTargetServerService.SendAsync(Convert.FromBase64String(item), cancellationToken);
             }
         }
+
+        public override Task OnConnectedAsync()
+        {
+            logger.LogInformation("客户端上线");
+            return base.OnConnectedAsync();
+        }
+
+        public override Task OnDisconnectedAsync(Exception? exception)
+        {
+            logger.LogError("客户端下线");
+            return base.OnDisconnectedAsync(exception);
+        }
     }
 }
