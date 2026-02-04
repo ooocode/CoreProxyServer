@@ -33,6 +33,13 @@ namespace CoreProxy.Server.Orleans.Services
 
             try
             {
+                //添加连接信息
+                GlobalState.Connections.TryAdd(connectionId, new ConnectItem
+                {
+                    ClientIpAddress = Context.GetHttpContext()?.Connection.RemoteIpAddress?.ToString() ?? string.Empty,
+                    DateTime = DateTimeOffset.UtcNow
+                });
+
                 await using TcpConnectTargetServerService tcpConnectTargetServerService = new(connectionFactory, host, int.Parse(port));
                 await tcpConnectTargetServerService.ConnectAsync(cancellationTokenEx);
 
@@ -40,7 +47,7 @@ namespace CoreProxy.Server.Orleans.Services
                 yield return $"id:{connectionId}";
 
                 //读取客户端数据
-                var taskClient = HandlerClientAsync(tcpConnectTargetServerService, clientStream, cancellationTokenEx);
+                var taskClient = HandlerClientAsync(tcpConnectTargetServerService, clientStream, cancellationSource);
 
                 //读取目标服务器数据
                 await foreach (var item in tcpConnectTargetServerService.ReceiveAsync(cancellationTokenEx))
@@ -52,6 +59,7 @@ namespace CoreProxy.Server.Orleans.Services
             }
             finally
             {
+                GlobalState.Connections.TryRemove(connectionId, out var _);
                 if (!cancellationSource.IsCancellationRequested)
                 {
                     cancellationSource.Cancel();
@@ -60,12 +68,19 @@ namespace CoreProxy.Server.Orleans.Services
         }
 
         private static async Task HandlerClientAsync(TcpConnectTargetServerService tcpConnectTargetServerService,
-         ChannelReader<string> clientStream, CancellationToken cancellationToken)
+         ChannelReader<string> clientStream, CancellationTokenSource cancellationToken)
         {
-            //读取客户端数据
-            await foreach (var item in clientStream.ReadAllAsync(cancellationToken))
+            try
             {
-                await tcpConnectTargetServerService.SendAsync(Convert.FromBase64String(item), cancellationToken);
+                //读取客户端数据
+                await foreach (var item in clientStream.ReadAllAsync(cancellationToken.Token))
+                {
+                    await tcpConnectTargetServerService.SendAsync(Convert.FromBase64String(item), cancellationToken.Token);
+                }
+            }
+            finally
+            {
+                cancellationToken.Cancel();
             }
         }
 
