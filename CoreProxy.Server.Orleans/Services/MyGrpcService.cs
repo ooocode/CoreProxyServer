@@ -80,24 +80,13 @@ namespace CoreProxy.Server.Orleans.Services
                 var taskClient = HandlerClientAsync(tcpConnectTargetServerService, requestStream, cancellationToken);
                 var taskServer = HandlerServerAsync(tcpConnectTargetServerService, responseStream, cancellationToken);
 
-                await foreach (var task in Task.WhenEach(taskClient, taskServer))
+                var completedTask = await Task.WhenAny(taskClient, taskServer);
+                if (completedTask.Id == taskServer.Id)
                 {
-                    if (task.Id == taskClient.Id)
-                    {
-                        //客户端退出
-                        break;
-                    }
-                    else
-                    {
-                        //服务器退出
-                        await Task.Delay(1000, CancellationToken.None);
-                        if (!cancellationToken.IsCancellationRequested)
-                        {
-                            await Task.Delay(2000, cancellationToken);
-                        }
-                        break;
-                    }
+                    await Task.Delay(3000, cancellationToken);
                 }
+                cancellationSource.Cancel();
+                await Task.WhenAll(taskClient, taskServer); // 等待资源彻底释放
             }
             catch (UriFormatException)
             {
@@ -110,10 +99,7 @@ namespace CoreProxy.Server.Orleans.Services
             finally
             {
                 GlobalState.Connections.TryRemove(connectionId, out var _);
-                if (!cancellationSource.IsCancellationRequested)
-                {
-                    cancellationSource.Cancel();
-                }
+                cancellationSource.Cancel();
 
                 if (logger.IsEnabled(LogLevel.Information))
                 {
