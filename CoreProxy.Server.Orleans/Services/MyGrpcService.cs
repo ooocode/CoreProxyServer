@@ -83,7 +83,7 @@ namespace CoreProxy.Server.Orleans.Services
                 var completedTask = await Task.WhenAny(taskClient, taskServer);
                 if (completedTask.Id == taskServer.Id)
                 {
-                    await Task.Delay(2000, CancellationToken.None);
+                    await Task.Delay(3000, cancellationToken);
                 }
                 cancellationSource.Cancel();
                 await Task.WhenAll(taskClient, taskServer); // 等待资源彻底释放
@@ -99,10 +99,7 @@ namespace CoreProxy.Server.Orleans.Services
             finally
             {
                 GlobalState.Connections.TryRemove(connectionId, out var _);
-                if (!cancellationSource.IsCancellationRequested)
-                {
-                    cancellationSource.Cancel();
-                }
+                cancellationSource.Cancel();
 
                 if (logger.IsEnabled(LogLevel.Information))
                 {
