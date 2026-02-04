@@ -21,12 +21,14 @@ namespace CoreProxy.Server.Orleans.Internal
             try
             {
                 await socket.ConnectAsync(host, port, cancellationToken);
-                connectionContext = connectionFactory.Create(socket);
             }
-            catch (SocketException ex)
+            catch
             {
-                throw new Exception($"Failed to connect to target server {host}:{port} {ex.Message}", ex);
+                socket.Dispose();
+                socket = null;
+                throw;
             }
+            connectionContext = connectionFactory.Create(socket);
         }
 
         public async Task SendAsync(ReadOnlyMemory<byte> data, CancellationToken cancellationToken)
@@ -44,13 +46,6 @@ namespace CoreProxy.Server.Orleans.Internal
 #pragma warning disable CA1816
         public async ValueTask DisposeAsync()
         {
-            if (connectionContext == null && socket != null)
-            {
-                socket.Shutdown(SocketShutdown.Both);
-                socket.Dispose();
-                return;
-            }
-
             if (connectionContext != null)
             {
                 await connectionContext.DisposeAsync();
