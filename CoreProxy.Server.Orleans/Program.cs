@@ -90,8 +90,7 @@ builder.Services.AddSignalR(opt =>
     opt.MaximumReceiveMessageSize = int.MaxValue / 2;
     opt.MaximumParallelInvocationsPerClient = 8192 * 10;
     opt.StreamBufferCapacity = int.MaxValue / 2;
-})
-    .AddJsonProtocol(opt => opt.PayloadSerializerOptions = AppJsonSerializerContext.Default.Options);
+}).AddJsonProtocol(opt => opt.PayloadSerializerOptions = AppJsonSerializerContext.Default.Options);
 
 builder.Services.AddDataProtection();
 
