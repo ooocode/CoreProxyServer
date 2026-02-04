@@ -5,7 +5,6 @@ using CoreProxy.Server.Orleans.Models;
 using CoreProxy.Server.Orleans.Services;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets;
-using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Options;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
