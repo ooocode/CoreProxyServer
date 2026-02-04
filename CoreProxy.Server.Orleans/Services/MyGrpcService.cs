@@ -92,6 +92,10 @@ namespace CoreProxy.Server.Orleans.Services
             {
                 throw new RpcException(new Status(StatusCode.InvalidArgument, uriString));
             }
+            catch (OperationCanceledException)
+            {
+                //ignore
+            }
             catch (Exception ex)
             {
                 throw new RpcException(new Status(StatusCode.Internal, ex.InnerException?.Message ?? ex.Message));

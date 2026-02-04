@@ -36,11 +36,6 @@ builder.WebHost.ConfigureKestrel(serverOptions =>
     serverOptions.ConfigureEndpointDefaults(c => c.Protocols = HttpProtocols.Http2);
 
     serverOptions.ConfigureHttpsDefaults(s => s.ServerCertificate = certificate2);
-
-
-    serverOptions.Limits.MaxConcurrentConnections = 20000;
-    serverOptions.Limits.MaxConcurrentUpgradedConnections = 10000;
-    serverOptions.Limits.MaxRequestBodySize = 100_000_000; // 100MB
 });
 
 //builder.WebHost.UseQuic();
@@ -75,11 +70,7 @@ builder.Services.AddSingleton(s =>
     }, logger);
 });
 
-builder.Services.AddGrpc(opt =>
-{
-    opt.EnableDetailedErrors = true;
-    opt.MaxReceiveMessageSize = null;
-});
+builder.Services.AddGrpc();
 
 //添加Linux测试工具
 builder.Services.AddHostedService<LinuxTestBackgroundService>();
