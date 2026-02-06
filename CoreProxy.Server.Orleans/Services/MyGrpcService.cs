@@ -118,6 +118,8 @@ namespace CoreProxy.Server.Orleans.Services
                 {
                     logger.LogInformation("结束连接目标服务器 ConnectionId:{connectionId}", connectionId);
                 }
+
+                cancellationSource.Cancel();
             }
         }
 
