@@ -17,6 +17,13 @@ namespace CoreProxy.Server.Orleans.Services
         public long UnixTimeMilliseconds { get; set; }
     }
 
+    public enum HandlerStatus
+    {
+        Ok = 0,
+        OperationCanceledException = 1,
+        Exception = 2
+    }
+
     public class MyGrpcService(
         IHostApplicationLifetime hostApplicationLifetime,
         SocketConnectionContextFactory connectionFactory,
@@ -44,6 +51,7 @@ namespace CoreProxy.Server.Orleans.Services
 
         public override async Task StreamHandler(IAsyncStreamReader<HttpData> requestStream, IServerStreamWriter<HttpData> responseStream, ServerCallContext context)
         {
+
             CheckPassword(context);
             var uriString = context.RequestHeaders.GetValue(HeaderNames.XRequestedWith);
             if (string.IsNullOrWhiteSpace(uriString))
@@ -120,46 +128,78 @@ namespace CoreProxy.Server.Orleans.Services
             }
         }
 
-        private static async Task CheckKeepAliveAsync(LastActivityTime lastActivityTime, CancellationToken cancellationToken)
+        private static async Task<HandlerStatus> CheckKeepAliveAsync(LastActivityTime lastActivityTime, CancellationToken cancellationToken)
         {
-            using var timer = new PeriodicTimer(TimeSpan.FromSeconds(5));
-            while (await timer.WaitForNextTickAsync(cancellationToken))
+            try
             {
-                //检查是否超时 75秒
-                if (Math.Abs(GetUnixTimeMilliseconds() - lastActivityTime.UnixTimeMilliseconds) > 75_000)
+                using var timer = new PeriodicTimer(TimeSpan.FromSeconds(5));
+                while (await timer.WaitForNextTickAsync(cancellationToken))
                 {
-                    break;
+                    //检查是否超时 75秒
+                    if (Math.Abs(GetUnixTimeMilliseconds() - lastActivityTime.UnixTimeMilliseconds) > 75_000)
+                    {
+                        break;
+                    }
                 }
+                return HandlerStatus.Ok;
+            }
+            catch (OperationCanceledException)
+            {
+                return HandlerStatus.OperationCanceledException;
             }
         }
 
-        private static async Task HandlerClientAsync(
+        private static async Task<HandlerStatus> HandlerClientAsync(
             LastActivityTime lastActivityTime,
             TcpConnectTargetServerService tcpConnectTargetServerService, IAsyncStreamReader<HttpData> requestStream, CancellationToken cancellationToken)
         {
-            //读取客户端数据
-            await foreach (var item in requestStream.ReadAllAsync(cancellationToken))
+            try
             {
-                lastActivityTime.UnixTimeMilliseconds = GetUnixTimeMilliseconds();
-                await tcpConnectTargetServerService.SendAsync(item.Payload.Memory, cancellationToken);
+                //读取客户端数据
+                await foreach (var item in requestStream.ReadAllAsync(cancellationToken))
+                {
+                    lastActivityTime.UnixTimeMilliseconds = GetUnixTimeMilliseconds();
+                    await tcpConnectTargetServerService.SendAsync(item.Payload.Memory, cancellationToken);
+                }
+                return HandlerStatus.Ok;
+            }
+            catch (OperationCanceledException)
+            {
+                return HandlerStatus.OperationCanceledException;
+            }
+            catch (Exception)
+            {
+                return HandlerStatus.Exception;
             }
         }
 
-        private static async Task HandlerServerAsync(
+        private static async Task<HandlerStatus> HandlerServerAsync(
             LastActivityTime lastActivityTime,
             TcpConnectTargetServerService tcpConnectTargetServerService, IServerStreamWriter<HttpData> responseStream, CancellationToken cancellationToken)
         {
             //读取目标服务器数据
-            await foreach (var item in tcpConnectTargetServerService.ReceiveAsync(cancellationToken))
+            try
             {
-                long unix = GetUnixTimeMilliseconds();
-                lastActivityTime.UnixTimeMilliseconds = unix;
-                HttpData httpData = new()
+                await foreach (var item in tcpConnectTargetServerService.ReceiveAsync(cancellationToken))
                 {
-                    Payload = UnsafeByteOperations.UnsafeWrap(item),
-                    UnixTimeMilliseconds = unix
-                };
-                await responseStream.WriteAsync(httpData, cancellationToken);
+                    long unix = GetUnixTimeMilliseconds();
+                    lastActivityTime.UnixTimeMilliseconds = unix;
+                    HttpData httpData = new()
+                    {
+                        Payload = UnsafeByteOperations.UnsafeWrap(item),
+                        UnixTimeMilliseconds = unix
+                    };
+                    await responseStream.WriteAsync(httpData, cancellationToken);
+                }
+                return HandlerStatus.Ok;
+            }
+            catch (OperationCanceledException)
+            {
+                return HandlerStatus.OperationCanceledException;
+            }
+            catch (Exception)
+            {
+                return HandlerStatus.Exception;
             }
         }
 
