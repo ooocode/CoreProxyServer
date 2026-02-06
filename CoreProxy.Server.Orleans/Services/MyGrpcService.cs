@@ -17,13 +17,6 @@ namespace CoreProxy.Server.Orleans.Services
         public long UnixTimeMilliseconds { get; set; }
     }
 
-    public enum HandlerStatus
-    {
-        Ok = 0,
-        OperationCanceledException = 1,
-        Exception = 2
-    }
-
     public class MyGrpcService(
         IHostApplicationLifetime hostApplicationLifetime,
         SocketConnectionContextFactory connectionFactory,
@@ -128,78 +121,46 @@ namespace CoreProxy.Server.Orleans.Services
             }
         }
 
-        private static async Task<HandlerStatus> CheckKeepAliveAsync(LastActivityTime lastActivityTime, CancellationToken cancellationToken)
+        private static async Task CheckKeepAliveAsync(LastActivityTime lastActivityTime, CancellationToken cancellationToken)
         {
-            try
+            using var timer = new PeriodicTimer(TimeSpan.FromSeconds(5));
+            while (await timer.WaitForNextTickAsync(cancellationToken))
             {
-                using var timer = new PeriodicTimer(TimeSpan.FromSeconds(5));
-                while (await timer.WaitForNextTickAsync(cancellationToken))
+                //检查是否超时 75秒
+                if (Math.Abs(GetUnixTimeMilliseconds() - lastActivityTime.UnixTimeMilliseconds) > 75_000)
                 {
-                    //检查是否超时 75秒
-                    if (Math.Abs(GetUnixTimeMilliseconds() - lastActivityTime.UnixTimeMilliseconds) > 75_000)
-                    {
-                        break;
-                    }
+                    break;
                 }
-                return HandlerStatus.Ok;
-            }
-            catch (OperationCanceledException)
-            {
-                return HandlerStatus.OperationCanceledException;
             }
         }
 
-        private static async Task<HandlerStatus> HandlerClientAsync(
+        private static async Task HandlerClientAsync(
             LastActivityTime lastActivityTime,
             TcpConnectTargetServerService tcpConnectTargetServerService, IAsyncStreamReader<HttpData> requestStream, CancellationToken cancellationToken)
         {
-            try
+            //读取客户端数据
+            await foreach (var item in requestStream.ReadAllAsync(cancellationToken))
             {
-                //读取客户端数据
-                await foreach (var item in requestStream.ReadAllAsync(cancellationToken))
-                {
-                    lastActivityTime.UnixTimeMilliseconds = GetUnixTimeMilliseconds();
-                    await tcpConnectTargetServerService.SendAsync(item.Payload.Memory, cancellationToken);
-                }
-                return HandlerStatus.Ok;
-            }
-            catch (OperationCanceledException)
-            {
-                return HandlerStatus.OperationCanceledException;
-            }
-            catch (Exception)
-            {
-                return HandlerStatus.Exception;
+                lastActivityTime.UnixTimeMilliseconds = GetUnixTimeMilliseconds();
+                await tcpConnectTargetServerService.SendAsync(item.Payload.Memory, cancellationToken);
             }
         }
 
-        private static async Task<HandlerStatus> HandlerServerAsync(
+        private static async Task HandlerServerAsync(
             LastActivityTime lastActivityTime,
             TcpConnectTargetServerService tcpConnectTargetServerService, IServerStreamWriter<HttpData> responseStream, CancellationToken cancellationToken)
         {
             //读取目标服务器数据
-            try
+            await foreach (var item in tcpConnectTargetServerService.ReceiveAsync(cancellationToken))
             {
-                await foreach (var item in tcpConnectTargetServerService.ReceiveAsync(cancellationToken))
+                long unix = GetUnixTimeMilliseconds();
+                lastActivityTime.UnixTimeMilliseconds = unix;
+                HttpData httpData = new()
                 {
-                    long unix = GetUnixTimeMilliseconds();
-                    lastActivityTime.UnixTimeMilliseconds = unix;
-                    HttpData httpData = new()
-                    {
-                        Payload = UnsafeByteOperations.UnsafeWrap(item),
-                        UnixTimeMilliseconds = unix
-                    };
-                    await responseStream.WriteAsync(httpData, cancellationToken);
-                }
-                return HandlerStatus.Ok;
-            }
-            catch (OperationCanceledException)
-            {
-                return HandlerStatus.OperationCanceledException;
-            }
-            catch (Exception)
-            {
-                return HandlerStatus.Exception;
+                    Payload = UnsafeByteOperations.UnsafeWrap(item),
+                    UnixTimeMilliseconds = unix
+                };
+                await responseStream.WriteAsync(httpData, cancellationToken);
             }
         }
 
