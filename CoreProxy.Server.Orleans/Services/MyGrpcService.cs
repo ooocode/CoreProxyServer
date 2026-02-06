@@ -94,9 +94,9 @@ namespace CoreProxy.Server.Orleans.Services
                 var taskCheck = CheckKeepAliveAsync(lastActivityTime, cancellationToken);
 
                 var completedTask = await Task.WhenAny(taskClient, taskServer, taskCheck);
-                if (completedTask.Id == taskServer.Id && !cancellationToken.IsCancellationRequested)
+                if (completedTask.Id != taskCheck.Id && !cancellationToken.IsCancellationRequested)
                 {
-                    //(服务器端处理完成，且没有被取消) 等待一小段时间，返回剩余数据到客户端
+                    // 等待一小段时间，等待剩余数据处理
                     await Task.Delay(2000, CancellationToken.None);
                 }
                 cancellationSource.Cancel();
