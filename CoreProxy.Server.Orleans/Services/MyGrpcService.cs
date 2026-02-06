@@ -12,9 +12,9 @@ using System.Threading.Channels;
 
 namespace CoreProxy.Server.Orleans.Services
 {
-    public class LongWrap
+    class LastActivityTime
     {
-        public required long Value { get; set; }
+        public long UnixSeconds;
     }
 
     public class MyGrpcService(
@@ -50,14 +50,13 @@ namespace CoreProxy.Server.Orleans.Services
             var uriString = context.RequestHeaders.GetValue(HeaderNames.XRequestedWith);
             if (string.IsNullOrWhiteSpace(uriString))
             {
-                throw new RpcException(new Status(StatusCode.InvalidArgument, string.Empty));
+                throw new RpcException(new Status(StatusCode.InvalidArgument, HeaderNames.XRequestedWith));
             }
 
             string connectionId = Guid.CreateVersion7().ToString("N");
 
             using var cancellationSource = CancellationTokenSource.CreateLinkedTokenSource(
                         context.CancellationToken, hostApplicationLifetime.ApplicationStopping);
-            cancellationSource.CancelAfter(TimeSpan.FromHours(1));
             var cancellationToken = cancellationSource.Token;
 
             try
@@ -84,38 +83,33 @@ namespace CoreProxy.Server.Orleans.Services
                 //发送空包，表示连接成功
                 await responseStream.WriteAsync(EmptyHttpData, cancellationToken);
 
-                LongWrap longWrap = new()
+                LastActivityTime lastActivityTime = new()
                 {
-                    Value = GetUnixTimeSeconds()
+                    UnixSeconds = GetUnixTimeSeconds()
                 };
-                var taskClient = HandlerClientAsync(longWrap, tcpConnectTargetServerService, requestStream, cancellationToken);
-                var taskServer = HandlerServerAsync(longWrap, tcpConnectTargetServerService, responseStream, cancellationToken);
-                var taskCheck = CheckKeepAliveAsync(longWrap, cancellationToken);
+                var taskClient = HandlerClientAsync(lastActivityTime, tcpConnectTargetServerService, requestStream, cancellationToken);
+                var taskServer = HandlerServerAsync(lastActivityTime, tcpConnectTargetServerService, responseStream, cancellationToken);
+                var taskCheck = CheckKeepAliveAsync(lastActivityTime, cancellationToken);
 
                 var completedTask = await Task.WhenAny(taskClient, taskServer, taskCheck);
                 if (completedTask.Id == taskServer.Id)
                 {
+                    //等待一小段时间，返回剩余数据到客户端
                     await Task.Delay(3000, cancellationToken);
                 }
                 cancellationSource.Cancel();
-                await Task.WhenAll(taskClient, taskServer, taskCheck); // 等待资源彻底释放
-            }
-            catch (UriFormatException)
-            {
-                throw new RpcException(new Status(StatusCode.InvalidArgument, uriString));
-            }
-            catch (OperationCanceledException)
-            {
-                //ignore
-            }
-            catch (Exception ex)
-            {
-                throw new RpcException(new Status(StatusCode.Internal, ex.InnerException?.Message ?? ex.Message));
+
+                await foreach (var item in Task.WhenEach(taskClient, taskServer, taskCheck))
+                {
+                    if (item.Exception is not null)
+                    {
+                        logger.LogError(item.Exception, "Task.WhenEach异常");
+                    }
+                }
             }
             finally
             {
                 GlobalState.Connections.TryRemove(connectionId, out var _);
-                cancellationSource.Cancel();
 
                 if (logger.IsEnabled(LogLevel.Information))
                 {
@@ -124,12 +118,12 @@ namespace CoreProxy.Server.Orleans.Services
             }
         }
 
-        private static async Task CheckKeepAliveAsync(LongWrap longWrap, CancellationToken cancellationToken)
+        private static async Task CheckKeepAliveAsync(LastActivityTime longWrap, CancellationToken cancellationToken)
         {
             using var timer = new PeriodicTimer(TimeSpan.FromSeconds(5));
             while (await timer.WaitForNextTickAsync(cancellationToken))
             {
-                if (Math.Abs(GetUnixTimeSeconds() - longWrap.Value) > 75)
+                if (Math.Abs(GetUnixTimeSeconds() - longWrap.UnixSeconds) > 75)
                 {
                     break;
                 }
@@ -137,25 +131,25 @@ namespace CoreProxy.Server.Orleans.Services
         }
 
         private static async Task HandlerClientAsync(
-            LongWrap longWrap,
+            LastActivityTime lastActivityTime,
             TcpConnectTargetServerService tcpConnectTargetServerService, IAsyncStreamReader<HttpData> requestStream, CancellationToken cancellationToken)
         {
             //读取客户端数据
             await foreach (var item in requestStream.ReadAllAsync(cancellationToken))
             {
-                longWrap.Value = GetUnixTimeSeconds();
+                lastActivityTime.UnixSeconds = GetUnixTimeSeconds();
                 await tcpConnectTargetServerService.SendAsync(item.Payload.Memory, cancellationToken);
             }
         }
 
         private static async Task HandlerServerAsync(
-            LongWrap longWrap,
+            LastActivityTime lastActivityTime,
             TcpConnectTargetServerService tcpConnectTargetServerService, IServerStreamWriter<HttpData> responseStream, CancellationToken cancellationToken)
         {
             //读取目标服务器数据
             await foreach (var item in tcpConnectTargetServerService.ReceiveAsync(cancellationToken))
             {
-                longWrap.Value = GetUnixTimeSeconds();
+                lastActivityTime.UnixSeconds = GetUnixTimeSeconds();
                 HttpData httpData = new()
                 {
                     Payload = UnsafeByteOperations.UnsafeWrap(item)
