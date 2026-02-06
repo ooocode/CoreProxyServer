@@ -14,7 +14,7 @@ namespace CoreProxy.Server.Orleans.Services
 {
     class LastActivityTime
     {
-        public long UnixSeconds;
+        public long UnixTimeMilliseconds { get; set; }
     }
 
     public class MyGrpcService(
@@ -40,9 +40,7 @@ namespace CoreProxy.Server.Orleans.Services
             }
         }
 
-        private static readonly HttpData EmptyHttpData = new() { Payload = ByteString.Empty };
-
-        private static long GetUnixTimeSeconds() => DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        private static long GetUnixTimeMilliseconds() => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 
         public override async Task StreamHandler(IAsyncStreamReader<HttpData> requestStream, IServerStreamWriter<HttpData> responseStream, ServerCallContext context)
         {
@@ -81,11 +79,15 @@ namespace CoreProxy.Server.Orleans.Services
                 await tcpConnectTargetServerService.ConnectAsync(cancellationToken);
 
                 //发送空包，表示连接成功
-                await responseStream.WriteAsync(EmptyHttpData, cancellationToken);
+                await responseStream.WriteAsync(new()
+                {
+                    Payload = ByteString.Empty,
+                    UnixTimeMilliseconds = GetUnixTimeMilliseconds()
+                }, cancellationToken);
 
                 LastActivityTime lastActivityTime = new()
                 {
-                    UnixSeconds = GetUnixTimeSeconds()
+                    UnixTimeMilliseconds = GetUnixTimeMilliseconds()
                 };
                 var taskClient = HandlerClientAsync(lastActivityTime, tcpConnectTargetServerService, requestStream, cancellationToken);
                 var taskServer = HandlerServerAsync(lastActivityTime, tcpConnectTargetServerService, responseStream, cancellationToken);
@@ -118,12 +120,13 @@ namespace CoreProxy.Server.Orleans.Services
             }
         }
 
-        private static async Task CheckKeepAliveAsync(LastActivityTime longWrap, CancellationToken cancellationToken)
+        private static async Task CheckKeepAliveAsync(LastActivityTime lastActivityTime, CancellationToken cancellationToken)
         {
             using var timer = new PeriodicTimer(TimeSpan.FromSeconds(5));
             while (await timer.WaitForNextTickAsync(cancellationToken))
             {
-                if (Math.Abs(GetUnixTimeSeconds() - longWrap.UnixSeconds) > 75)
+                //检查是否超时 75秒
+                if (Math.Abs(GetUnixTimeMilliseconds() - lastActivityTime.UnixTimeMilliseconds) > 75_000)
                 {
                     break;
                 }
@@ -137,7 +140,7 @@ namespace CoreProxy.Server.Orleans.Services
             //读取客户端数据
             await foreach (var item in requestStream.ReadAllAsync(cancellationToken))
             {
-                lastActivityTime.UnixSeconds = GetUnixTimeSeconds();
+                lastActivityTime.UnixTimeMilliseconds = GetUnixTimeMilliseconds();
                 await tcpConnectTargetServerService.SendAsync(item.Payload.Memory, cancellationToken);
             }
         }
@@ -149,10 +152,12 @@ namespace CoreProxy.Server.Orleans.Services
             //读取目标服务器数据
             await foreach (var item in tcpConnectTargetServerService.ReceiveAsync(cancellationToken))
             {
-                lastActivityTime.UnixSeconds = GetUnixTimeSeconds();
+                long unix = GetUnixTimeMilliseconds();
+                lastActivityTime.UnixTimeMilliseconds = unix;
                 HttpData httpData = new()
                 {
-                    Payload = UnsafeByteOperations.UnsafeWrap(item)
+                    Payload = UnsafeByteOperations.UnsafeWrap(item),
+                    UnixTimeMilliseconds = unix
                 };
                 await responseStream.WriteAsync(httpData, cancellationToken);
             }

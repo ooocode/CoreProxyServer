@@ -1,5 +1,5 @@
 
-public class Test
+public static class Test
 {
     public static async Task RunAsync()
     {

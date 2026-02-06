@@ -23,6 +23,7 @@ service Greeter {
 
 message HttpData{
   bytes Payload = 1;
+  int64 UnixTimeMilliseconds = 2;
 }
 
 message GetStatusRequest{
