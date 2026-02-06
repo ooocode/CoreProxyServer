@@ -12,6 +12,11 @@ using System.Threading.Channels;
 
 namespace CoreProxy.Server.Orleans.Services
 {
+    public class LongWrap
+    {
+        public required long Value { get; set; }
+    }
+
     public class MyGrpcService(
         IHostApplicationLifetime hostApplicationLifetime,
         SocketConnectionContextFactory connectionFactory,
@@ -36,6 +41,8 @@ namespace CoreProxy.Server.Orleans.Services
         }
 
         private static readonly HttpData EmptyHttpData = new() { Payload = ByteString.Empty };
+
+        private static long GetUnixTimeSeconds() => DateTimeOffset.UtcNow.ToUnixTimeSeconds();
 
         public override async Task StreamHandler(IAsyncStreamReader<HttpData> requestStream, IServerStreamWriter<HttpData> responseStream, ServerCallContext context)
         {
@@ -77,16 +84,21 @@ namespace CoreProxy.Server.Orleans.Services
                 //发送空包，表示连接成功
                 await responseStream.WriteAsync(EmptyHttpData, cancellationToken);
 
-                var taskClient = HandlerClientAsync(tcpConnectTargetServerService, requestStream, cancellationToken);
-                var taskServer = HandlerServerAsync(tcpConnectTargetServerService, responseStream, cancellationToken);
+                LongWrap longWrap = new()
+                {
+                    Value = GetUnixTimeSeconds()
+                };
+                var taskClient = HandlerClientAsync(longWrap, tcpConnectTargetServerService, requestStream, cancellationToken);
+                var taskServer = HandlerServerAsync(longWrap, tcpConnectTargetServerService, responseStream, cancellationToken);
+                var taskCheck = CheckKeepAliveAsync(longWrap, cancellationToken);
 
-                var completedTask = await Task.WhenAny(taskClient, taskServer);
+                var completedTask = await Task.WhenAny(taskClient, taskServer, taskCheck);
                 if (completedTask.Id == taskServer.Id)
                 {
                     await Task.Delay(3000, cancellationToken);
                 }
                 cancellationSource.Cancel();
-                await Task.WhenAll(taskClient, taskServer); // 等待资源彻底释放
+                await Task.WhenAll(taskClient, taskServer, taskCheck); // 等待资源彻底释放
             }
             catch (UriFormatException)
             {
@@ -112,20 +124,38 @@ namespace CoreProxy.Server.Orleans.Services
             }
         }
 
-        private static async Task HandlerClientAsync(TcpConnectTargetServerService tcpConnectTargetServerService, IAsyncStreamReader<HttpData> requestStream, CancellationToken cancellationToken)
+        private static async Task CheckKeepAliveAsync(LongWrap longWrap, CancellationToken cancellationToken)
+        {
+            using var timer = new PeriodicTimer(TimeSpan.FromSeconds(5));
+            while (await timer.WaitForNextTickAsync(cancellationToken))
+            {
+                if (Math.Abs(GetUnixTimeSeconds() - longWrap.Value) > 75)
+                {
+                    break;
+                }
+            }
+        }
+
+        private static async Task HandlerClientAsync(
+            LongWrap longWrap,
+            TcpConnectTargetServerService tcpConnectTargetServerService, IAsyncStreamReader<HttpData> requestStream, CancellationToken cancellationToken)
         {
             //读取客户端数据
             await foreach (var item in requestStream.ReadAllAsync(cancellationToken))
             {
+                longWrap.Value = GetUnixTimeSeconds();
                 await tcpConnectTargetServerService.SendAsync(item.Payload.Memory, cancellationToken);
             }
         }
 
-        private static async Task HandlerServerAsync(TcpConnectTargetServerService tcpConnectTargetServerService, IServerStreamWriter<HttpData> responseStream, CancellationToken cancellationToken)
+        private static async Task HandlerServerAsync(
+            LongWrap longWrap,
+            TcpConnectTargetServerService tcpConnectTargetServerService, IServerStreamWriter<HttpData> responseStream, CancellationToken cancellationToken)
         {
             //读取目标服务器数据
             await foreach (var item in tcpConnectTargetServerService.ReceiveAsync(cancellationToken))
             {
+                longWrap.Value = GetUnixTimeSeconds();
                 HttpData httpData = new()
                 {
                     Payload = UnsafeByteOperations.UnsafeWrap(item)
