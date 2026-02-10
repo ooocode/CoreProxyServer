@@ -44,7 +44,6 @@ namespace CoreProxy.Server.Orleans.Services
 
         public override async Task StreamHandler(IAsyncStreamReader<HttpData> requestStream, IServerStreamWriter<HttpData> responseStream, ServerCallContext context)
         {
-
             CheckPassword(context);
             var uriString = context.RequestHeaders.GetValue(HeaderNames.XRequestedWith);
             if (string.IsNullOrWhiteSpace(uriString))
