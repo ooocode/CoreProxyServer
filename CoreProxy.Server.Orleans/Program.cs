@@ -66,7 +66,7 @@ builder.Services.AddSingleton(s =>
         MaxReadBufferSize = opt.Value.MaxReadBufferSize,
         MaxWriteBufferSize = opt.Value.MaxWriteBufferSize,
         UnsafePreferInlineScheduling = opt.Value.UnsafePreferInlineScheduling,
-        WaitForDataBeforeAllocatingBuffer = opt.Value.WaitForDataBeforeAllocatingBuffer,
+        WaitForDataBeforeAllocatingBuffer = opt.Value.WaitForDataBeforeAllocatingBuffer
     }, logger);
 });
 
