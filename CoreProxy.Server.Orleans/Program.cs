@@ -83,6 +83,7 @@ builder.Services.AddSignalR(opt =>
 }).AddJsonProtocol(opt => opt.PayloadSerializerOptions = AppJsonSerializerContext.Default.Options);
 
 builder.Services.AddDataProtection();
+builder.Services.AddHostedService<CoreBackgroundService>();
 
 var app = builder.Build();
 

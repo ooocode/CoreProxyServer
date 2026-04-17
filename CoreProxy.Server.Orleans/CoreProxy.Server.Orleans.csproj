@@ -10,7 +10,7 @@
 		<IncludeHttpRuleProtos>true</IncludeHttpRuleProtos>
 		<EnablePreviewFeatures>true</EnablePreviewFeatures>
 		<LangVersion>preview</LangVersion>
-		<Features>runtime-async=on</Features>
+		<Features Condition="'$(TargetFramework)' == 'net11.0'">runtime-async=on</Features>
 	</PropertyGroup>
 
 	<ItemGroup>
