@@ -1,6 +1,7 @@
 using DotNext.IO.Pipelines;
 using Microsoft.AspNetCore.Connections;
 using Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets;
+using System.IO.Pipelines;
 using System.Net.Sockets;
 
 namespace CoreProxy.Server.Orleans.Internal
@@ -36,10 +37,10 @@ namespace CoreProxy.Server.Orleans.Internal
             connectionContext = connectionFactory.Create(socket);
         }
 
-        public async Task SendAsync(ReadOnlyMemory<byte> data, CancellationToken cancellationToken)
+        public ValueTask<FlushResult> SendAsync(ReadOnlyMemory<byte> data, CancellationToken cancellationToken)
         {
             ArgumentNullException.ThrowIfNull(connectionContext, "ConnectionContext is not initialized. Please call Connect method first.");
-            await connectionContext.Transport.Output.WriteAsync(data, cancellationToken);
+            return connectionContext.Transport.Output.WriteAsync(data, cancellationToken);
         }
 
         public IAsyncEnumerable<ReadOnlyMemory<byte>> ReceiveAsync(CancellationToken cancellationToken)

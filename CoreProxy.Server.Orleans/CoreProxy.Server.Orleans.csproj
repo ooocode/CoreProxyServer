@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk.Web">
 	<PropertyGroup>
 		<TargetFramework Condition=" '$(Configuration)'=='Debug' ">net10.0</TargetFramework>
-		<TargetFramework Condition=" '$(Configuration)'=='Release' ">net10.0</TargetFramework>
+		<TargetFramework Condition=" '$(Configuration)'=='Release' ">net11.0</TargetFramework>
 		<Nullable>enable</Nullable>
 		<ImplicitUsings>enable</ImplicitUsings>
 		<PublishAot>true</PublishAot>
@@ -10,10 +10,11 @@
 		<IncludeHttpRuleProtos>true</IncludeHttpRuleProtos>
 		<EnablePreviewFeatures>true</EnablePreviewFeatures>
 		<LangVersion>preview</LangVersion>
+		<Features>runtime-async=on</Features>
 	</PropertyGroup>
 
 	<ItemGroup>
-		<PackageReference Include="DotNext.IO" Version="6.0.0" />
+		<PackageReference Include="DotNext.IO" Version="6.1.0" />
 		<PackageReference Include="Grpc.AspNetCore" Version="2.76.0" />
 		<PackageReference Include="Microsoft.Extensions.Hosting.Systemd" Version="10.0.5" />
 		<PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="10.0.5" />
