@@ -6,6 +6,8 @@ using Google.Protobuf;
 using Grpc.Core;
 using Hello;
 using Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets;
+using Microsoft.Extensions.Hosting;
+using System;
 using System.Threading.Channels;
 
 namespace CoreProxy.Server.Orleans
@@ -33,9 +35,12 @@ namespace CoreProxy.Server.Orleans
             }, HandlerAsync);
         }
 
-        private async ValueTask HandlerAsync(CoreItem coreItem, CancellationToken _)
+        private async ValueTask HandlerAsync(CoreItem coreItem, CancellationToken cancellationTokenApplicationStopping)
         {
-            CancellationToken cancellationToken = coreItem.CancellationTokenSource.Token;
+            using var cancellationSource = CancellationTokenSource.CreateLinkedTokenSource(
+                coreItem.CancellationToken, cancellationTokenApplicationStopping);
+            var cancellationToken = cancellationSource.Token;
+
             try
             {
                 if (coreItem.Logger.IsEnabled(LogLevel.Information))
@@ -75,7 +80,7 @@ namespace CoreProxy.Server.Orleans
                     // 等待一小段时间，等待剩余数据处理
                     await Task.Delay(2000, CancellationToken.None);
                 }
-                coreItem.CancellationTokenSource.Cancel();
+                cancellationSource.Cancel();
 
                 await foreach (var item in Task.WhenEach(taskClient, taskServer, taskCheck))
                 {
@@ -95,7 +100,7 @@ namespace CoreProxy.Server.Orleans
                        coreItem.Host, coreItem.Port);
                 }
 
-                coreItem.CancellationTokenSource.Cancel();
+                cancellationSource.Cancel();
 
                 coreItem.TaskCompletionSource.SetResult();
             }
@@ -113,7 +118,7 @@ namespace CoreProxy.Server.Orleans
         public required IAsyncStreamReader<HttpData> RequestStream { get; set; }
         public required IServerStreamWriter<HttpData> ResponseStream { get; set; }
 
-        public required CancellationTokenSource CancellationTokenSource { get; set; }
+        public required CancellationToken CancellationToken { get; set; }
 
         public required TaskCompletionSource TaskCompletionSource { get; set; }
     }

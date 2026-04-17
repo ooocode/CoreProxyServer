@@ -54,10 +54,6 @@ namespace CoreProxy.Server.Orleans.Services
 
             string connectionId = Guid.CreateVersion7().ToString("N");
 
-            using var cancellationSource = CancellationTokenSource.CreateLinkedTokenSource(
-                        context.CancellationToken, hostApplicationLifetime.ApplicationStopping);
-            var cancellationToken = cancellationSource.Token;
-
             try
             {
                 Uri uri = new(uriString);
@@ -73,7 +69,7 @@ namespace CoreProxy.Server.Orleans.Services
 
                 CoreItem coreItem = new()
                 {
-                    CancellationTokenSource = cancellationSource,
+                    CancellationToken = context.CancellationToken,
                     ClientIpAddress = context.Peer,
                     ConnectionId = connectionId,
                     Logger = logger,
