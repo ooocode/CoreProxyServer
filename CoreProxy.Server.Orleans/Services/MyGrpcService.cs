@@ -80,7 +80,7 @@ namespace CoreProxy.Server.Orleans.Services
                     TaskCompletionSource = new TaskCompletionSource(),
                 };
 
-                await CoreBackgroundService.channel.Writer.WriteAsync(coreItem, cancellationToken);
+                await CoreBackgroundService.channel.Writer.WriteAsync(coreItem, context.CancellationToken);
                 await coreItem.TaskCompletionSource.Task;
             }
             finally
@@ -91,8 +91,6 @@ namespace CoreProxy.Server.Orleans.Services
                 {
                     logger.LogInformation("结束连接目标服务器 ConnectionId:{connectionId}", connectionId);
                 }
-
-                cancellationSource.Cancel();
             }
         }
 
