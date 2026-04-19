@@ -53,20 +53,19 @@ namespace CoreProxy.Server.Orleans.Services
             }
 
             string connectionId = Guid.CreateVersion7().ToString("N");
+            Uri uri = new(uriString);
+            var host = uri.Host;
+            var port = uri.Port;
+
+            //添加连接信息
+            GlobalState.Connections.TryAdd(connectionId, new ConnectItem
+            {
+                ClientIpAddress = context.Peer,
+                DateTime = DateTimeOffset.UtcNow
+            });
 
             try
             {
-                Uri uri = new(uriString);
-                var host = uri.Host;
-                var port = uri.Port;
-
-                //添加连接信息
-                GlobalState.Connections.TryAdd(connectionId, new ConnectItem
-                {
-                    ClientIpAddress = context.Peer,
-                    DateTime = DateTimeOffset.UtcNow
-                });
-
                 CoreItem coreItem = new()
                 {
                     CancellationToken = context.CancellationToken,
@@ -81,7 +80,7 @@ namespace CoreProxy.Server.Orleans.Services
                 };
 
                 await CoreBackgroundService.channel.Writer.WriteAsync(coreItem, context.CancellationToken);
-                await coreItem.TaskCompletionSource.Task;
+                await coreItem.TaskCompletionSource.Task.WaitAsync(context.CancellationToken);
             }
             finally
             {

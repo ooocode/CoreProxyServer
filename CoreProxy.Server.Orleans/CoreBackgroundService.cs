@@ -49,13 +49,6 @@ namespace CoreProxy.Server.Orleans
                         coreItem.Host, coreItem.Port);
                 }
 
-                //添加连接信息
-                GlobalState.Connections.TryAdd(coreItem.ConnectionId, new ConnectItem
-                {
-                    ClientIpAddress = coreItem.ClientIpAddress,
-                    DateTime = DateTimeOffset.UtcNow
-                });
-
                 await using TcpConnectTargetServerService tcpConnectTargetServerService = new(connectionFactory, coreItem.Host, coreItem.Port);
                 await tcpConnectTargetServerService.ConnectAsync(cancellationToken);
 
@@ -90,13 +83,16 @@ namespace CoreProxy.Server.Orleans
                     }
                 }
             }
+            catch (Exception ex)
+            {
+                coreItem.Logger.LogError(ex, "连接目标服务器 {host}:{port} 发生异常",
+                    coreItem.Host, coreItem.Port);
+            }
             finally
             {
-                GlobalState.Connections.TryRemove(coreItem.ConnectionId, out var _);
-
-                if (coreItem.Logger.IsEnabled(LogLevel.Error))
+                if (coreItem.Logger.IsEnabled(LogLevel.Information))
                 {
-                    coreItem.Logger.LogError("结束连接目标服务器 {host}:{port}",
+                    coreItem.Logger.LogInformation("结束连接目标服务器 {host}:{port}",
                        coreItem.Host, coreItem.Port);
                 }
 
