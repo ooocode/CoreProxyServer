@@ -15,6 +15,7 @@ namespace CoreProxy.Server.Orleans
     public class CoreBackgroundService(SocketConnectionContextFactory connectionFactory, IConfiguration configuration) : BackgroundService
     {
         public static readonly Channel<CoreItem> channel = Channel.CreateUnbounded<CoreItem>();
+        public static int ActiveTaskCount = 0; // 当前运行中的数量
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
@@ -37,6 +38,9 @@ namespace CoreProxy.Server.Orleans
 
         private async ValueTask HandlerAsync(CoreItem coreItem, CancellationToken cancellationTokenApplicationStopping)
         {
+            // 1. 进入时原子递增
+            Interlocked.Increment(ref activeTaskCount);
+
             using var cancellationSource = CancellationTokenSource.CreateLinkedTokenSource(
                 coreItem.CancellationToken, cancellationTokenApplicationStopping);
             var cancellationToken = cancellationSource.Token;
@@ -100,6 +104,9 @@ namespace CoreProxy.Server.Orleans
                 }
 
                 cancellationSource.Cancel();
+
+                // 2. 无论成功或失败，退出时原子递减
+                Interlocked.Decrement(ref activeTaskCount);
             }
         }
     }
