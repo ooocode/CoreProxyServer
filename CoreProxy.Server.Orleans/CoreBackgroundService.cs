@@ -39,7 +39,7 @@ namespace CoreProxy.Server.Orleans
         private async ValueTask HandlerAsync(CoreItem coreItem, CancellationToken cancellationTokenApplicationStopping)
         {
             // 1. 进入时原子递增
-            Interlocked.Increment(ref activeTaskCount);
+            Interlocked.Increment(ref ActiveTaskCount);
 
             using var cancellationSource = CancellationTokenSource.CreateLinkedTokenSource(
                 coreItem.CancellationToken, cancellationTokenApplicationStopping);
@@ -106,7 +106,7 @@ namespace CoreProxy.Server.Orleans
                 cancellationSource.Cancel();
 
                 // 2. 无论成功或失败，退出时原子递减
-                Interlocked.Decrement(ref activeTaskCount);
+                Interlocked.Decrement(ref ActiveTaskCount);
             }
         }
     }
