@@ -82,11 +82,14 @@ namespace CoreProxy.Server.Orleans
                         coreItem.Logger.LogError(item.Exception, "Task.WhenEach异常");
                     }
                 }
+                coreItem.TaskCompletionSource.SetResult();
             }
             catch (Exception ex)
             {
                 coreItem.Logger.LogError(ex, "连接目标服务器 {host}:{port} 发生异常",
                     coreItem.Host, coreItem.Port);
+
+                coreItem.TaskCompletionSource.SetException(ex);
             }
             finally
             {
@@ -97,8 +100,6 @@ namespace CoreProxy.Server.Orleans
                 }
 
                 cancellationSource.Cancel();
-
-                coreItem.TaskCompletionSource.SetResult();
             }
         }
     }

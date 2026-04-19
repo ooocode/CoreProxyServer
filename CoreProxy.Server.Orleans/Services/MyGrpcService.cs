@@ -222,7 +222,7 @@ namespace CoreProxy.Server.Orleans.Services
 
             var reply = new StatusReply
             {
-                SocketCount = GlobalState.Connections.Count
+                SocketCount = CoreBackgroundService.channel.Reader.Count  //GlobalState.Connections.Count
             };
 
             if (request.IncludeDetail)
