@@ -196,7 +196,7 @@ namespace CoreProxy.Server.Orleans.Services
                 if (completedTask.Id != taskCheck.Id && !cancellationToken.IsCancellationRequested)
                 {
                     // 等待一小段时间，等待剩余数据处理
-                    await Task.Delay(2000, CancellationToken.None);
+                    await Task.Delay(2000, cancellationToken);
                 }
                 cancellationSource.Cancel();
 
