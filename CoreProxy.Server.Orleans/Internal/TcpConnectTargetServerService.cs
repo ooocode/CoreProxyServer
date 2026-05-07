@@ -1,8 +1,11 @@
 using DotNext.IO.Pipelines;
+using Google.Protobuf;
+using Hello;
 using Microsoft.AspNetCore.Connections;
 using Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets;
 using System.IO.Pipelines;
 using System.Net.Sockets;
+using System.Runtime.CompilerServices;
 
 namespace CoreProxy.Server.Orleans.Internal
 {
@@ -47,6 +50,19 @@ namespace CoreProxy.Server.Orleans.Internal
         {
             ArgumentNullException.ThrowIfNull(connectionContext, "ConnectionContext is not initialized. Please call Connect method first.");
             return connectionContext.Transport.Input.ReadAllAsync(cancellationToken);
+        }
+
+        public async IAsyncEnumerable<HttpData> ReceiveAsHttpDataAsync([EnumeratorCancellation] CancellationToken cancellationToken)
+        {
+            ArgumentNullException.ThrowIfNull(connectionContext, "ConnectionContext is not initialized. Please call Connect method first.");
+            await foreach (var item in connectionContext.Transport.Input.ReadAllAsync(cancellationToken))
+            {
+                yield return new HttpData
+                {
+                    Payload = UnsafeByteOperations.UnsafeWrap(item),
+                    UnixTimeMilliseconds = 1
+                };
+            }
         }
 
 #pragma warning disable CA1816
