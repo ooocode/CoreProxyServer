@@ -85,7 +85,7 @@ namespace CoreProxy.Server.Orleans.Services
                 var client = requestStream.ReadAllAsync(cancellationToken);
                 var server = tcpConnectTargetServerService.ReceiveAsHttpDataAsync(cancellationToken);
 
-                await foreach (var item in AsyncEnumerableEx.Merge(client, server))
+                await foreach (var item in AsyncEnumerableEx.Merge(client, server).WithCancellation(cancellationToken))
                 {
                     if (item.UnixTimeMilliseconds == 1)
                     {
