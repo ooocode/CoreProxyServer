@@ -13,8 +13,8 @@ using System.Text;
 using System.Text.Json.Serialization;
 //https://www.zhifeiya.cn/post/2026/2/1/d6a548a1
 
-await TestClass.RunAsync();
-return;
+//await TestClass.RunAsync();
+//return;
 
 var builder = WebApplication.CreateSlimBuilder(args);
 builder.Logging.AddFileLogger();
