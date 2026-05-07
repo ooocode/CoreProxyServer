@@ -65,7 +65,8 @@ namespace CoreProxy.Server.Orleans.Services
                 DateTime = DateTimeOffset.UtcNow
             });
 
-            using var cancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(context.CancellationToken, hostApplicationLifetime.ApplicationStopping);
+            using var cancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(context.CancellationToken,
+                hostApplicationLifetime.ApplicationStopped);
             var cancellationToken = cancellationTokenSource.Token;
 
             try

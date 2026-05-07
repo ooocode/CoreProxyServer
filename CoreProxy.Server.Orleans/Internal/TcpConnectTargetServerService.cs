@@ -9,6 +9,12 @@ using System.Runtime.CompilerServices;
 
 namespace CoreProxy.Server.Orleans.Internal
 {
+    public enum ServerStatus
+    {
+        Data = 1,
+        Finish = 2
+    }
+
     public class TcpConnectTargetServerService(
         SocketConnectionContextFactory connectionFactory,
         string host, int port) : IConnectTargetServerService
@@ -60,7 +66,7 @@ namespace CoreProxy.Server.Orleans.Internal
                 yield return new HttpData
                 {
                     Payload = UnsafeByteOperations.UnsafeWrap(item),
-                    UnixTimeMilliseconds = 1
+                    UnixTimeMilliseconds = ServerStatus.Data.GetHashCode()
                 };
             }
         }
