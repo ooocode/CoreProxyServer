@@ -269,7 +269,7 @@ namespace CoreProxy.Server.Orleans.Services
 
             var reply = new StatusReply
             {
-                SocketCount = CoreBackgroundService.ActiveTaskCount //GlobalState.Connections.Count
+                SocketCount = GlobalState.Connections.Count
             };
 
             if (request.IncludeDetail)
