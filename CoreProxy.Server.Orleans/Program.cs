@@ -3,6 +3,7 @@ using CoreProxy.Server.Orleans.BackgroundServices;
 using CoreProxy.Server.Orleans.Internal;
 using CoreProxy.Server.Orleans.Models;
 using CoreProxy.Server.Orleans.Services;
+using CoreProxy.Server.Orleans.Test;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets;
 using Microsoft.Extensions.Options;
@@ -11,6 +12,9 @@ using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Text.Json.Serialization;
 //https://www.zhifeiya.cn/post/2026/2/1/d6a548a1
+
+await TestClass.RunAsync();
+return;
 
 var builder = WebApplication.CreateSlimBuilder(args);
 builder.Logging.AddFileLogger();

@@ -44,7 +44,7 @@ namespace CoreProxy.Server.Orleans.Services
         public static long GetUnixTimeMilliseconds() => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 
 
-        public override async Task StreamHandler(IAsyncStreamReader<HttpData> requestStream, IServerStreamWriter<HttpData> responseStream, ServerCallContext context)
+        public  async Task StreamHandlerx(IAsyncStreamReader<HttpData> requestStream, IServerStreamWriter<HttpData> responseStream, ServerCallContext context)
         {
             CheckPassword(context);
             var uriString = context.RequestHeaders.GetValue(HeaderNames.XRequestedWith);
@@ -141,85 +141,85 @@ namespace CoreProxy.Server.Orleans.Services
             //}
         }
 
-        //public override async Task StreamHandler(IAsyncStreamReader<HttpData> requestStream, IServerStreamWriter<HttpData> responseStream, ServerCallContext context)
-        //{
-        //    CheckPassword(context);
-        //    var uriString = context.RequestHeaders.GetValue(HeaderNames.XRequestedWith);
-        //    if (string.IsNullOrWhiteSpace(uriString))
-        //    {
-        //        throw new RpcException(new Status(StatusCode.InvalidArgument, HeaderNames.XRequestedWith));
-        //    }
+        public override async Task StreamHandler(IAsyncStreamReader<HttpData> requestStream, IServerStreamWriter<HttpData> responseStream, ServerCallContext context)
+        {
+            CheckPassword(context);
+            var uriString = context.RequestHeaders.GetValue(HeaderNames.XRequestedWith);
+            if (string.IsNullOrWhiteSpace(uriString))
+            {
+                throw new RpcException(new Status(StatusCode.InvalidArgument, HeaderNames.XRequestedWith));
+            }
 
-        //    string connectionId = Guid.CreateVersion7().ToString("N");
+            string connectionId = Guid.CreateVersion7().ToString("N");
 
-        //    using var cancellationSource = CancellationTokenSource.CreateLinkedTokenSource(
-        //                context.CancellationToken, hostApplicationLifetime.ApplicationStopping);
-        //    var cancellationToken = cancellationSource.Token;
+            using var cancellationSource = CancellationTokenSource.CreateLinkedTokenSource(
+                        context.CancellationToken, hostApplicationLifetime.ApplicationStopping);
+            var cancellationToken = cancellationSource.Token;
 
-        //    try
-        //    {
-        //        Uri uri = new(uriString);
-        //        var host = uri.Host;
-        //        var port = uri.Port;
+            try
+            {
+                Uri uri = new(uriString);
+                var host = uri.Host;
+                var port = uri.Port;
 
-        //        if (logger.IsEnabled(LogLevel.Information))
-        //        {
-        //            logger.LogInformation("开始连接目标服务器 {host}:{port}，ConnectionId:{connectionId}", host, port, connectionId);
-        //        }
+                if (logger.IsEnabled(LogLevel.Information))
+                {
+                    logger.LogInformation("开始连接目标服务器 {host}:{port}，ConnectionId:{connectionId}", host, port, connectionId);
+                }
 
-        //        //添加连接信息
-        //        GlobalState.Connections.TryAdd(connectionId, new ConnectItem
-        //        {
-        //            ClientIpAddress = context.Peer,
-        //            DateTime = DateTimeOffset.UtcNow
-        //        });
+                //添加连接信息
+                GlobalState.Connections.TryAdd(connectionId, new ConnectItem
+                {
+                    ClientIpAddress = context.Peer,
+                    DateTime = DateTimeOffset.UtcNow
+                });
 
-        //        await using TcpConnectTargetServerService tcpConnectTargetServerService = new(connectionFactory, host, port);
-        //        await tcpConnectTargetServerService.ConnectAsync(cancellationToken);
+                await using TcpConnectTargetServerService tcpConnectTargetServerService = new(connectionFactory, host, port);
+                await tcpConnectTargetServerService.ConnectAsync(cancellationToken);
 
-        //        //发送空包，表示连接成功
-        //        await responseStream.WriteAsync(new()
-        //        {
-        //            Payload = ByteString.Empty,
-        //            UnixTimeMilliseconds = GetUnixTimeMilliseconds()
-        //        }, cancellationToken);
+                //发送空包，表示连接成功
+                await responseStream.WriteAsync(new()
+                {
+                    Payload = ByteString.Empty,
+                    UnixTimeMilliseconds = GetUnixTimeMilliseconds()
+                }, cancellationToken);
 
-        //        LastActivityTime lastActivityTime = new()
-        //        {
-        //            UnixTimeMilliseconds = GetUnixTimeMilliseconds()
-        //        };
-        //        var taskClient = HandlerClientAsync(lastActivityTime, tcpConnectTargetServerService, requestStream, cancellationToken);
-        //        var taskServer = HandlerServerAsync(lastActivityTime, tcpConnectTargetServerService, responseStream, cancellationToken);
-        //        var taskCheck = CheckKeepAliveAsync(lastActivityTime, cancellationToken);
+                LastActivityTime lastActivityTime = new()
+                {
+                    UnixTimeMilliseconds = GetUnixTimeMilliseconds()
+                };
+                var taskClient = HandlerClientAsync(lastActivityTime, tcpConnectTargetServerService, requestStream, cancellationToken);
+                var taskServer = HandlerServerAsync(lastActivityTime, tcpConnectTargetServerService, responseStream, cancellationToken);
+                var taskCheck = CheckKeepAliveAsync(lastActivityTime, cancellationToken);
 
-        //        var completedTask = await Task.WhenAny(taskClient, taskServer, taskCheck);
-        //        if (completedTask.Id != taskCheck.Id && !cancellationToken.IsCancellationRequested)
-        //        {
-        //            // 等待一小段时间，等待剩余数据处理
-        //            await Task.Delay(2000, CancellationToken.None);
-        //        }
-        //        cancellationSource.Cancel();
+                var completedTask = await Task.WhenAny(taskClient, taskServer, taskCheck);
+                if (completedTask.Id != taskCheck.Id && !cancellationToken.IsCancellationRequested)
+                {
+                    // 等待一小段时间，等待剩余数据处理
+                    await Task.Delay(2000, CancellationToken.None);
+                }
+                cancellationSource.Cancel();
 
-        //        await foreach (var item in Task.WhenEach(taskClient, taskServer, taskCheck))
-        //        {
-        //            if (item.Exception is not null)
-        //            {
-        //                logger.LogError(item.Exception, "Task.WhenEach异常");
-        //            }
-        //        }
-        //    }
-        //    finally
-        //    {
-        //        GlobalState.Connections.TryRemove(connectionId, out var _);
+                await foreach (var item in Task.WhenEach(taskClient, taskServer, taskCheck))
+                {
+                    if (item.Exception is not null)
+                    {
+                        logger.LogError(item.Exception, "Task.WhenEach异常");
+                    }
+                }
+            }
+            finally
+            {
+                GlobalState.Connections.TryRemove(connectionId, out var _);
 
-        //        if (logger.IsEnabled(LogLevel.Information))
-        //        {
-        //            logger.LogInformation("结束连接目标服务器 ConnectionId:{connectionId}", connectionId);
-        //        }
+                if (logger.IsEnabled(LogLevel.Information))
+                {
+                    logger.LogInformation("结束连接目标服务器 ConnectionId:{connectionId}", connectionId);
+                }
 
-        //        cancellationSource.Cancel();
-        //    }
-        //}
+                cancellationSource.Cancel();
+            }
+        }
 
         public static async Task CheckKeepAliveAsync(LastActivityTime lastActivityTime, CancellationToken cancellationToken)
         {
