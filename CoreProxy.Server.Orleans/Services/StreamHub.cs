@@ -62,7 +62,23 @@ namespace CoreProxy.Server.Orleans.Services
                 var task = await Task.WhenAny(taskClient, serverClient);
                 if (task.Id == serverClient.Id)
                 {
-                    await Task.Delay(3000, CancellationToken.None);
+                    // 情况 A：目标服务器主动断开了连接
+                    logger.LogInformation("目标服务器已断开，等待客户端发送剩余数据...");
+
+                    // 给客户端 3-5 秒的时间处理完它 Channel 里的剩余数据
+                    // 注意：这里不再是盲等，而是配合 Task.WhenAny 或逻辑判断
+                    using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                    using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(timeoutCts.Token, cancellationTokenEx);
+
+                    try
+                    {
+                        // 继续等待客户端任务完成，但受限于超时
+                        await taskClient.WaitAsync(linkedCts.Token);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        logger.LogWarning("客户端发送超时或已断开");
+                    }
                 }
 
                 await cancellationTokenSource.CancelAsync();
@@ -76,12 +92,12 @@ namespace CoreProxy.Server.Orleans.Services
             }
             finally
             {
-                GlobalState.Connections.TryRemove(connectionId, out var _);
                 if (!cancellationTokenSource.IsCancellationRequested)
                 {
                     await cancellationTokenSource.CancelAsync();
                 }
-                serverChannel.Writer.Complete();
+                serverChannel.Writer.TryComplete();
+                GlobalState.Connections.TryRemove(connectionId, out var _);
             }
         }
 
