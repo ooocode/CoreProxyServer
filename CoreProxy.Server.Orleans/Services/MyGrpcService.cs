@@ -190,18 +190,34 @@ namespace CoreProxy.Server.Orleans.Services
                 };
                 var taskClient = HandlerClientAsync(lastActivityTime, tcpConnectTargetServerService, requestStream, cancellationToken);
                 var taskServer = HandlerServerAsync(lastActivityTime, tcpConnectTargetServerService, responseStream, cancellationToken);
-                var taskCheck = CheckKeepAliveAsync(lastActivityTime, cancellationToken);
 
-                var completedTask = await Task.WhenAny(taskClient, taskServer, taskCheck);
-                if (completedTask.Id != taskCheck.Id && !cancellationToken.IsCancellationRequested)
+                var completedTask = await Task.WhenAny(taskClient, taskServer);
+                if (completedTask.Id == taskServer.Id)
                 {
-                    // 客户端或者服务器完成
-                    // 等待一小段时间，等待剩余数据处理
-                    await Task.Delay(2000, cancellationToken);
+                    // 等待一小段时间，等待客户端剩余数据处理
+                    try
+                    {
+                        await taskClient.WaitAsync(TimeSpan.FromSeconds(3), cancellationToken);
+                    }
+                    catch (Exception ex)
+                    {
+                        logger.LogWarning(ex, "等待一小段时间，等待客户端剩余数据处理");
+                    }
                 }
                 cancellationSource.Cancel();
 
-                await foreach (var item in Task.WhenEach(taskClient, taskServer, taskCheck))
+                //var taskCheck = CheckKeepAliveAsync(lastActivityTime, cancellationToken);
+
+                //var completedTask = await Task.WhenAny(taskClient, taskServer, taskCheck);
+                //if (completedTask.Id != taskCheck.Id && !cancellationToken.IsCancellationRequested)
+                //{
+                //    // 客户端或者服务器完成
+                //    // 等待一小段时间，等待剩余数据处理
+                //    await Task.Delay(2000, cancellationToken);
+                //}
+                //cancellationSource.Cancel();
+
+                await foreach (var item in Task.WhenEach(taskClient, taskServer))
                 {
                     if (item.Exception is not null)
                     {

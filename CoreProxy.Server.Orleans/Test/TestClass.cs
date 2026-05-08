@@ -4,11 +4,21 @@
     {
         public static async Task RunAsync()
         {
-            await foreach (var item in AsyncEnumerableEx.Merge(GetIntsAsync(), GetIntsAAAAAsync()))
+            try
             {
-                Console.WriteLine(item);
-            }
+                var taskClient = GetIntsAAAAAsync();
 
+                var result = await taskClient.WaitAsync(TimeSpan.FromSeconds(5));
+
+                var c = await Task.WhenAny(taskClient);
+            }
+            catch(Exception ex)
+            {
+                Console.WriteLine(ex);
+            }
+          
+
+            await Task.Delay(-1);
             Console.WriteLine("结束");
         }
 
@@ -21,13 +31,18 @@
             }
         }
 
-        private static async IAsyncEnumerable<int> GetIntsAAAAAsync()
+        private static async Task<int> GetIntsAAAAAsync(CancellationToken cancellationToken = default)
         {
-            for (int i = 0; i < 100; i++)
+            for (int i = 0; i < 300; i++)
             {
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    break;
+                }
+                Console.WriteLine(i);
                 await Task.Delay(1000);
-                yield return i;
             }
+            return 100;
         }
     }
 }
