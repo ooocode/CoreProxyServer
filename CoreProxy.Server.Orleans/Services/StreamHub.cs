@@ -24,18 +24,19 @@ namespace CoreProxy.Server.Orleans.Services
                 logger.LogInformation("开始连接目标服务器 {host}:{port}", host, port);
             }
 
+            using var cancellationSource = CancellationTokenSource.CreateLinkedTokenSource(
+                      Context.ConnectionAborted, hostApplicationLifetime.ApplicationStopping);
+            cancellationSource.CancelAfter(TimeSpan.FromHours(1));
+
             var serverChannel = Channel.CreateUnbounded<string>();
-            _ = CoreHandler(host, int.Parse(port), clientStream, serverChannel);
+            _ = CoreHandler(host, int.Parse(port), clientStream, serverChannel, cancellationSource);
             return serverChannel.Reader;
         }
 
-        private async Task CoreHandler(string host, int port, ChannelReader<string> clientStream, Channel<string> serverChannel)
+        private async Task CoreHandler(string host, int port, ChannelReader<string> clientStream, Channel<string> serverChannel,
+            CancellationTokenSource cancellationTokenSource)
         {
-            using var cancellationSource = CancellationTokenSource.CreateLinkedTokenSource(
-                        Context.ConnectionAborted, hostApplicationLifetime.ApplicationStopping);
-            cancellationSource.CancelAfter(TimeSpan.FromHours(1));
-            var cancellationTokenEx = cancellationSource.Token;
-
+            var cancellationTokenEx = cancellationTokenSource.Token;
 
             string connectionId = Guid.CreateVersion7().ToString("N");
 
@@ -64,7 +65,7 @@ namespace CoreProxy.Server.Orleans.Services
                     await Task.Delay(3000, CancellationToken.None);
                 }
 
-                await cancellationSource.CancelAsync();
+                await cancellationTokenSource.CancelAsync();
                 await foreach (var item in Task.WhenEach(taskClient, serverClient))
                 {
                     if (item.Exception is not null)
@@ -76,9 +77,9 @@ namespace CoreProxy.Server.Orleans.Services
             finally
             {
                 GlobalState.Connections.TryRemove(connectionId, out var _);
-                if (!cancellationSource.IsCancellationRequested)
+                if (!cancellationTokenSource.IsCancellationRequested)
                 {
-                    await cancellationSource.CancelAsync();
+                    await cancellationTokenSource.CancelAsync();
                 }
                 serverChannel.Writer.Complete();
             }
