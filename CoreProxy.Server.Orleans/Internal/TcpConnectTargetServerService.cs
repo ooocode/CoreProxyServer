@@ -20,7 +20,7 @@ namespace CoreProxy.Server.Orleans.Internal
         string host, int port) : IConnectTargetServerService
     {
         private Socket? socket;
-        private ConnectionContext? connectionContext;
+        public ConnectionContext? connectionContext;
 
         public async Task ConnectAsync(CancellationToken cancellationToken)
         {

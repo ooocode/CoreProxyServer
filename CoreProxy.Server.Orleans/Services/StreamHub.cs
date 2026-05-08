@@ -1,8 +1,12 @@
 using CoreProxy.Server.Orleans.Internal;
+using DotNext.IO.Pipelines;
 using Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets;
 using Microsoft.AspNetCore.SignalR;
+using Microsoft.Extensions.Hosting;
 using System.Runtime.CompilerServices;
+using System.Threading;
 using System.Threading.Channels;
+using System.Threading.Tasks;
 
 namespace CoreProxy.Server.Orleans.Services
 {
@@ -11,22 +15,29 @@ namespace CoreProxy.Server.Orleans.Services
                     ILogger<StreamHub> logger) : Hub
     {
         // 双向流方法：接收 clientStream，返回 IAsyncEnumerable
-        public async IAsyncEnumerable<string> EchoStream(
+        public ChannelReader<string> EchoStream(
             string host, string port,
-            ChannelReader<string> clientStream,
-            [EnumeratorCancellation] CancellationToken cancellationToken)
+            ChannelReader<string> clientStream)
+        {
+            if (logger.IsEnabled(LogLevel.Information))
+            {
+                logger.LogInformation("开始连接目标服务器 {host}:{port}", host, port);
+            }
+
+            var serverChannel = Channel.CreateUnbounded<string>();
+            _ = CoreHandler(host, int.Parse(port), clientStream, serverChannel);
+            return serverChannel.Reader;
+        }
+
+        private async Task CoreHandler(string host, int port, ChannelReader<string> clientStream, Channel<string> serverChannel)
         {
             using var cancellationSource = CancellationTokenSource.CreateLinkedTokenSource(
-                        cancellationToken, hostApplicationLifetime.ApplicationStopping);
+                        Context.ConnectionAborted, hostApplicationLifetime.ApplicationStopping);
             cancellationSource.CancelAfter(TimeSpan.FromHours(1));
             var cancellationTokenEx = cancellationSource.Token;
 
-            string connectionId = Guid.CreateVersion7().ToString("N");
 
-            if (logger.IsEnabled(LogLevel.Information))
-            {
-                logger.LogInformation("开始连接目标服务器 {host}:{port}，ConnectionId:{connectionId}", host, port, connectionId);
-            }
+            string connectionId = Guid.CreateVersion7().ToString("N");
 
             try
             {
@@ -37,47 +48,71 @@ namespace CoreProxy.Server.Orleans.Services
                     DateTime = DateTimeOffset.UtcNow
                 });
 
-                await using TcpConnectTargetServerService tcpConnectTargetServerService = new(connectionFactory, host, int.Parse(port));
+                await using TcpConnectTargetServerService tcpConnectTargetServerService = new(connectionFactory, host, port);
                 await tcpConnectTargetServerService.ConnectAsync(cancellationTokenEx);
 
                 //发送id，表示连接成功
-                yield return $"id:{connectionId}";
+                await serverChannel.Writer.WriteAsync($"id:{connectionId}", cancellationTokenEx);
 
                 //读取客户端数据
-                var taskClient = HandlerClientAsync(tcpConnectTargetServerService, clientStream, cancellationSource);
+                var taskClient = HandlerClientAsync(tcpConnectTargetServerService, clientStream, serverChannel, cancellationTokenEx);
+                var serverClient = HandlerServer(tcpConnectTargetServerService, serverChannel, cancellationTokenEx);
 
-                //读取目标服务器数据
-                await foreach (var item in tcpConnectTargetServerService.ReceiveAsync(cancellationTokenEx))
+                var task = await Task.WhenAny(taskClient, serverClient);
+                if (task.Id == serverClient.Id)
                 {
-                    yield return Convert.ToBase64String(item.Span);
+                    await Task.Delay(3000, CancellationToken.None);
                 }
 
-                await taskClient;
+                await cancellationSource.CancelAsync();
+                await foreach (var item in Task.WhenEach(taskClient, serverClient))
+                {
+                    if (item.Exception is not null)
+                    {
+                        logger.LogError(item.Exception, "CoreHandler");
+                    }
+                }
             }
             finally
             {
                 GlobalState.Connections.TryRemove(connectionId, out var _);
                 if (!cancellationSource.IsCancellationRequested)
                 {
-                    cancellationSource.Cancel();
+                    await cancellationSource.CancelAsync();
                 }
+                serverChannel.Writer.Complete();
             }
         }
 
-        private static async Task HandlerClientAsync(TcpConnectTargetServerService tcpConnectTargetServerService,
-         ChannelReader<string> clientStream, CancellationTokenSource cancellationToken)
+
+        private static async Task HandlerServer(TcpConnectTargetServerService tcpConnectTargetServerService,
+            Channel<string> serverChannel,
+            CancellationToken cancellationToken)
         {
-            try
+            //读取目标服务器数据
+            await foreach (var item in tcpConnectTargetServerService.connectionContext!.Transport.Input.ReadAllAsync(cancellationToken))
             {
-                //读取客户端数据
-                await foreach (var item in clientStream.ReadAllAsync(cancellationToken.Token))
-                {
-                    await tcpConnectTargetServerService.SendAsync(Convert.FromBase64String(item), cancellationToken.Token);
-                }
+                var str = Convert.ToBase64String(item.Span);
+                await serverChannel.Writer.WriteAsync(str, cancellationToken);
             }
-            finally
+        }
+
+        /// <summary>
+        /// 处理客户端
+        /// </summary>
+        /// <param name="tcpConnectTargetServerService"></param>
+        /// <param name="clientStream"></param>
+        /// <param name="cancellationToken"></param>
+        /// <returns></returns>
+        private static async Task HandlerClientAsync(TcpConnectTargetServerService tcpConnectTargetServerService,
+         ChannelReader<string> clientStream,
+         Channel<string> serverChannel,
+         CancellationToken cancellationToken)
+        {
+            //读取客户端数据
+            await foreach (var item in clientStream.ReadAllAsync(cancellationToken))
             {
-                cancellationToken.Cancel();
+                await tcpConnectTargetServerService.SendAsync(Convert.FromBase64String(item), cancellationToken);
             }
         }
 
