@@ -29,13 +29,9 @@ namespace CoreProxy.Server.Orleans.Internal
                 NoDelay = true
             };
 
-            //60秒连接超时
-            using var cancellationSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            cancellationSource.CancelAfter(TimeSpan.FromSeconds(60));
-
             try
             {
-                await socket.ConnectAsync(host, port, cancellationSource.Token);
+                await socket.ConnectAsync(host, port, cancellationToken);
             }
             catch
             {

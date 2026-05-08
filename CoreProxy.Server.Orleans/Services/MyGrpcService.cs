@@ -175,7 +175,7 @@ namespace CoreProxy.Server.Orleans.Services
                 });
 
                 await using TcpConnectTargetServerService tcpConnectTargetServerService = new(connectionFactory, host, port);
-                await tcpConnectTargetServerService.ConnectAsync(cancellationToken);
+                await tcpConnectTargetServerService.ConnectAsync(cancellationToken).WaitAsync(TimeSpan.FromSeconds(60), cancellationToken);
 
                 //发送空包，表示连接成功
                 await responseStream.WriteAsync(new()
