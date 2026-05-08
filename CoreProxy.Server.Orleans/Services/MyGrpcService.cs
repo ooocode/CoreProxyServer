@@ -44,7 +44,7 @@ namespace CoreProxy.Server.Orleans.Services
         public static long GetUnixTimeMilliseconds() => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 
 
-        public  async Task StreamHandlerx(IAsyncStreamReader<HttpData> requestStream, IServerStreamWriter<HttpData> responseStream, ServerCallContext context)
+        public async Task StreamHandlerx(IAsyncStreamReader<HttpData> requestStream, IServerStreamWriter<HttpData> responseStream, ServerCallContext context)
         {
             CheckPassword(context);
             var uriString = context.RequestHeaders.GetValue(HeaderNames.XRequestedWith);
@@ -195,6 +195,7 @@ namespace CoreProxy.Server.Orleans.Services
                 var completedTask = await Task.WhenAny(taskClient, taskServer, taskCheck);
                 if (completedTask.Id != taskCheck.Id && !cancellationToken.IsCancellationRequested)
                 {
+                    // 客户端或者服务器完成
                     // 等待一小段时间，等待剩余数据处理
                     await Task.Delay(2000, cancellationToken);
                 }
