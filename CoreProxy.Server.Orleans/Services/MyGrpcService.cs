@@ -160,36 +160,36 @@ namespace CoreProxy.Server.Orleans.Services
                         context.CancellationToken, hostApplicationLifetime.ApplicationStopping);
             var cancellationToken = cancellationSource.Token;
 
+            Uri uri = new(uriString);
+            var host = uri.Host;
+            var port = uri.Port;
+
+            var ips = await Dns.GetHostAddressesAsync(host, cancellationToken);
+            var ip = ips.OrderBy(x => x.AddressFamily).First();
+
+            await using var serverConnectionContext = await connectionFactory1.ConnectAsync(new IPEndPoint(ip, port), cancellationToken);
+
+            //发送空包，表示连接成功
+            await responseStream.WriteAsync(new()
+            {
+                Payload = ByteString.Empty,
+                UnixTimeMilliseconds = GetUnixTimeMilliseconds()
+            }, cancellationToken);
+
+            if (logger.IsEnabled(LogLevel.Information))
+            {
+                logger.LogInformation("开始连接目标服务器 {host}:{port}，ConnectionId:{connectionId}", host, port, connectionId);
+            }
+
+            //添加连接信息
+            GlobalState.Connections.TryAdd(connectionId, new ConnectItem
+            {
+                ClientIpAddress = context.Peer,
+                DateTime = DateTimeOffset.UtcNow
+            });
+
             try
             {
-                Uri uri = new(uriString);
-                var host = uri.Host;
-                var port = uri.Port;
-
-                if (logger.IsEnabled(LogLevel.Information))
-                {
-                    logger.LogInformation("开始连接目标服务器 {host}:{port}，ConnectionId:{connectionId}", host, port, connectionId);
-                }
-
-                //添加连接信息
-                GlobalState.Connections.TryAdd(connectionId, new ConnectItem
-                {
-                    ClientIpAddress = context.Peer,
-                    DateTime = DateTimeOffset.UtcNow
-                });
-
-                var ips = await Dns.GetHostAddressesAsync(host, cancellationToken);
-                var ip = ips.OrderBy(x => x.AddressFamily).First();
-
-                await using var serverConnectionContext = await connectionFactory1.ConnectAsync(new IPEndPoint(ip, port), cancellationToken);
-
-                //发送空包，表示连接成功
-                await responseStream.WriteAsync(new()
-                {
-                    Payload = ByteString.Empty,
-                    UnixTimeMilliseconds = GetUnixTimeMilliseconds()
-                }, cancellationToken);
-
                 var taskClient = DotNext.Collections.Generic.AsyncEnumerable.ForEachAsync(
                     requestStream.ReadAllAsync(cancellationToken),
                     async (item, ct) => await serverConnectionContext.Transport.Output.WriteAsync(item.Payload.Memory, ct),
