@@ -3,15 +3,10 @@ using CoreProxy.Server.Orleans.BackgroundServices;
 using CoreProxy.Server.Orleans.Internal;
 using CoreProxy.Server.Orleans.Models;
 using CoreProxy.Server.Orleans.Services;
-using CoreProxy.Server.Orleans.Test;
 using DotNext.IO.Pipelines;
 using Microsoft.AspNetCore.Connections;
-using Microsoft.AspNetCore.DataProtection.XmlEncryption;
-using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets;
 using Microsoft.Extensions.Options;
-using System.Data.Common;
-using System.Net;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
@@ -42,7 +37,7 @@ builder.WebHost.ConfigureKestrel(serverOptions =>
     }
 
     serverOptions.AddServerHeader = false; // 禁用 Server 头
-    serverOptions.ConfigureEndpointDefaults(c => c.Protocols = HttpProtocols.Http2);
+    //serverOptions.ConfigureEndpointDefaults(c => c.Protocols = HttpProtocols.Http2);
 
     serverOptions.ConfigureHttpsDefaults(s => s.ServerCertificate = certificate2);
 });
@@ -157,6 +152,9 @@ app.MapGet("/", () =>
 app.MapGrpcService<MyGrpcService>();
 app.MapHub<ChatHub>("/chathub");
 app.MapHub<StreamHub>("/StreamHub");
+
+
+HttpMap.MapProxy(app);
 
 app.Run();
 

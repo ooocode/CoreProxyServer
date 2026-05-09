@@ -5,13 +5,11 @@ using DotNext.Threading.Tasks;
 using Google.Protobuf;
 using Google.Protobuf.WellKnownTypes;
 using Grpc.Core;
-using Hello;
 using Microsoft.AspNetCore.Connections;
 using Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Net.Http.Headers;
 using System.Net;
-using System.Threading;
 using System.Threading.Channels;
 
 namespace CoreProxy.Server.Orleans.Services

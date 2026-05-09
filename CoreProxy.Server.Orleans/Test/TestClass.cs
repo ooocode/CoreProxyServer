@@ -12,11 +12,11 @@
 
                 var c = await Task.WhenAny(taskClient);
             }
-            catch(Exception ex)
+            catch (Exception ex)
             {
                 Console.WriteLine(ex);
             }
-          
+
 
             await Task.Delay(-1);
             Console.WriteLine("结束");
