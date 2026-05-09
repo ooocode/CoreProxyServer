@@ -1,4 +1,5 @@
 ﻿using Google.Protobuf;
+using Hello;
 using Microsoft.AspNetCore.SignalR;
 
 namespace CoreProxy.Server.Orleans.Services

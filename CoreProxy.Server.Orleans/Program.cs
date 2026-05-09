@@ -5,6 +5,7 @@ using CoreProxy.Server.Orleans.Models;
 using CoreProxy.Server.Orleans.Services;
 using DotNext.IO.Pipelines;
 using Microsoft.AspNetCore.Connections;
+using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets;
 using Microsoft.Extensions.Options;
 using System.Security.Cryptography;
@@ -15,6 +16,8 @@ using System.Text.Json.Serialization;
 
 //await TestClass.RunAsync();
 //return;
+
+AppContext.SetSwitch("Microsoft.AspNetCore.Server.Kestrel.EnableWindows81Http2", true);
 
 var builder = WebApplication.CreateSlimBuilder(args);
 builder.Logging.AddFileLogger();
@@ -37,7 +40,7 @@ builder.WebHost.ConfigureKestrel(serverOptions =>
     }
 
     serverOptions.AddServerHeader = false; // 禁用 Server 头
-    //serverOptions.ConfigureEndpointDefaults(c => c.Protocols = HttpProtocols.Http2);
+    serverOptions.ConfigureEndpointDefaults(c => c.Protocols = HttpProtocols.Http1AndHttp2AndHttp3);
 
     serverOptions.ConfigureHttpsDefaults(s => s.ServerCertificate = certificate2);
 });

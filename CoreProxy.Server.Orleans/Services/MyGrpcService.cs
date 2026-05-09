@@ -5,6 +5,7 @@ using DotNext.Threading.Tasks;
 using Google.Protobuf;
 using Google.Protobuf.WellKnownTypes;
 using Grpc.Core;
+using Hello;
 using Microsoft.AspNetCore.Connections;
 using Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets;
 using Microsoft.AspNetCore.SignalR;
@@ -46,102 +47,102 @@ namespace CoreProxy.Server.Orleans.Services
         public static long GetUnixTimeMilliseconds() => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 
 
-        public async Task StreamHandlerx(IAsyncStreamReader<HttpData> requestStream, IServerStreamWriter<HttpData> responseStream, ServerCallContext context)
-        {
-            CheckPassword(context);
-            var uriString = context.RequestHeaders.GetValue(HeaderNames.XRequestedWith);
-            if (string.IsNullOrWhiteSpace(uriString))
-            {
-                throw new RpcException(new Status(StatusCode.InvalidArgument, HeaderNames.XRequestedWith));
-            }
+        //public async Task StreamHandlerx(IAsyncStreamReader<HttpData> requestStream, IServerStreamWriter<HttpData> responseStream, ServerCallContext context)
+        //{
+        //    CheckPassword(context);
+        //    var uriString = context.RequestHeaders.GetValue(HeaderNames.XRequestedWith);
+        //    if (string.IsNullOrWhiteSpace(uriString))
+        //    {
+        //        throw new RpcException(new Status(StatusCode.InvalidArgument, HeaderNames.XRequestedWith));
+        //    }
 
-            string connectionId = Guid.CreateVersion7().ToString("N");
-            Uri uri = new(uriString);
-            var host = uri.Host;
-            var port = uri.Port;
+        //    string connectionId = Guid.CreateVersion7().ToString("N");
+        //    Uri uri = new(uriString);
+        //    var host = uri.Host;
+        //    var port = uri.Port;
 
-            //添加连接信息
-            GlobalState.Connections.TryAdd(connectionId, new ConnectItem
-            {
-                ClientIpAddress = context.Peer,
-                DateTime = DateTimeOffset.UtcNow
-            });
+        //    //添加连接信息
+        //    GlobalState.Connections.TryAdd(connectionId, new ConnectItem
+        //    {
+        //        ClientIpAddress = context.Peer,
+        //        DateTime = DateTimeOffset.UtcNow
+        //    });
 
-            using var cancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(context.CancellationToken,
-                hostApplicationLifetime.ApplicationStopping);
-            var cancellationToken = cancellationTokenSource.Token;
+        //    using var cancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(context.CancellationToken,
+        //        hostApplicationLifetime.ApplicationStopping);
+        //    var cancellationToken = cancellationTokenSource.Token;
 
-            try
-            {
-                await using TcpConnectTargetServerService tcpConnectTargetServerService = new(connectionFactory, host, port);
-                await tcpConnectTargetServerService.ConnectAsync(cancellationToken);
+        //    try
+        //    {
+        //        await using TcpConnectTargetServerService tcpConnectTargetServerService = new(connectionFactory, host, port);
+        //        await tcpConnectTargetServerService.ConnectAsync(cancellationToken);
 
-                //发送空包，表示连接成功
-                await responseStream.WriteAsync(new()
-                {
-                    Payload = ByteString.Empty,
-                    UnixTimeMilliseconds = GetUnixTimeMilliseconds()
-                }, cancellationToken);
+        //        //发送空包，表示连接成功
+        //        await responseStream.WriteAsync(new()
+        //        {
+        //            Payload = ByteString.Empty,
+        //            UnixTimeMilliseconds = GetUnixTimeMilliseconds()
+        //        }, cancellationToken);
 
-                //客户端+服务器
-                var client = requestStream.ReadAllAsync(cancellationToken);
-                var server = tcpConnectTargetServerService.ReceiveAsHttpDataAsync(cancellationToken);
+        //        //客户端+服务器
+        //        var client = requestStream.ReadAllAsync(cancellationToken);
+        //        var server = tcpConnectTargetServerService.ReceiveAsHttpDataAsync(cancellationToken);
 
-                await foreach (var item in AsyncEnumerableEx.Merge(client, server).WithCancellation(cancellationToken))
-                {
-                    if (item.UnixTimeMilliseconds == 1)
-                    {
-                        //发往客户端
-                        await responseStream.WriteAsync(item, cancellationToken);
-                    }
-                    else
-                    {
-                        //发往服务器
-                        await tcpConnectTargetServerService.SendAsync(item.Payload.Memory, cancellationToken);
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                logger.LogError(ex, "StreamHandler");
-            }
-            finally
-            {
-                //添加连接信息
-                GlobalState.Connections.TryRemove(connectionId, out var _);
-                await cancellationTokenSource.CancelAsync();
-            }
+        //        await foreach (var item in AsyncEnumerableEx.Merge(client, server).WithCancellation(cancellationToken))
+        //        {
+        //            if (item.UnixTimeMilliseconds == 1)
+        //            {
+        //                //发往客户端
+        //                await responseStream.WriteAsync(item, cancellationToken);
+        //            }
+        //            else
+        //            {
+        //                //发往服务器
+        //                await tcpConnectTargetServerService.SendAsync(item.Payload.Memory, cancellationToken);
+        //            }
+        //        }
+        //    }
+        //    catch (Exception ex)
+        //    {
+        //        logger.LogError(ex, "StreamHandler");
+        //    }
+        //    finally
+        //    {
+        //        //添加连接信息
+        //        GlobalState.Connections.TryRemove(connectionId, out var _);
+        //        await cancellationTokenSource.CancelAsync();
+        //    }
 
 
 
-            //try
-            //{
-            //    CoreItem coreItem = new()
-            //    {
-            //        CancellationToken = context.CancellationToken,
-            //        ClientIpAddress = context.Peer,
-            //        ConnectionId = connectionId,
-            //        Logger = logger,
-            //        Host = host,
-            //        Port = port,
-            //        RequestStream = requestStream,
-            //        ResponseStream = responseStream,
-            //        TaskCompletionSource = new TaskCompletionSource(),
-            //    };
+        //    //try
+        //    //{
+        //    //    CoreItem coreItem = new()
+        //    //    {
+        //    //        CancellationToken = context.CancellationToken,
+        //    //        ClientIpAddress = context.Peer,
+        //    //        ConnectionId = connectionId,
+        //    //        Logger = logger,
+        //    //        Host = host,
+        //    //        Port = port,
+        //    //        RequestStream = requestStream,
+        //    //        ResponseStream = responseStream,
+        //    //        TaskCompletionSource = new TaskCompletionSource(),
+        //    //    };
 
-            //    await CoreBackgroundService.channel.Writer.WriteAsync(coreItem, context.CancellationToken);
-            //    await coreItem.TaskCompletionSource.Task.WaitAsync(context.CancellationToken);
-            //}
-            //finally
-            //{
-            //    GlobalState.Connections.TryRemove(connectionId, out var _);
+        //    //    await CoreBackgroundService.channel.Writer.WriteAsync(coreItem, context.CancellationToken);
+        //    //    await coreItem.TaskCompletionSource.Task.WaitAsync(context.CancellationToken);
+        //    //}
+        //    //finally
+        //    //{
+        //    //    GlobalState.Connections.TryRemove(connectionId, out var _);
 
-            //    if (logger.IsEnabled(LogLevel.Information))
-            //    {
-            //        logger.LogInformation("结束连接目标服务器 ConnectionId:{connectionId}", connectionId);
-            //    }
-            //}
-        }
+        //    //    if (logger.IsEnabled(LogLevel.Information))
+        //    //    {
+        //    //        logger.LogInformation("结束连接目标服务器 ConnectionId:{connectionId}", connectionId);
+        //    //    }
+        //    //}
+        //}
 
         public override async Task StreamHandler(IAsyncStreamReader<HttpData> requestStream, IServerStreamWriter<HttpData> responseStream, ServerCallContext context)
         {

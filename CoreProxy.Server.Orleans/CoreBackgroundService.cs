@@ -4,6 +4,7 @@ using CoreProxy.Server.Orleans.Services;
 using DotNext.Collections.Generic;
 using Google.Protobuf;
 using Grpc.Core;
+using Hello;
 using Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets;
 using System.Threading.Channels;
 
