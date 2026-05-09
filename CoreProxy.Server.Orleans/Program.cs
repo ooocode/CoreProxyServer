@@ -4,9 +4,14 @@ using CoreProxy.Server.Orleans.Internal;
 using CoreProxy.Server.Orleans.Models;
 using CoreProxy.Server.Orleans.Services;
 using CoreProxy.Server.Orleans.Test;
+using DotNext.IO.Pipelines;
+using Microsoft.AspNetCore.Connections;
+using Microsoft.AspNetCore.DataProtection.XmlEncryption;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets;
 using Microsoft.Extensions.Options;
+using System.Data.Common;
+using System.Net;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
@@ -54,11 +59,10 @@ if (Microsoft.Extensions.Hosting.Systemd.SystemdHelpers.IsSystemdService())
     builder.Services.AddHostedService<AutoExitBackgroundService>();
 }
 
-//const string typeName = "Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets.SocketConnectionFactory";
-//var factoryType = typeof(Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets.SocketTransportOptions).Assembly.GetType(typeName);
-//ArgumentNullException.ThrowIfNull(factoryType, nameof(factoryType));
-//builder.Services.AddSingleton(typeof(IConnectionFactory), factoryType);
-//
+const string typeName = "Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets.SocketConnectionFactory";
+var factoryType = typeof(Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets.SocketTransportOptions).Assembly.GetType(typeName);
+ArgumentNullException.ThrowIfNull(factoryType, nameof(factoryType));
+builder.Services.AddSingleton(typeof(IConnectionFactory), factoryType);
 
 builder.Services.AddSingleton(s =>
 {
@@ -90,6 +94,35 @@ builder.Services.AddDataProtection();
 builder.Services.AddHostedService<CoreBackgroundService>();
 
 var app = builder.Build();
+/*
+IConnectionFactory connectionFactory = app.Services.GetRequiredService<IConnectionFactory>();
+var ips = await Dns.GetHostAddressesAsync("127.0.0.1");
+var ip = ips.OrderBy(x => x.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
+    .First();
+
+
+while (true)
+{
+    await using var cx = await connectionFactory.ConnectAsync(new IPEndPoint(ip, 8899), CancellationToken.None);
+
+
+    string request =
+            $"GET / HTTP/1.1\r\n" +
+            $"Host: 127.0.0.1\r\n" +
+            "Connection: close\r\n" +   // 很重要：让服务器关闭连接
+            "\r\n";
+
+    await cx.Transport.Output.WriteAsync(Encoding.UTF8.GetBytes(request), CancellationToken.None);
+    await foreach (var item in cx.Transport.Input.ReadAllAsync(CancellationToken.None))
+    {
+        //Console.Write(item.Span.Length);
+    }
+
+await cx.DisposeAsync();
+    //await cx.DisposeAsync();
+    Console.WriteLine(1);
+}*/
+
 
 app.MapGet("/", () =>
 {

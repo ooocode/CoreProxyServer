@@ -1,10 +1,12 @@
 using CoreProxy.Server.Orleans.Internal;
 using CoreProxy.Server.Orleans.Models;
 using DotNext.IO.Pipelines;
+using DotNext.Threading.Tasks;
 using Google.Protobuf;
 using Google.Protobuf.WellKnownTypes;
 using Grpc.Core;
 using Hello;
+using Microsoft.AspNetCore.Connections;
 using Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Net.Http.Headers;
@@ -24,7 +26,8 @@ namespace CoreProxy.Server.Orleans.Services
         SocketConnectionContextFactory connectionFactory,
         CertificatePassword certificatePassword,
         ILogger<MyGrpcService> logger,
-        IHubContext<ChatHub> hubContext) : Greeter.GreeterBase
+        IHubContext<ChatHub> hubContext,
+        IConnectionFactory connectionFactory1) : Greeter.GreeterBase
     {
         private void CheckPassword(ServerCallContext context)
         {
@@ -175,8 +178,10 @@ namespace CoreProxy.Server.Orleans.Services
                     DateTime = DateTimeOffset.UtcNow
                 });
 
-                await using TcpConnectTargetServerService tcpConnectTargetServerService = new(connectionFactory, host, port);
-                await tcpConnectTargetServerService.ConnectAsync(cancellationToken).WaitAsync(TimeSpan.FromSeconds(60), cancellationToken);
+                var ips = await Dns.GetHostAddressesAsync(host, cancellationToken);
+                var ip = ips.OrderBy(x => x.AddressFamily).First();
+
+                await using var serverConnectionContext = await connectionFactory1.ConnectAsync(new IPEndPoint(ip, port), cancellationToken);
 
                 //发送空包，表示连接成功
                 await responseStream.WriteAsync(new()
@@ -187,11 +192,11 @@ namespace CoreProxy.Server.Orleans.Services
 
                 var taskClient = DotNext.Collections.Generic.AsyncEnumerable.ForEachAsync(
                     requestStream.ReadAllAsync(cancellationToken),
-                    async (item, ct) => await tcpConnectTargetServerService.SendAsync(item.Payload.Memory, ct),
+                    async (item, ct) => await serverConnectionContext.Transport.Output.WriteAsync(item.Payload.Memory, ct),
                     cancellationToken).AsTask();
 
                 var taskServer = DotNext.Collections.Generic.AsyncEnumerable.ForEachAsync(
-                    tcpConnectTargetServerService.connectionContext!.Transport.Input.ReadAllAsync(cancellationToken),
+                    serverConnectionContext.Transport.Input.ReadAllAsync(cancellationToken),
                     async (item, ct) => await responseStream.WriteAsync(new HttpData { Payload = UnsafeByteOperations.UnsafeWrap(item) }, ct),
                     cancellationToken).AsTask();
 
