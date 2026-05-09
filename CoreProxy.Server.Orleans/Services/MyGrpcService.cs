@@ -1,5 +1,6 @@
 using CoreProxy.Server.Orleans.Internal;
 using CoreProxy.Server.Orleans.Models;
+using DotNext.IO.Pipelines;
 using Google.Protobuf;
 using Google.Protobuf.WellKnownTypes;
 using Grpc.Core;
@@ -184,12 +185,15 @@ namespace CoreProxy.Server.Orleans.Services
                     UnixTimeMilliseconds = GetUnixTimeMilliseconds()
                 }, cancellationToken);
 
-                LastActivityTime lastActivityTime = new()
-                {
-                    UnixTimeMilliseconds = GetUnixTimeMilliseconds()
-                };
-                var taskClient = HandlerClientAsync(lastActivityTime, tcpConnectTargetServerService, requestStream, cancellationToken);
-                var taskServer = HandlerServerAsync(lastActivityTime, tcpConnectTargetServerService, responseStream, cancellationToken);
+                var taskClient = DotNext.Collections.Generic.AsyncEnumerable.ForEachAsync(
+                    requestStream.ReadAllAsync(cancellationToken),
+                    async (item, ct) => await tcpConnectTargetServerService.SendAsync(item.Payload.Memory, ct),
+                    cancellationToken).AsTask();
+
+                var taskServer = DotNext.Collections.Generic.AsyncEnumerable.ForEachAsync(
+                    tcpConnectTargetServerService.connectionContext!.Transport.Input.ReadAllAsync(cancellationToken),
+                    async (item, ct) => await responseStream.WriteAsync(new HttpData { Payload = UnsafeByteOperations.UnsafeWrap(item) }, ct),
+                    cancellationToken).AsTask();
 
                 var completedTask = await Task.WhenAny(taskClient, taskServer);
                 if (completedTask.Id == taskServer.Id)
@@ -197,7 +201,7 @@ namespace CoreProxy.Server.Orleans.Services
                     // 等待一小段时间，等待客户端剩余数据处理
                     try
                     {
-                        await taskClient.WaitAsync(TimeSpan.FromSeconds(3), cancellationToken);
+                        await taskClient.WaitAsync(TimeSpan.FromSeconds(5), cancellationToken);
                     }
                     catch (Exception ex)
                     {
@@ -206,22 +210,23 @@ namespace CoreProxy.Server.Orleans.Services
                 }
                 cancellationSource.Cancel();
 
-                //var taskCheck = CheckKeepAliveAsync(lastActivityTime, cancellationToken);
-
-                //var completedTask = await Task.WhenAny(taskClient, taskServer, taskCheck);
-                //if (completedTask.Id != taskCheck.Id && !cancellationToken.IsCancellationRequested)
-                //{
-                //    // 客户端或者服务器完成
-                //    // 等待一小段时间，等待剩余数据处理
-                //    await Task.Delay(2000, cancellationToken);
-                //}
-                //cancellationSource.Cancel();
-
                 await foreach (var item in Task.WhenEach(taskClient, taskServer))
                 {
-                    if (item.Exception is not null)
+                    try
                     {
-                        logger.LogError(item.Exception, "Task.WhenEach异常");
+                        await item; // 展开任务以捕捉真正的异常
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        /* 忽略正常的取消 */
+                        if (logger.IsEnabled(LogLevel.Information))
+                        {
+                            logger.LogInformation("数据流转发取消 - ConnectionId:{connectionId}", connectionId);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        logger.LogError(ex, "数据流转发异常 - ConnectionId:{connectionId}", connectionId);
                     }
                 }
             }
