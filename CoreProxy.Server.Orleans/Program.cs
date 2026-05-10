@@ -91,43 +91,8 @@ builder.Services.AddSignalR(opt =>
 
 builder.Services.AddDataProtection();
 builder.Services.AddHostedService<CoreBackgroundService>();
-builder.Services.AddResponseCompression(options =>
-{
-    options.Providers.Add<BrotliCompressionProvider>();
-    options.Providers.Add<GzipCompressionProvider>();
-    options.EnableForHttps = true;
-});
+
 var app = builder.Build();
-app.UseResponseCompression();
-/*
-IConnectionFactory connectionFactory = app.Services.GetRequiredService<IConnectionFactory>();
-var ips = await Dns.GetHostAddressesAsync("127.0.0.1");
-var ip = ips.OrderBy(x => x.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
-    .First();
-
-
-while (true)
-{
-    await using var cx = await connectionFactory.ConnectAsync(new IPEndPoint(ip, 8899), CancellationToken.None);
-
-
-    string request =
-            $"GET / HTTP/1.1\r\n" +
-            $"Host: 127.0.0.1\r\n" +
-            "Connection: close\r\n" +   // 很重要：让服务器关闭连接
-            "\r\n";
-
-    await cx.Transport.Output.WriteAsync(Encoding.UTF8.GetBytes(request), CancellationToken.None);
-    await foreach (var item in cx.Transport.Input.ReadAllAsync(CancellationToken.None))
-    {
-        //Console.Write(item.Span.Length);
-    }
-
-await cx.DisposeAsync();
-    //await cx.DisposeAsync();
-    Console.WriteLine(1);
-}*/
-
 
 app.MapGet("/", () =>
 {
