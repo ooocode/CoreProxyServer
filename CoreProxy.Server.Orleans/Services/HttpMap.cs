@@ -3,6 +3,7 @@ using DotNext;
 using DotNext.IO.Pipelines;
 using Microsoft.AspNetCore.Connections;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Net.Http.Headers;
 using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Sockets;
@@ -37,7 +38,7 @@ namespace CoreProxy.Server.Orleans.Services
                 return Results.Ok();
             });
 
-            app.MapGet("/sse", async (
+            app.MapGet("/stream", async (
              HttpContext httpContext,
              [FromQuery] string host,
              [FromQuery] int port,
@@ -65,6 +66,9 @@ namespace CoreProxy.Server.Orleans.Services
                         ClientIpAddress = $"{iPAddress}:{port}",
                         DateTime = DateTimeOffset.UtcNow
                     });
+
+                    httpContext.Response.ContentType = "application/octet-stream";
+                    await httpContext.Response.StartAsync(cancellationToken);
 
                     var bytes = Encoding.UTF8.GetBytes(connectionId);
                     await httpContext.Response.BodyWriter.WriteAsync(bytes, cancellationToken);
