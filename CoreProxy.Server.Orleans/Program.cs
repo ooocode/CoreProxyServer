@@ -48,7 +48,7 @@ builder.WebHost.ConfigureKestrel(serverOptions =>
 
     // 连接窗口（总吞吐量）
     // 必须大于等于 InitialStreamWindowSize
-    serverOptions.Limits.Http2.InitialConnectionWindowSize = 1024 * 1024 * 2;
+    serverOptions.Limits.Http2.InitialConnectionWindowSize = 1024 * 1024 * 30;
 
 
 
