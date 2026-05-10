@@ -5,9 +5,12 @@ using Microsoft.AspNetCore.Connections;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Net.Http.Headers;
 using System.Collections.Concurrent;
+using System.IO;
+using System.IO.Pipelines;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
+using System.Threading.Channels;
 
 namespace CoreProxy.Server.Orleans.Services
 {
@@ -52,7 +55,6 @@ namespace CoreProxy.Server.Orleans.Services
                 var cancellationToken = cancellationSource.Token;
 
                 string connectionId = Guid.CreateVersion7().ToString("N");
-
                 try
                 {
                     var ips = await Dns.GetHostAddressesAsync(host, cancellationToken).WaitAsync(TimeSpan.FromMinutes(1), cancellationToken);
@@ -63,34 +65,36 @@ namespace CoreProxy.Server.Orleans.Services
                     servers.TryAdd(connectionId, serverConnectionContext);
                     GlobalState.Connections.TryAdd(connectionId, new ConnectItem
                     {
-                        ClientIpAddress = $"{iPAddress}:{port}",
+                        ClientIpAddress = $"{host}:{port}",
                         DateTime = DateTimeOffset.UtcNow
                     });
 
                     httpContext.Response.ContentType = "application/octet-stream";
                     await httpContext.Response.StartAsync(cancellationToken);
 
+                    //发送连接Id
+                    var writer = httpContext.Response.BodyWriter;
                     var bytes = Encoding.UTF8.GetBytes(connectionId);
-                    await httpContext.Response.BodyWriter.WriteAsync(bytes, cancellationToken);
-                    await httpContext.Response.BodyWriter.FlushAsync(cancellationToken);
+                    await writer.WriteAsync(bytes, cancellationToken);
+                    await writer.FlushAsync(cancellationToken);
 
-                    await foreach (var item in serverConnectionContext.Transport.Input.ReadAllAsync(cancellationToken))
-                    {
-                        await httpContext.Response.BodyWriter.WriteAsync(item, cancellationToken);
-                        await httpContext.Response.BodyWriter.FlushAsync(cancellationToken);
-                    }
-                }
-                catch (OperationCanceledException)
-                {
-                    logger.LogWarning("{host}:{port} 取消连接", host, port);
+                    //转发内容
+                    await serverConnectionContext.Transport.Input.CopyToAsync(writer, cancellationToken);
                 }
                 catch (SocketException ex)
                 {
-                    logger.LogError(ex, "{host}:{port} 连接服务器失败", host, port);
+                    logger.LogError(ex, "SocketException");
                 }
-                catch (Exception ex)
+                catch (ConnectionResetException ex)
                 {
-                    logger.LogError(ex, "{host}:{port} 未知错误", host, port);
+                    logger.LogError(ex, "ConnectionResetException");
+                }
+                catch (OperationCanceledException)
+                {
+                    if (logger.IsEnabled(LogLevel.Trace))
+                    {
+                        logger.LogTrace("OperationCanceledException");
+                    }
                 }
                 finally
                 {
