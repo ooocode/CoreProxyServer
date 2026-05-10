@@ -3,12 +3,9 @@ using DotNext;
 using DotNext.IO.Pipelines;
 using Microsoft.AspNetCore.Connections;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Net.Http.Headers;
-using System.Buffers.Text;
 using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Sockets;
-using System.Runtime.CompilerServices;
 using System.Text;
 
 namespace CoreProxy.Server.Orleans.Services
@@ -19,7 +16,7 @@ namespace CoreProxy.Server.Orleans.Services
 
         public static void MapProxy(WebApplication app)
         {
-            app.MapPost("/push", async (string connectionId,
+            app.MapPost("/push/{connectionId}", async (string connectionId,
               HttpContext httpContext,
               CancellationToken cx,
               [FromServices] IHostApplicationLifetime hostApplicationLifetime) =>
