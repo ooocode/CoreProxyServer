@@ -4,6 +4,7 @@ using DotNext.IO.Pipelines;
 using Microsoft.AspNetCore.Connections;
 using Microsoft.AspNetCore.Mvc;
 using System.Buffers.Text;
+using System.Collections.Concurrent;
 using System.Net;
 using System.Runtime.CompilerServices;
 using System.Text;
@@ -12,25 +13,14 @@ namespace CoreProxy.Server.Orleans.Services
 {
     public static class HttpMap
     {
-        private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, ConnectionContext> servers = [];
+        private static readonly ConcurrentDictionary<string, ConnectionContext> servers = [];
 
         public static void MapProxy(WebApplication app)
         {
-            app.MapGet("/sse", async (
-                [FromQuery] string host,
-                [FromQuery] int port,
-                [FromServices] IHostApplicationLifetime hostApplicationLifetime,
-                [FromServices] IConnectionFactory connectionFactory,
-                CancellationToken cx) =>
-            {
-                var ips = await Dns.GetHostAddressesAsync(host, cx);
-                var ip = ips.OrderBy(x => x.AddressFamily).First();
-
-                return TypedResults.ServerSentEvents(ServerHanderAsync(hostApplicationLifetime, connectionFactory, ip, port, cx));
-            });
-
-            app.MapGet("/push", async (string connectionId, string data, CancellationToken cx,
-                [FromServices] IHostApplicationLifetime hostApplicationLifetime) =>
+            app.MapPost("/push", async (string connectionId,
+              HttpContext httpContext,
+              CancellationToken cx,
+              [FromServices] IHostApplicationLifetime hostApplicationLifetime) =>
             {
                 if (!servers.TryGetValue(connectionId, out var connectionContext))
                 {
@@ -41,9 +31,24 @@ namespace CoreProxy.Server.Orleans.Services
                           cx, hostApplicationLifetime.ApplicationStopping);
                 var cancellationToken = cancellationSource.Token;
 
-                var bytes = Base64Url.DecodeFromUtf8(Encoding.UTF8.GetBytes(data));
-                await connectionContext.Transport.Output.WriteAsync(bytes, cancellationToken);
+                await foreach (var item in httpContext.Request.BodyReader.ReadAllAsync(cancellationToken))
+                {
+                    await connectionContext.Transport.Output.WriteAsync(item, cancellationToken);
+                }
                 return Results.Ok();
+            });
+
+            app.MapGet("/sse", async (
+                [FromQuery] string host,
+                [FromQuery] int port,
+                [FromServices] IHostApplicationLifetime hostApplicationLifetime,
+                [FromServices] IConnectionFactory connectionFactory,
+                CancellationToken cancellationToken) =>
+            {
+                var ips = await Dns.GetHostAddressesAsync(host, cancellationToken).WaitAsync(TimeSpan.FromMinutes(1), cancellationToken);
+                var ip = ips.OrderBy(x => x.AddressFamily).First();
+
+                return TypedResults.ServerSentEvents(ServerHanderAsync(hostApplicationLifetime, connectionFactory, ip, port, cancellationToken));
             });
         }
 

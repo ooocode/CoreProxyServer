@@ -5,6 +5,7 @@ using CoreProxy.Server.Orleans.Models;
 using CoreProxy.Server.Orleans.Services;
 using DotNext.IO.Pipelines;
 using Microsoft.AspNetCore.Connections;
+using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets;
 using Microsoft.Extensions.Options;
@@ -90,8 +91,14 @@ builder.Services.AddSignalR(opt =>
 
 builder.Services.AddDataProtection();
 builder.Services.AddHostedService<CoreBackgroundService>();
-
+builder.Services.AddResponseCompression(options =>
+{
+    options.Providers.Add<BrotliCompressionProvider>();
+    options.Providers.Add<GzipCompressionProvider>();
+    options.EnableForHttps = true;
+});
 var app = builder.Build();
+app.UseResponseCompression();
 /*
 IConnectionFactory connectionFactory = app.Services.GetRequiredService<IConnectionFactory>();
 var ips = await Dns.GetHostAddressesAsync("127.0.0.1");
