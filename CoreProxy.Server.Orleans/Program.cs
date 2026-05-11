@@ -41,6 +41,8 @@ builder.WebHost.ConfigureKestrel(serverOptions =>
     }
 
     serverOptions.Limits.MinRequestBodyDataRate = null; // 高延迟下建议关闭或调低，防止误判为慢速攻击
+    serverOptions.Limits.MinResponseDataRate = null;
+
     // 关键：增大初始流窗口（载重量）
     // 默认 64KB 在 200ms 延迟下只能达到 ~320KB/s
     // 设置为 1MB 可以显著提升单流速度
@@ -55,7 +57,9 @@ builder.WebHost.ConfigureKestrel(serverOptions =>
     serverOptions.AddServerHeader = false; // 禁用 Server 头
     serverOptions.ConfigureEndpointDefaults(c => c.Protocols = HttpProtocols.Http1AndHttp2AndHttp3);
 
+#if !DEBUG
     serverOptions.ConfigureHttpsDefaults(s => s.ServerCertificate = certificate2);
+#endif
 });
 
 //builder.WebHost.UseQuic();
@@ -105,6 +109,8 @@ builder.Services.AddDataProtection();
 builder.Services.AddHostedService<CoreBackgroundService>();
 
 var app = builder.Build();
+
+app.UseWebSockets();
 
 app.MapGet("/", () =>
 {
