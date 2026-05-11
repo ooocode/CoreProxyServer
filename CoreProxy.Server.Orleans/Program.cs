@@ -40,19 +40,6 @@ builder.WebHost.ConfigureKestrel(serverOptions =>
         serverOptions.Limits.Http2.MaxStreamsPerConnection = maxStreams;
     }
 
-    serverOptions.Limits.MinRequestBodyDataRate = null; // 高延迟下建议关闭或调低，防止误判为慢速攻击
-    serverOptions.Limits.MinResponseDataRate = null;
-
-    // 关键：增大初始流窗口（载重量）
-    // 默认 64KB 在 200ms 延迟下只能达到 ~320KB/s
-    // 设置为 1MB 可以显著提升单流速度
-    serverOptions.Limits.Http2.InitialStreamWindowSize = 1024 * 1024;
-
-    // 连接窗口（总吞吐量）
-    // 必须大于等于 InitialStreamWindowSize
-    serverOptions.Limits.Http2.InitialConnectionWindowSize = 1024 * 1024 * 30;
-
-
 
     serverOptions.AddServerHeader = false; // 禁用 Server 头
     serverOptions.ConfigureEndpointDefaults(c => c.Protocols = HttpProtocols.Http1AndHttp2AndHttp3);
@@ -60,6 +47,30 @@ builder.WebHost.ConfigureKestrel(serverOptions =>
 #if !DEBUG
     serverOptions.ConfigureHttpsDefaults(s => s.ServerCertificate = certificate2);
 #endif
+
+
+
+    // --- HTTP/2 流量控制窗口 (核心中的核心) ---
+    // ConnectionWindow 必须略大于所有 StreamWindow 的总和
+    // 设置为 64MB 以完全覆盖 25MB 的 BDP，留出缓冲余量
+    serverOptions.Limits.Http2.InitialConnectionWindowSize = 1024 * 1024 * 64;
+
+    // 单个 Stream 的窗口设置为 32MB，确保单个双向流就能跑满带宽
+    serverOptions.Limits.Http2.InitialStreamWindowSize = 1024 * 1024 * 32;
+
+    // --- 缓冲区与帧大小 ---
+    // 增加最大帧大小以减少 Header 处理频率 (Max: 64KB - 1)
+    serverOptions.Limits.Http2.MaxFrameSize = 16777216;
+
+    // 响应缓冲区：为了跑满 1Gbps，Kestrel 需要足够的内存来暂存即将发往网卡的数据
+    // 设置为 4MB 可以在 0GC 和 吞吐量之间取得平衡
+    serverOptions.Limits.MaxResponseBufferSize = 1024 * 1024 * 4;
+
+    // 请求缓冲区：同样设置为 4MB
+    serverOptions.Limits.MaxRequestBufferSize = 1024 * 1024 * 4;
+
+    serverOptions.Limits.MinRequestBodyDataRate = null; // 高延迟下建议关闭或调低，防止误判为慢速攻击
+    serverOptions.Limits.MinResponseDataRate = null;
 });
 
 //builder.WebHost.UseQuic();
@@ -93,7 +104,11 @@ builder.Services.AddSingleton(s =>
     }, logger);
 });
 
-builder.Services.AddGrpc();
+builder.Services.AddGrpc(options =>
+{
+    options.MaxSendMessageSize = null;    // 不限制发送消息大小
+    options.MaxReceiveMessageSize = null; // 不限制接收消息大小
+});
 
 //添加Linux测试工具
 builder.Services.AddHostedService<LinuxTestBackgroundService>();
