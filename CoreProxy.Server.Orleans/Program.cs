@@ -60,7 +60,7 @@ builder.WebHost.ConfigureKestrel(serverOptions =>
 
     // --- 缓冲区与帧大小 ---
     // 增加最大帧大小以减少 Header 处理频率 (Max: 64KB - 1)
-    serverOptions.Limits.Http2.MaxFrameSize = 16777216;
+    serverOptions.Limits.Http2.MaxFrameSize = 16777215;
 
     // 响应缓冲区：为了跑满 1Gbps，Kestrel 需要足够的内存来暂存即将发往网卡的数据
     // 设置为 4MB 可以在 0GC 和 吞吐量之间取得平衡
