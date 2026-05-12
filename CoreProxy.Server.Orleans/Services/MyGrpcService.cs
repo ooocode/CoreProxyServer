@@ -183,7 +183,7 @@ namespace CoreProxy.Server.Orleans.Services
             //添加连接信息
             GlobalState.Connections.TryAdd(connectionId, new ConnectItem
             {
-                ClientIpAddress = context.Peer,
+                ClientIpAddress = $"{context.Peer} {host}:{port}",
                 DateTime = DateTimeOffset.UtcNow
             });
 
