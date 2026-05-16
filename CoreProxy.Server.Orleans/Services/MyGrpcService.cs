@@ -22,7 +22,7 @@ namespace CoreProxy.Server.Orleans.Services
 
     public class MyGrpcService(
         IHostApplicationLifetime hostApplicationLifetime,
-        SocketConnectionContextFactory connectionFactory,
+        //SocketConnectionContextFactory connectionFactory,
         CertificatePassword certificatePassword,
         ILogger<MyGrpcService> logger,
         IHubContext<ChatHub> hubContext,
@@ -200,7 +200,7 @@ namespace CoreProxy.Server.Orleans.Services
                     cancellationToken).AsTask();
 
                 var completedTask = await Task.WhenAny(taskClient, taskServer);
-                if (completedTask.Id == taskServer.Id)
+                if (completedTask == taskServer)
                 {
                     // 等待一小段时间，等待客户端剩余数据处理
                     try
