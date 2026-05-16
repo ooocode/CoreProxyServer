@@ -16,8 +16,8 @@
 	<ItemGroup>
 		<PackageReference Include="DotNext.IO" Version="6.2.1" />
 		<PackageReference Include="Grpc.AspNetCore" Version="2.80.0" />
-		<PackageReference Include="Microsoft.Extensions.Hosting.Systemd" Version="10.0.7" />
-		<PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="10.0.7" />
+		<PackageReference Include="Microsoft.Extensions.Hosting.Systemd" Version="10.0.8" />
+		<PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="10.0.8" />
 		<PackageReference Include="Roslynator.Analyzers" Version="4.15.0">
 			<PrivateAssets>all</PrivateAssets>
 			<IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
