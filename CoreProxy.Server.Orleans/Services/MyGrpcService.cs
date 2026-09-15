@@ -1,13 +1,12 @@
 using CoreProxy.Server.Orleans.Internal;
 using CoreProxy.Server.Orleans.Models;
+using DotNext;
 using DotNext.IO.Pipelines;
-using DotNext.Threading.Tasks;
 using Google.Protobuf;
 using Google.Protobuf.WellKnownTypes;
 using Grpc.Core;
 using Hello;
 using Microsoft.AspNetCore.Connections;
-using Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Net.Http.Headers;
 using System.Net;
@@ -22,11 +21,10 @@ namespace CoreProxy.Server.Orleans.Services
 
     public class MyGrpcService(
         IHostApplicationLifetime hostApplicationLifetime,
-        //SocketConnectionContextFactory connectionFactory,
         CertificatePassword certificatePassword,
         ILogger<MyGrpcService> logger,
         IHubContext<ChatHub> hubContext,
-        IConnectionFactory connectionFactory1) : Greeter.GreeterBase
+        IConnectionFactory connectionFactory) : Greeter.GreeterBase
     {
         private void CheckPassword(ServerCallContext context)
         {
@@ -45,104 +43,6 @@ namespace CoreProxy.Server.Orleans.Services
         }
 
         public static long GetUnixTimeMilliseconds() => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-
-
-        //public async Task StreamHandlerx(IAsyncStreamReader<HttpData> requestStream, IServerStreamWriter<HttpData> responseStream, ServerCallContext context)
-        //{
-        //    CheckPassword(context);
-        //    var uriString = context.RequestHeaders.GetValue(HeaderNames.XRequestedWith);
-        //    if (string.IsNullOrWhiteSpace(uriString))
-        //    {
-        //        throw new RpcException(new Status(StatusCode.InvalidArgument, HeaderNames.XRequestedWith));
-        //    }
-
-        //    string connectionId = Guid.CreateVersion7().ToString("N");
-        //    Uri uri = new(uriString);
-        //    var host = uri.Host;
-        //    var port = uri.Port;
-
-        //    //添加连接信息
-        //    GlobalState.Connections.TryAdd(connectionId, new ConnectItem
-        //    {
-        //        ClientIpAddress = context.Peer,
-        //        DateTime = DateTimeOffset.UtcNow
-        //    });
-
-        //    using var cancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(context.CancellationToken,
-        //        hostApplicationLifetime.ApplicationStopping);
-        //    var cancellationToken = cancellationTokenSource.Token;
-
-        //    try
-        //    {
-        //        await using TcpConnectTargetServerService tcpConnectTargetServerService = new(connectionFactory, host, port);
-        //        await tcpConnectTargetServerService.ConnectAsync(cancellationToken);
-
-        //        //发送空包，表示连接成功
-        //        await responseStream.WriteAsync(new()
-        //        {
-        //            Payload = ByteString.Empty,
-        //            UnixTimeMilliseconds = GetUnixTimeMilliseconds()
-        //        }, cancellationToken);
-
-        //        //客户端+服务器
-        //        var client = requestStream.ReadAllAsync(cancellationToken);
-        //        var server = tcpConnectTargetServerService.ReceiveAsHttpDataAsync(cancellationToken);
-
-        //        await foreach (var item in AsyncEnumerableEx.Merge(client, server).WithCancellation(cancellationToken))
-        //        {
-        //            if (item.UnixTimeMilliseconds == 1)
-        //            {
-        //                //发往客户端
-        //                await responseStream.WriteAsync(item, cancellationToken);
-        //            }
-        //            else
-        //            {
-        //                //发往服务器
-        //                await tcpConnectTargetServerService.SendAsync(item.Payload.Memory, cancellationToken);
-        //            }
-        //        }
-        //    }
-        //    catch (Exception ex)
-        //    {
-        //        logger.LogError(ex, "StreamHandler");
-        //    }
-        //    finally
-        //    {
-        //        //添加连接信息
-        //        GlobalState.Connections.TryRemove(connectionId, out var _);
-        //        await cancellationTokenSource.CancelAsync();
-        //    }
-
-
-
-        //    //try
-        //    //{
-        //    //    CoreItem coreItem = new()
-        //    //    {
-        //    //        CancellationToken = context.CancellationToken,
-        //    //        ClientIpAddress = context.Peer,
-        //    //        ConnectionId = connectionId,
-        //    //        Logger = logger,
-        //    //        Host = host,
-        //    //        Port = port,
-        //    //        RequestStream = requestStream,
-        //    //        ResponseStream = responseStream,
-        //    //        TaskCompletionSource = new TaskCompletionSource(),
-        //    //    };
-
-        //    //    await CoreBackgroundService.channel.Writer.WriteAsync(coreItem, context.CancellationToken);
-        //    //    await coreItem.TaskCompletionSource.Task.WaitAsync(context.CancellationToken);
-        //    //}
-        //    //finally
-        //    //{
-        //    //    GlobalState.Connections.TryRemove(connectionId, out var _);
-
-        //    //    if (logger.IsEnabled(LogLevel.Information))
-        //    //    {
-        //    //        logger.LogInformation("结束连接目标服务器 ConnectionId:{connectionId}", connectionId);
-        //    //    }
-        //    //}
-        //}
 
         public override async Task StreamHandler(IAsyncStreamReader<HttpData> requestStream, IServerStreamWriter<HttpData> responseStream, ServerCallContext context)
         {
@@ -166,7 +66,9 @@ namespace CoreProxy.Server.Orleans.Services
             var ips = await Dns.GetHostAddressesAsync(host, cancellationToken);
             var ip = ips.OrderBy(x => x.AddressFamily).First();
 
-            await using var serverConnectionContext = await connectionFactory1.ConnectAsync(new IPEndPoint(ip, port), cancellationToken);
+            //连接目标服务器
+            await using var serverConnectionContext = await connectionFactory.ConnectAsync(
+                new IPEndPoint(ip, port), cancellationToken);
 
             //发送空包，表示连接成功
             await responseStream.WriteAsync(new()
@@ -189,20 +91,20 @@ namespace CoreProxy.Server.Orleans.Services
 
             try
             {
+                //客户端循环
                 var taskClient = DotNext.Collections.Generic.AsyncEnumerable.ForEachAsync(
                     requestStream.ReadAllAsync(cancellationToken),
                     async (item, ct) => await serverConnectionContext.Transport.Output.WriteAsync(item.Payload.Memory, ct),
                     cancellationToken).AsTask();
 
-                var taskServer = DotNext.Collections.Generic.AsyncEnumerable.ForEachAsync(
-                    serverConnectionContext.Transport.Input.ReadAllAsync(cancellationToken),
-                    async (item, ct) => await responseStream.WriteAsync(new HttpData { Payload = UnsafeByteOperations.UnsafeWrap(item) }, ct),
-                    cancellationToken).AsTask();
+                //服务器循环
+                var taskServer = serverConnectionContext.Transport.Input.CopyToAsync(
+                    new ReadServerDataClass(responseStream), cancellationToken).AsTask();
 
                 var completedTask = await Task.WhenAny(taskClient, taskServer);
                 if (completedTask == taskServer)
                 {
-                    // 等待一小段时间，等待客户端剩余数据处理
+                    // 等待一小段时间，等待客户端剩余数据处理  
                     try
                     {
                         await taskClient.WaitAsync(TimeSpan.FromSeconds(5), cancellationToken);
@@ -247,6 +149,23 @@ namespace CoreProxy.Server.Orleans.Services
             }
         }
 
+
+        /// <summary>
+        /// 读服务器数据
+        /// </summary>
+        /// <param name="responseStream"></param>
+        private class ReadServerDataClass(IServerStreamWriter<HttpData> responseStream) : ISupplier<ReadOnlyMemory<byte>, CancellationToken, ValueTask>
+        {
+            public async ValueTask Invoke(ReadOnlyMemory<byte> readOnlyMemory, CancellationToken cancellationToken)
+            {
+                await responseStream.WriteAsync(new HttpData
+                {
+                    Payload = UnsafeByteOperations.UnsafeWrap(readOnlyMemory)
+                }, cancellationToken: cancellationToken);
+            }
+        }
+
+
         public static async Task CheckKeepAliveAsync(LastActivityTime lastActivityTime, CancellationToken cancellationToken)
         {
             using var timer = new PeriodicTimer(TimeSpan.FromSeconds(5));
@@ -260,35 +179,6 @@ namespace CoreProxy.Server.Orleans.Services
             }
         }
 
-        public static async Task HandlerClientAsync(
-            LastActivityTime lastActivityTime,
-            TcpConnectTargetServerService tcpConnectTargetServerService, IAsyncStreamReader<HttpData> requestStream, CancellationToken cancellationToken)
-        {
-            //读取客户端数据
-            await foreach (var item in requestStream.ReadAllAsync(cancellationToken))
-            {
-                lastActivityTime.UnixTimeMilliseconds = GetUnixTimeMilliseconds();
-                await tcpConnectTargetServerService.SendAsync(item.Payload.Memory, cancellationToken);
-            }
-        }
-
-        public static async Task HandlerServerAsync(
-            LastActivityTime lastActivityTime,
-            TcpConnectTargetServerService tcpConnectTargetServerService, IServerStreamWriter<HttpData> responseStream, CancellationToken cancellationToken)
-        {
-            //读取目标服务器数据
-            await foreach (var item in tcpConnectTargetServerService.ReceiveAsync(cancellationToken))
-            {
-                long unix = GetUnixTimeMilliseconds();
-                lastActivityTime.UnixTimeMilliseconds = unix;
-                HttpData httpData = new()
-                {
-                    Payload = UnsafeByteOperations.UnsafeWrap(item),
-                    UnixTimeMilliseconds = unix
-                };
-                await responseStream.WriteAsync(httpData, cancellationToken);
-            }
-        }
 
         public override Task<StatusReply> GetStatus(GetStatusRequest request, ServerCallContext context)
         {

@@ -5,7 +5,6 @@ using CoreProxy.Server.Orleans.Models;
 using CoreProxy.Server.Orleans.Services;
 using DotNext.IO.Pipelines;
 using Microsoft.AspNetCore.Connections;
-using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets;
 using Microsoft.Extensions.Options;
@@ -121,7 +120,6 @@ builder.Services.AddSignalR(opt =>
 }).AddJsonProtocol(opt => opt.PayloadSerializerOptions = AppJsonSerializerContext.Default.Options);
 
 builder.Services.AddDataProtection();
-builder.Services.AddHostedService<CoreBackgroundService>();
 
 var app = builder.Build();
 
@@ -160,7 +158,6 @@ app.MapGet("/", () =>
 app.MapGrpcService<MyGrpcService>();
 app.MapHub<ChatHub>("/chathub");
 app.MapHub<StreamHub>("/StreamHub");
-
 
 HttpMap.MapProxy(app);
 
