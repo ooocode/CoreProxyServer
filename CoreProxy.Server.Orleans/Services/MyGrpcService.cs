@@ -94,7 +94,12 @@ namespace CoreProxy.Server.Orleans.Services
                 //客户端循环
                 var taskClient = DotNext.Collections.Generic.AsyncEnumerable.ForEachAsync(
                     requestStream.ReadAllAsync(cancellationToken),
-                    async (item, ct) => await serverConnectionContext.Transport.Output.WriteAsync(item.Payload.Memory, ct),
+                    async (item, ct) =>
+                    {
+                        //发送到服务器
+                        await serverConnectionContext.Transport.Output.WriteAsync(item.Payload.Memory, ct);
+                        await serverConnectionContext.Transport.Output.FlushAsync(ct);
+                    },
                     cancellationToken).AsTask();
 
                 //服务器循环
@@ -158,6 +163,7 @@ namespace CoreProxy.Server.Orleans.Services
         {
             public async ValueTask Invoke(ReadOnlyMemory<byte> readOnlyMemory, CancellationToken cancellationToken)
             {
+                //发送到客户端
                 await responseStream.WriteAsync(new HttpData
                 {
                     Payload = UnsafeByteOperations.UnsafeWrap(readOnlyMemory)
