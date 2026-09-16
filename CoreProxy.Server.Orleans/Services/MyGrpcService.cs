@@ -9,6 +9,7 @@ using Hello;
 using Microsoft.AspNetCore.Connections;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Net.Http.Headers;
+using System.IO.Pipelines;
 using System.Net;
 using System.Threading.Channels;
 
@@ -92,32 +93,25 @@ namespace CoreProxy.Server.Orleans.Services
             try
             {
                 //客户端循环
-                var taskClient = DotNext.Collections.Generic.AsyncEnumerable.ForEachAsync(
-                    requestStream.ReadAllAsync(cancellationToken),
-                    async (item, ct) =>
-                    {
-                        //发送到服务器
-                        await serverConnectionContext.Transport.Output.WriteAsync(item.Payload.Memory, ct);
-                    },
-                    cancellationToken).AsTask();
+                var taskClient = HandlerClientAsync(requestStream, serverConnectionContext.Transport.Output, cancellationToken);
 
                 //服务器循环
                 var taskServer = serverConnectionContext.Transport.Input.CopyToAsync(
                     new ReadServerDataClass(responseStream), cancellationToken).AsTask();
 
-                var completedTask = await Task.WhenAny(taskClient, taskServer);
-                if (completedTask == taskServer)
+                //等待任意一个完成
+                await Task.WhenAny(taskClient, taskServer);
+
+                try
                 {
-                    // 等待一小段时间，等待客户端剩余数据处理  
-                    try
-                    {
-                        await taskClient.WaitAsync(TimeSpan.FromSeconds(5), cancellationToken);
-                    }
-                    catch (Exception ex)
-                    {
-                        logger.LogWarning(ex, "等待一小段时间，等待客户端剩余数据处理");
-                    }
+                    //最多等待5秒钟，等剩余一点数据传输
+                    await Task.Delay(TimeSpan.FromSeconds(5), cancellationToken);
                 }
+                catch (Exception ex)
+                {
+                    logger.LogWarning(ex, "等待一小段时间，等待剩余数据处理... 但被取消了");
+                }
+
                 cancellationSource.Cancel();
 
                 await foreach (var item in Task.WhenEach(taskClient, taskServer))
@@ -155,6 +149,27 @@ namespace CoreProxy.Server.Orleans.Services
 
 
         /// <summary>
+        /// 处理客户端
+        /// </summary>
+        /// <param name="requestStream"></param>
+        /// <param name="cancellationToken"></param>
+        /// <returns></returns>
+        private static async Task HandlerClientAsync(IAsyncStreamReader<HttpData> requestStream, PipeWriter serverPipeWriter, CancellationToken cancellationToken)
+        {
+            //循环读取客户端数据
+            await foreach (var httpData in requestStream.ReadAllAsync(cancellationToken))
+            {
+                //发往服务器
+                var flushResult = await serverPipeWriter.WriteAsync(httpData.Payload.Memory, cancellationToken);
+                if (flushResult.IsCompleted || flushResult.IsCanceled)
+                {
+                    break;
+                }
+            }
+        }
+
+
+        /// <summary>
         /// 读服务器数据
         /// </summary>
         /// <param name="responseStream"></param>
@@ -169,21 +184,6 @@ namespace CoreProxy.Server.Orleans.Services
                 }, cancellationToken: cancellationToken);
             }
         }
-
-
-        public static async Task CheckKeepAliveAsync(LastActivityTime lastActivityTime, CancellationToken cancellationToken)
-        {
-            using var timer = new PeriodicTimer(TimeSpan.FromSeconds(5));
-            while (await timer.WaitForNextTickAsync(cancellationToken))
-            {
-                //检查是否超时 75秒
-                if (Math.Abs(GetUnixTimeMilliseconds() - lastActivityTime.UnixTimeMilliseconds) > 75_000)
-                {
-                    break;
-                }
-            }
-        }
-
 
         public override Task<StatusReply> GetStatus(GetStatusRequest request, ServerCallContext context)
         {

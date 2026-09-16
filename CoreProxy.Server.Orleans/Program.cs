@@ -3,7 +3,6 @@ using CoreProxy.Server.Orleans.BackgroundServices;
 using CoreProxy.Server.Orleans.Internal;
 using CoreProxy.Server.Orleans.Models;
 using CoreProxy.Server.Orleans.Services;
-using DotNext.IO.Pipelines;
 using Microsoft.AspNetCore.Connections;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets;
