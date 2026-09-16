@@ -71,7 +71,6 @@ namespace CoreProxy.Server.Orleans.Services
                     var writer = httpContext.Response.BodyWriter;
                     var bytes = Encoding.UTF8.GetBytes(connectionId);
                     await writer.WriteAsync(bytes, cancellationToken);
-                    await writer.FlushAsync(cancellationToken);
 
                     //转发内容
                     await serverConnectionContext.Transport.Input.CopyToAsync(writer, cancellationToken);

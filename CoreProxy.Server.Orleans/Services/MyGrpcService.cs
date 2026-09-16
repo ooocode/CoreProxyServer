@@ -98,7 +98,6 @@ namespace CoreProxy.Server.Orleans.Services
                     {
                         //发送到服务器
                         await serverConnectionContext.Transport.Output.WriteAsync(item.Payload.Memory, ct);
-                        await serverConnectionContext.Transport.Output.FlushAsync(ct);
                     },
                     cancellationToken).AsTask();
 
