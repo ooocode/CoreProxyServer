@@ -45,12 +45,20 @@ jobs:
         sudo chown -R "$(id -u):$(id -g)" CoreProxy.Server.Orleans/bin CoreProxy.Server.Orleans/obj
     - name: Publish linux-x64
       run: dotnet publish CoreProxy.Server.Orleans -c Release -r linux-x64
+    - name: Install Windows cross compiler
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y clang lld mingw-w64
+    - name: Publish win-x64
+      run: dotnet publish CoreProxy.Server.Orleans -c Release -r win-x64 -p:CppCompilerAndLinker=clang
     - name: Zip
       run: |
         cd ${{ github.workspace }}/CoreProxy.Server.Orleans/bin/Release/net11.0/linux-x64
         zip -r publish-linux-x64.zip publish
         cd ${{ github.workspace }}/CoreProxy.Server.Orleans/bin/Release/net11.0/linux-arm64
         zip -r publish-linux-arm64.zip publish
+        cd ${{ github.workspace }}/CoreProxy.Server.Orleans/bin/Release/net11.0/win-x64
+        zip -r publish-win-x64.zip publish
     - name: Create GitHub release
       uses: marvinpinto/action-automatic-releases@latest
       with:
@@ -61,4 +69,5 @@ jobs:
         files: |
           ${{ github.workspace }}/CoreProxy.Server.Orleans/bin/Release/net11.0/linux-x64/publish-linux-x64.zip
           ${{ github.workspace }}/CoreProxy.Server.Orleans/bin/Release/net11.0/linux-arm64/publish-linux-arm64.zip
+          ${{ github.workspace }}/CoreProxy.Server.Orleans/bin/Release/net11.0/win-x64/publish-win-x64.zip
 
