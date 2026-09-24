@@ -14,8 +14,8 @@
 	</PropertyGroup>
 
 	<ItemGroup>
-		<PackageReference Include="DotNext.IO" Version="6.7.2" />
-		<PackageReference Include="Grpc.AspNetCore" Version="2.83.0" />
+		<PackageReference Include="DotNext.IO" Version="6.8.0" />
+		<PackageReference Include="Grpc.AspNetCore" Version="2.84.0" />
 		<PackageReference Include="Microsoft.Extensions.Hosting.Systemd" Version="10.0.12" />
 		<PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="10.0.12" />
 		<PackageReference Include="Roslynator.Analyzers" Version="5.0.0">
