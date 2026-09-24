@@ -37,20 +37,21 @@ jobs:
             curl -fsSL https://dot.net/v1/dotnet-install.sh -o /tmp/dotnet-install.sh
             bash /tmp/dotnet-install.sh --channel 11.0 --quality preview --install-dir /dotnet
             export PATH=/dotnet:$PATH
-            dotnet publish CoreProxy.Server.Orleans -c Release -r linux-arm64 -p:CppCompilerAndLinker=clang -p:ObjCopyName=aarch64-linux-gnu-objcopy
+            dotnet publish CoreProxy.Server.Orleans -c Release -r linux-arm64 -o /src/artifacts/linux-arm64 -p:CppCompilerAndLinker=clang -p:ObjCopyName=aarch64-linux-gnu-objcopy
           '
     - name: Restore workspace permissions
       run: |
-        sudo chown -R "$(id -u):$(id -g)" CoreProxy.Server.Orleans/bin CoreProxy.Server.Orleans/obj
+        sudo chown -R "$(id -u):$(id -g)" artifacts CoreProxy.Server.Orleans/obj
     - name: Publish linux-x64
-      run: dotnet publish CoreProxy.Server.Orleans -c Release -r linux-x64
+      run: dotnet publish CoreProxy.Server.Orleans -c Release -r linux-x64 -o ${{ github.workspace }}/artifacts/linux-x64
     - name: Zip Linux packages
       run: |
-        cd ${{ github.workspace }}/CoreProxy.Server.Orleans/bin/Release/net11.0/linux-x64
-        zip -r publish-linux-x64.zip publish
-        cd ${{ github.workspace }}/CoreProxy.Server.Orleans/bin/Release/net11.0/linux-arm64
-        zip -r publish-linux-arm64.zip publish
+        cd ${{ github.workspace }}/artifacts/linux-x64
+        zip -r ../publish-linux-x64.zip .
+        cd ${{ github.workspace }}/artifacts/linux-arm64
+        zip -r ../publish-linux-arm64.zip .
     - name: Create GitHub release
+      if: github.event_name == 'push' && github.ref == 'refs/heads/main'
       uses: marvinpinto/action-automatic-releases@latest
       with:
         repo_token: ${{ secrets.GITHUB_TOKEN }}
@@ -58,6 +59,6 @@ jobs:
         prerelease: false
         title: latest
         files: |
-          ${{ github.workspace }}/CoreProxy.Server.Orleans/bin/Release/net11.0/linux-x64/publish-linux-x64.zip
-          ${{ github.workspace }}/CoreProxy.Server.Orleans/bin/Release/net11.0/linux-arm64/publish-linux-arm64.zip
+          ${{ github.workspace }}/artifacts/publish-linux-x64.zip
+          ${{ github.workspace }}/artifacts/publish-linux-arm64.zip
 
