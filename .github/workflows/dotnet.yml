@@ -25,10 +25,14 @@ jobs:
         dotnet-version: 11.0.x
     - name: Restore dependencies
       run: dotnet restore CoreProxy.Server.Orleans
+    - name: Install ARM64 cross compiler
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu binutils-aarch64-linux-gnu
     - name: Publish
       run: |
         dotnet publish CoreProxy.Server.Orleans -c Release -r linux-x64
-        dotnet publish CoreProxy.Server.Orleans -c Release -r linux-arm64
+        dotnet publish CoreProxy.Server.Orleans -c Release -r linux-arm64 -p:CppCompilerAndLinker=aarch64-linux-gnu-gcc
     - name: Zip
       run: |
         cd ${{ github.workspace }}/CoreProxy.Server.Orleans/bin/Release/net11.0/linux-x64
