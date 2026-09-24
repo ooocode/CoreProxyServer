@@ -40,6 +40,9 @@ jobs:
             export PATH=/dotnet:$PATH
             dotnet publish CoreProxy.Server.Orleans -c Release -r linux-arm64 -p:CppCompilerAndLinker=clang -p:ObjCopyName=aarch64-linux-gnu-objcopy
           '
+    - name: Restore workspace permissions
+      run: |
+        sudo chown -R "$(id -u):$(id -g)" CoreProxy.Server.Orleans/bin CoreProxy.Server.Orleans/obj
     - name: Publish linux-x64
       run: dotnet publish CoreProxy.Server.Orleans -c Release -r linux-x64
     - name: Zip
