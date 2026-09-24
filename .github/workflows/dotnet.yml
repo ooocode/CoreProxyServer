@@ -31,8 +31,8 @@ jobs:
         sudo apt-get install -y clang gcc-aarch64-linux-gnu g++-aarch64-linux-gnu binutils-aarch64-linux-gnu
     - name: Publish
       run: |
+        dotnet publish CoreProxy.Server.Orleans -c Release -r linux-arm64 -p:CppCompilerAndLinker=clang -p:ObjCopyName=aarch64-linux-gnu-objcopy
         dotnet publish CoreProxy.Server.Orleans -c Release -r linux-x64
-        dotnet publish CoreProxy.Server.Orleans -c Release -r linux-arm64 -p:CppCompilerAndLinker=clang
     - name: Zip
       run: |
         cd ${{ github.workspace }}/CoreProxy.Server.Orleans/bin/Release/net11.0/linux-x64
