@@ -1,8 +1,10 @@
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio Version 17
-VisualStudioVersion = 17.5.2.0
+# Visual Studio Version 18
+VisualStudioVersion = 18.10.12217.157 stable
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CoreProxy.Server.Orleans", "CoreProxy.Server.Orleans.csproj", "{4B1FA5B2-8909-F2E6-F2E6-A5724AB5DAE7}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SignalrServerWebApp", "..\SignalrServerWebApp\SignalrServerWebApp.csproj", "{91C98B59-D77A-4517-B677-EDCE6D981D04}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -14,6 +16,10 @@ Global
 		{4B1FA5B2-8909-F2E6-F2E6-A5724AB5DAE7}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{4B1FA5B2-8909-F2E6-F2E6-A5724AB5DAE7}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{4B1FA5B2-8909-F2E6-F2E6-A5724AB5DAE7}.Release|Any CPU.Build.0 = Release|Any CPU
+		{91C98B59-D77A-4517-B677-EDCE6D981D04}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{91C98B59-D77A-4517-B677-EDCE6D981D04}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{91C98B59-D77A-4517-B677-EDCE6D981D04}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{91C98B59-D77A-4517-B677-EDCE6D981D04}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
