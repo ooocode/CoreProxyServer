@@ -100,12 +100,16 @@ namespace CoreProxy.Server.Orleans.Services
                     new ReadServerDataClass(responseStream), cancellationToken).AsTask();
 
                 //等待任意一个完成
-                await Task.WhenAny(taskClient, taskServer);
+                var completeTask = await Task.WhenAny(taskClient, taskServer);
 
-                //再给最多 5 秒排空剩余数据；若两方向都已结束则立即返回
-                await Task.WhenAny(
-                    Task.WhenAll(taskClient, taskServer),
-                    Task.Delay(TimeSpan.FromSeconds(5), cancellationToken));
+                var todoTask = new List<Task> { taskClient, taskServer }
+                        .FirstOrDefault(x => x != completeTask);
+
+                if (todoTask is not null)
+                {
+                    //再给最多 5 秒排空剩余数据；若两方向都已结束则立即返回
+                    await Task.WhenAny(todoTask, Task.Delay(TimeSpan.FromSeconds(5), cancellationToken));
+                }
 
                 cancellationSource.Cancel();
 
