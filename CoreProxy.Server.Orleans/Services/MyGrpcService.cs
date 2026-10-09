@@ -102,15 +102,10 @@ namespace CoreProxy.Server.Orleans.Services
                 //等待任意一个完成
                 await Task.WhenAny(taskClient, taskServer);
 
-                try
-                {
-                    //最多等待5秒钟，等剩余一点数据传输
-                    await Task.Delay(TimeSpan.FromSeconds(5), cancellationToken);
-                }
-                catch (Exception ex)
-                {
-                    logger.LogWarning(ex, "等待一小段时间，等待剩余数据处理... 但被取消了");
-                }
+                //再给最多 5 秒排空剩余数据；若两方向都已结束则立即返回
+                await Task.WhenAny(
+                    Task.WhenAll(taskClient, taskServer),
+                    Task.Delay(TimeSpan.FromSeconds(5), cancellationToken));
 
                 cancellationSource.Cancel();
 
@@ -137,13 +132,12 @@ namespace CoreProxy.Server.Orleans.Services
             finally
             {
                 GlobalState.Connections.TryRemove(connectionId, out var _);
+                cancellationSource.Cancel();
 
                 if (logger.IsEnabled(LogLevel.Information))
                 {
                     logger.LogInformation("结束连接目标服务器 ConnectionId:{connectionId}", connectionId);
                 }
-
-                cancellationSource.Cancel();
             }
         }
 
