@@ -53,7 +53,8 @@ namespace CoreProxy.Server.Orleans.Internal
         public static readonly Channel<LogEntry> _channel = Channel.CreateUnbounded<LogEntry>();
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
-            string dir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "logs");
+            var now = DateTimeOffset.UtcNow;
+            string dir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "logs", now.Year.ToString(), now.Month.ToString(), now.Day.ToString());
             if (!Directory.Exists(dir))
             {
                 Directory.CreateDirectory(dir);
@@ -64,12 +65,12 @@ namespace CoreProxy.Server.Orleans.Internal
                 string logFile = Path.Combine(dir, $"log_{item.Timestamp:yyyyMMdd}_{Environment.ProcessId}.txt");
                 var logMessage = $"{item.Timestamp:HH:mm:ss} {item.Level}: {item.CategoryName}[{item.EventId.Id}]{Environment.NewLine}" +
                     $"             {item.Message}{Environment.NewLine}";
-                File.AppendAllText(logFile, logMessage);
+                await File.WriteAllTextAsync(logFile, logMessage, stoppingToken);
 
                 if (item.Level >= LogLevel.Error)
                 {
                     string errorLogFile = Path.Combine(dir, $"error_{item.Timestamp:yyyyMMdd}_{Environment.ProcessId}.txt");
-                    File.AppendAllText(errorLogFile, logMessage);
+                    await File.WriteAllTextAsync(errorLogFile, logMessage, stoppingToken);
                 }
             }
         }
