@@ -102,14 +102,11 @@ namespace CoreProxy.Server.Orleans.Services
                 //等待任意一个完成
                 var completeTask = await Task.WhenAny(taskClient, taskServer);
 
-                var todoTask = new List<Task> { taskClient, taskServer }
-                        .FirstOrDefault(x => x != completeTask);
+                //未完成的任务
+                var todoTask = completeTask == taskClient ? taskServer : taskClient;
 
-                if (todoTask is not null)
-                {
-                    //再给最多 5 秒排空剩余数据；若两方向都已结束则立即返回
-                    await Task.WhenAny(todoTask, Task.Delay(TimeSpan.FromSeconds(5), cancellationToken));
-                }
+                //再给最多 5 秒排空剩余数据；若两方向都已结束则立即返回
+                await Task.WhenAny(todoTask, Task.Delay(TimeSpan.FromSeconds(5), cancellationToken));
 
                 cancellationSource.Cancel();
 
