@@ -15,11 +15,6 @@ using System.Threading.Channels;
 
 namespace CoreProxy.Server.Orleans.Services
 {
-    public class LastActivityTime
-    {
-        public long UnixTimeMilliseconds { get; set; }
-    }
-
     public class MyGrpcService(
         IHostApplicationLifetime hostApplicationLifetime,
         CertificatePassword certificatePassword,
