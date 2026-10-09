@@ -7,6 +7,7 @@ namespace CoreProxy.Server.Orleans.Internal
             LogLevel Level,
             EventId EventId,
             string Message,
+            string? ExceptionMessage,
             DateTimeOffset Timestamp);
 
     public class FileLogger(string categoryName) : ILogger
@@ -31,6 +32,7 @@ namespace CoreProxy.Server.Orleans.Internal
                 logLevel,
                 eventId,
                 message,
+                exception?.Message,
                 DateTimeOffset.Now));
         }
     }
@@ -64,13 +66,13 @@ namespace CoreProxy.Server.Orleans.Internal
             {
                 string logFile = Path.Combine(dir, $"log_{item.Timestamp:yyyyMMdd}_{Environment.ProcessId}.txt");
                 var logMessage = $"{item.Timestamp:HH:mm:ss} {item.Level}: {item.CategoryName}[{item.EventId.Id}]{Environment.NewLine}" +
-                    $"             {item.Message}{Environment.NewLine}";
-                await File.WriteAllTextAsync(logFile, logMessage, stoppingToken);
+                    $"             {item.Message}{Environment.NewLine}{item.ExceptionMessage}{Environment.NewLine}";
+                await File.AppendAllTextAsync(logFile, logMessage, stoppingToken);
 
                 if (item.Level >= LogLevel.Error)
                 {
                     string errorLogFile = Path.Combine(dir, $"error_{item.Timestamp:yyyyMMdd}_{Environment.ProcessId}.txt");
-                    await File.WriteAllTextAsync(errorLogFile, logMessage, stoppingToken);
+                    await File.AppendAllTextAsync(errorLogFile, logMessage, stoppingToken);
                 }
             }
         }
