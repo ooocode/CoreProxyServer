@@ -6,3 +6,4 @@
 
 # VSTest 部署/结果目录
 [Tt]est[Rr]esult*/
+/CoreProxy.Exe/appsettings.json
