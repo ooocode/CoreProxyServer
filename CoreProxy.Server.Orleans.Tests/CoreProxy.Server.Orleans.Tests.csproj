@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+	<PropertyGroup>
+		<!-- 与被测项目保持一致，避免 Release 下 net11.0 / net10.0 不匹配 -->
+		<TargetFramework Condition=" '$(Configuration)'=='Debug' ">net10.0</TargetFramework>
+		<TargetFramework Condition=" '$(Configuration)'=='Release' ">net11.0</TargetFramework>
+		<Nullable>enable</Nullable>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<IsPackable>false</IsPackable>
+		<!-- 被测项目开启了 EnablePreviewFeatures，其程序集带 RequiresPreviewFeatures，使用侧必须同样选择加入 -->
+		<EnablePreviewFeatures>true</EnablePreviewFeatures>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<FrameworkReference Include="Microsoft.AspNetCore.App" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+		<PackageReference Include="MSTest.TestAdapter" Version="3.6.3" />
+		<PackageReference Include="MSTest.TestFramework" Version="3.6.3" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<ProjectReference Include="..\CoreProxy.Server.Orleans\CoreProxy.Server.Orleans.csproj" />
+	</ItemGroup>
+</Project>

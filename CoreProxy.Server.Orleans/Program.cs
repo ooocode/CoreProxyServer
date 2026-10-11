@@ -81,10 +81,10 @@ if (Microsoft.Extensions.Hosting.Systemd.SystemdHelpers.IsSystemdService())
     builder.Services.AddHostedService<AutoExitBackgroundService>();
 }
 
-const string typeName = "Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets.SocketConnectionFactory";
-var factoryType = typeof(Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets.SocketTransportOptions).Assembly.GetType(typeName);
-ArgumentNullException.ThrowIfNull(factoryType, nameof(factoryType));
-builder.Services.AddSingleton(typeof(IConnectionFactory), factoryType);
+//出口连接工厂：内部已强制开启内联调度，保证半关闭(FIN)不会抢在未发完的数据前面
+builder.Services.AddSingleton<IConnectionFactory>(sp => TargetConnectionFactory.Create(
+    sp.GetRequiredService<IOptions<SocketTransportOptions>>().Value,
+    sp.GetRequiredService<ILoggerFactory>()));
 
 builder.Services.AddSingleton(s =>
 {

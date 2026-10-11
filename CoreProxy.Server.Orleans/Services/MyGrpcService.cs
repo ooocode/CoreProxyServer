@@ -1,16 +1,15 @@
 using CoreProxy.Server.Orleans.Internal;
 using CoreProxy.Server.Orleans.Models;
-using DotNext;
 using DotNext.IO.Pipelines;
 using Google.Protobuf;
 using Google.Protobuf.WellKnownTypes;
 using Grpc.Core;
 using Hello;
-using Microsoft.AspNetCore.Connections;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Net.Http.Headers;
-using System.IO.Pipelines;
+using System.Buffers;
 using System.Net;
+using System.Net.Sockets;
 using System.Threading.Channels;
 
 namespace CoreProxy.Server.Orleans.Services
@@ -19,8 +18,7 @@ namespace CoreProxy.Server.Orleans.Services
         IHostApplicationLifetime hostApplicationLifetime,
         CertificatePassword certificatePassword,
         ILogger<MyGrpcService> logger,
-        IHubContext<ChatHub> hubContext,
-        IConnectionFactory connectionFactory) : Greeter.GreeterBase
+        IHubContext<ChatHub> hubContext) : Greeter.GreeterBase
     {
         private void CheckPassword(ServerCallContext context)
         {
@@ -43,11 +41,17 @@ namespace CoreProxy.Server.Orleans.Services
         public override async Task StreamHandler(IAsyncStreamReader<HttpData> requestStream, IServerStreamWriter<HttpData> responseStream, ServerCallContext context)
         {
             CheckPassword(context);
+
+            //目标地址无效时返回 InvalidArgument，而不是让 Uri 构造函数抛出未知异常
             var uriString = context.RequestHeaders.GetValue(HeaderNames.XRequestedWith);
-            if (string.IsNullOrWhiteSpace(uriString))
+            if (!Uri.TryCreate(uriString, UriKind.Absolute, out var uri) || uri.DnsSafeHost.Length == 0 || uri.Port <= 0)
             {
                 throw new RpcException(new Status(StatusCode.InvalidArgument, HeaderNames.XRequestedWith));
             }
+
+            //DnsSafeHost 会去掉 IPv6 字面量的方括号
+            var host = uri.DnsSafeHost;
+            var port = uri.Port;
 
             string connectionId = Guid.CreateVersion7().ToString("N");
 
@@ -55,16 +59,10 @@ namespace CoreProxy.Server.Orleans.Services
                         context.CancellationToken, hostApplicationLifetime.ApplicationStopping);
             var cancellationToken = cancellationSource.Token;
 
-            Uri uri = new(uriString);
-            var host = uri.Host;
-            var port = uri.Port;
-
-            var ips = await Dns.GetHostAddressesAsync(host, cancellationToken);
-            var ip = ips.OrderBy(x => x.AddressFamily).First();
+            var ip = await ResolveIpAddressAsync(host, cancellationToken);
 
             //连接目标服务器
-            await using var serverConnectionContext = await connectionFactory.ConnectAsync(
-                new IPEndPoint(ip, port), cancellationToken);
+            await using var target = await TargetConnection.ConnectAsync(new IPEndPoint(ip, port), cancellationToken);
 
             //发送空包，表示连接成功
             await responseStream.WriteAsync(new()
@@ -88,11 +86,10 @@ namespace CoreProxy.Server.Orleans.Services
             try
             {
                 //客户端循环
-                var taskClient = HandlerClientAsync(requestStream, serverConnectionContext.Transport.Output, cancellationToken);
+                var taskClient = HandlerClientAsync(requestStream, target, cancellationToken);
 
                 //服务器循环
-                var taskServer = serverConnectionContext.Transport.Input.CopyToAsync(
-                    new ReadServerDataClass(responseStream), cancellationToken).AsTask();
+                var taskServer = HandlerServerAsync(target, responseStream, cancellationToken);
 
                 //等待任意一个完成
                 var completeTask = await Task.WhenAny(taskClient, taskServer);
@@ -100,8 +97,20 @@ namespace CoreProxy.Server.Orleans.Services
                 //未完成的任务
                 var todoTask = completeTask == taskClient ? taskServer : taskClient;
 
-                //再给最多 5 秒排空剩余数据；若两方向都已结束则立即返回
-                await Task.WhenAny(todoTask, Task.Delay(TimeSpan.FromSeconds(5), cancellationToken));
+                if (completeTask == taskClient && taskClient.Status == TaskStatus.RanToCompletion && await taskClient)
+                {
+                    //客户端正常发完并且已向目标服务器补发 FIN：目标服务器此时才知道请求结束，
+                    //它的响应可能比"客户端发完"晚任意长时间，所以必须一直等到目标服务器关闭或客户端取消 RPC。
+                    //这里加超时就是截断数据
+                    await Task.WhenAny(todoTask, Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken));
+                }
+                else
+                {
+                    //其余情况（目标服务器先关闭、写入失败、客户端流异常、取消）：
+                    //另一个方向已经没有可送达的数据，给一个收尾窗口即可，不能无限等。
+                    //目标服务器半关闭时协议里没有"通知客户端"的手段，只能靠结束 RPC 让它知道流已经结束
+                    await Task.WhenAny(todoTask, Task.Delay(TimeSpan.FromSeconds(5), cancellationToken));
+                }
 
                 cancellationSource.Cancel();
 
@@ -139,41 +148,90 @@ namespace CoreProxy.Server.Orleans.Services
 
 
         /// <summary>
-        /// 处理客户端
+        /// 解析目标 IP：字面量直接使用，域名走 DNS 解析，优先 IPv4
         /// </summary>
-        /// <param name="requestStream"></param>
+        /// <param name="host"></param>
         /// <param name="cancellationToken"></param>
         /// <returns></returns>
-        private static async Task HandlerClientAsync(IAsyncStreamReader<HttpData> requestStream, PipeWriter serverPipeWriter, CancellationToken cancellationToken)
+        private static async Task<IPAddress> ResolveIpAddressAsync(string host, CancellationToken cancellationToken)
         {
-            //循环读取客户端数据
-            await foreach (var httpData in requestStream.ReadAllAsync(cancellationToken))
+            //客户端直接传 IP 时省去一次 DNS 解析
+            if (IPAddress.TryParse(host, out var ipAddress))
             {
-                //发往服务器
-                var flushResult = await serverPipeWriter.WriteAsync(httpData.Payload.Memory, cancellationToken);
-                if (flushResult.IsCompleted || flushResult.IsCanceled)
-                {
-                    break;
-                }
+                return ipAddress;
             }
+
+            var addresses = await Dns.GetHostAddressesAsync(host, cancellationToken);
+
+            return Array.Find(addresses, static x => x.AddressFamily == AddressFamily.InterNetwork)
+                ?? Array.Find(addresses, static x => x.AddressFamily == AddressFamily.InterNetworkV6)
+                ?? throw new RpcException(new Status(StatusCode.InvalidArgument, host));
         }
 
 
         /// <summary>
-        /// 读服务器数据
+        /// 处理客户端
         /// </summary>
-        /// <param name="responseStream"></param>
-        private class ReadServerDataClass(IServerStreamWriter<HttpData> responseStream) : ISupplier<ReadOnlyMemory<byte>, CancellationToken, ValueTask>
+        /// <param name="requestStream"></param>
+        /// <param name="target"></param>
+        /// <param name="cancellationToken"></param>
+        /// <returns>是否已向目标服务器补发 FIN（即客户端是否正常发完）</returns>
+        private static async Task<bool> HandlerClientAsync(IAsyncStreamReader<HttpData> requestStream, TargetConnection target, CancellationToken cancellationToken)
         {
-            public async ValueTask Invoke(ReadOnlyMemory<byte> readOnlyMemory, CancellationToken cancellationToken)
+            //循环读取客户端数据
+            await foreach (var httpData in requestStream.ReadAllAsync(cancellationToken))
             {
-                //发送到客户端
-                await responseStream.WriteAsync(new HttpData
-                {
-                    Payload = UnsafeByteOperations.UnsafeWrap(readOnlyMemory)
-                }, cancellationToken: cancellationToken);
+                //发往服务器：WriteAsync 返回即数据已经交给内核
+                await target.WriteAsync(httpData.Payload.Memory, cancellationToken);
+            }
+
+            //客户端正常发完：只关闭发送方向补发 FIN（半关闭），让目标服务器知道请求已结束，接收方向继续排空。
+            //写入若失败会抛异常，绝不会走到这里，因此不会把截断的请求当成完整请求
+            try
+            {
+                target.ShutdownSend();
+                return true;
+            }
+            catch (Exception ex) when (ex is SocketException or ObjectDisposedException or InvalidOperationException)
+            {
+                //连接已被中止或 socket 已释放：目标服务器那边已经收到 FIN 或 RST，无需处理
+                return false;
             }
         }
+
+        /// <summary>
+        /// 处理服务器：把目标服务器的数据转发给客户端
+        /// </summary>
+        /// <param name="target"></param>
+        /// <param name="responseStream"></param>
+        /// <param name="cancellationToken"></param>
+        private static async Task HandlerServerAsync(TargetConnection target, IServerStreamWriter<HttpData> responseStream, CancellationToken cancellationToken)
+        {
+            var buffer = ArrayPool<byte>.Shared.Rent(64 * 1024);
+            try
+            {
+                while (true)
+                {
+                    var read = await target.ReadAsync(buffer, cancellationToken);
+                    if (read == 0)
+                    {
+                        //目标服务器关闭了发送方向
+                        break;
+                    }
+
+                    //UnsafeWrap 直接引用缓冲区，只有"WriteAsync 内部立即序列化"这一点成立才安全（Grpc.AspNetCore 如此）
+                    await responseStream.WriteAsync(new HttpData
+                    {
+                        Payload = UnsafeByteOperations.UnsafeWrap(buffer.AsMemory(0, read))
+                    }, cancellationToken);
+                }
+            }
+            finally
+            {
+                ArrayPool<byte>.Shared.Return(buffer);
+            }
+        }
+
 
         public override Task<StatusReply> GetStatus(GetStatusRequest request, ServerCallContext context)
         {
