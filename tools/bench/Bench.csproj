@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<OutputType>Exe</OutputType>
+		<TargetFramework>net10.0</TargetFramework>
+		<Nullable>enable</Nullable>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<AssemblyName>bench</AssemblyName>
+		<RootNamespace>Bench</RootNamespace>
+		<InvariantGlobalization>true</InvariantGlobalization>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<PackageReference Include="Grpc.Net.Client" Version="2.84.0" />
+		<PackageReference Include="Google.Protobuf" Version="3.31.1" />
+		<PackageReference Include="Grpc.Tools" Version="2.84.0" PrivateAssets="all" />
+	</ItemGroup>
+
+	<!-- 与服务器、CoreProxy.Exe 共用仓库根目录下的同一份协议定义 -->
+	<ItemGroup>
+		<Protobuf Include="..\..\proto\TextFile.proto" GrpcServices="Client" />
+	</ItemGroup>
+
+</Project>
