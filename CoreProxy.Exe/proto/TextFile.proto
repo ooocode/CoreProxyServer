@@ -1,0 +1,39 @@
+﻿// limitations under the License.
+syntax = "proto3";
+//import "google/protobuf/any.proto";
+//import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
+//import "any.proto";
+//import "empty.proto";
+
+package hello;
+
+
+
+// The greeting service definition.
+service Greeter {
+  rpc StreamHandler(stream HttpData) returns (stream HttpData);
+  rpc GetStatus(GetStatusRequest) returns (StatusReply);
+
+  //p2p
+  rpc P2PStreamHandler(stream HttpData) returns (stream HttpData);
+}
+
+
+message HttpData{
+  bytes Payload = 1;
+}
+
+message GetStatusRequest{
+	bool IncludeDetail = 1;
+}
+
+message StatusReply{
+  int32 SocketCount = 1;
+  repeated StatusDetail Connections = 2;
+}
+
+message StatusDetail{
+  string IpAddress = 1;
+  google.protobuf.Timestamp DateTime = 2;
+}

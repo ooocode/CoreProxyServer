@@ -1,0 +1,78 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+	<PropertyGroup>
+		<TargetFramework Condition=" '$(Configuration)'=='Debug' ">net10.0</TargetFramework>
+		<TargetFramework Condition=" '$(Configuration)'=='Release' ">net10.0</TargetFramework>
+		<ServerGarbageCollection>true</ServerGarbageCollection>
+		<EnablePreviewFeatures>true</EnablePreviewFeatures>
+		<LangVersion>preview</LangVersion>
+		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Nullable>enable</Nullable>
+		<PublishAot>true</PublishAot>
+		<IsAotCompatible>true</IsAotCompatible>
+		<EnableRequestDelegateGenerator>true</EnableRequestDelegateGenerator>
+		<InterceptorsNamespaces>$(InterceptorsNamespaces);Microsoft.AspNetCore.Http.Generated</InterceptorsNamespaces>
+		<InterceptorsNamespaces>$(InterceptorsNamespaces);Microsoft.AspNetCore.Http.Validation.Generated</InterceptorsNamespaces>
+		<InterceptorsNamespaces>$(InterceptorsNamespaces);Microsoft.Extensions.Validation.Generated</InterceptorsNamespaces>
+		<InvariantGlobalization>true</InvariantGlobalization>
+		<OutputType Condition=" '$(Configuration)'=='Debug' ">exe</OutputType>
+		<OutputType Condition=" '$(Configuration)'=='Release' ">exe</OutputType>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<Content Remove="wwwroot\global.txt" />
+		<Content Remove="wwwroot\pac.txt" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<PackageReference Include="CommunityToolkit.HighPerformance" Version="8.4.2" />
+		<PackageReference Include="DotNext.IO" Version="6.7.2" />
+		<PackageReference Include="Google.Protobuf" Version="3.36.1" />
+		<PackageReference Include="Grpc.AspNetCore.Server.ClientFactory" Version="2.83.0" />
+		<PackageReference Include="Grpc.Net.ClientFactory" Version="2.83.0" />
+		<PackageReference Include="Grpc.Tools" Version="2.83.0">
+			<PrivateAssets>all</PrivateAssets>
+			<IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+		</PackageReference>
+		<PackageReference Include="Microsoft.AspNetCore.SignalR.Client" Version="10.0.12" />
+		<PackageReference Include="Microsoft.Extensions.Hosting.Systemd" Version="10.0.12" />
+		<PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="10.0.12" />
+		<PackageReference Include="prometheus-net" Version="8.2.1" />
+		<PackageReference Include="Roslynator.Analyzers" Version="5.0.0">
+			<PrivateAssets>all</PrivateAssets>
+			<IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+		</PackageReference>
+		<PackageReference Include="Roslynator.CodeAnalysis.Analyzers" Version="5.0.0">
+			<PrivateAssets>all</PrivateAssets>
+			<IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+		</PackageReference>
+		<PackageReference Include="Roslynator.Formatting.Analyzers" Version="5.0.0">
+			<PrivateAssets>all</PrivateAssets>
+			<IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+		</PackageReference>
+	</ItemGroup>
+
+	<ItemGroup>
+		<None Include="wwwroot\global.txt">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</None>
+		<None Include="wwwroot\pac.txt">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</None>
+	</ItemGroup>
+
+	<ItemGroup>
+		<Protobuf Include="proto\TextFile.proto">
+			<GrpcServices>Client</GrpcServices>
+		</Protobuf>
+	</ItemGroup>
+
+	<ItemGroup>
+		<None Update="appsettings.json">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</None>
+		<None Update="_注册COM组件.ps1">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</None>
+	</ItemGroup>
+</Project>
