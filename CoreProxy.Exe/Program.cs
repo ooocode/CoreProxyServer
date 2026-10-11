@@ -87,24 +87,8 @@ namespace CoreProxy
             //await Task.Delay(-1);
 
             //https://github.com/dotnet/runtime/pull/103351
-            List<ServerItem> serverItems = [];
-            serverItems.Add(ServerItem.Create(1079, "https://192.129.133.136:6099", "7C5C35DD6DA2CD5EE22637C46E02058726124B32449732EF0FB4A71DCB7E8575"));
-            //serverItems.Add(ServerItem.Create(1079, "https://66.103.193.238:443", "7C5C35DD6DA2CD5EE22637C46E02058726124B32449732EF0FB4A71DCB7E8575", RequestHttpVersion.Version20));
-            //serverItems.Add(ServerItem.Create(1079, "https://localhost:6099", "7C5C35DD6DA2CD5EE22637C46E02058726124B32449732EF0FB4A71DCB7E8575", RequestHttpVersion.Version20));
-
-            //serverItems.Add(ServerItem.Create(1079, "https://[2607:f130:0:103:ff:ff:f3e1:5d84]:5044", "7C5C35DD6DA2CD5EE22637C46E02058726124B32449732EF0FB4A71DCB7E8575", RequestHttpVersion.Version30));
-
-
-
-            serverItems.Add(ServerItem.Create(1081, "https://116.252.25.12:5005", "591470F5269D67122EC31E59967DB59A2F077930E527A6672CFC7669520F1D89"));
-            serverItems.Add(ServerItem.Create(1084, "https://10.240.132.4:5005", "591470F5269D67122EC31E59967DB59A2F077930E527A6672CFC7669520F1D89"));
-
-            serverItems.Add(ServerItem.Create(1082, "http://oa.zwovo.xyz:19981", "F2C827426C1D00187941361E3BFBA12764D6294CB8D75D1E873E6FCBF85F8EE8", RequestHttpVersion.Version20));
-
-            serverItems.Add(ServerItem.Create(1083, "https://10.240.4.68:5001", "B6244BBD5E42BCFEA742AE8BE930DB7B7C7325F1A9A1EA28ACED21942BAA963B"));
-            serverItems.Add(ServerItem.Create(1085, "https://59.211.236.38:5001", "B6244BBD5E42BCFEA742AE8BE930DB7B7C7325F1A9A1EA28ACED21942BAA963B"));
-
-            serverItems.Add(ServerItem.Create(1090, "https://172.16.10.197:6099", "F888EAE226441B99F50FC47CFAE75A9FF904E178762B2BAE873865098D249CBF"));
+            //服务器列表来自 exe 同目录下的 appsettings.json（Servers 节点）
+            var serverItems = ServerConfig.Load(ServerConfig.LoadConfiguration(AppContext.BaseDirectory));
 
             await MainFunc.StartMain(serverItems, args);
         }

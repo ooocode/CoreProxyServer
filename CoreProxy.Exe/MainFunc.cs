@@ -40,13 +40,6 @@ namespace CoreProxy
             //var schemaText = schema.ToJsonString();
             //File.WriteAllText(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, $"config-schema.json"), schemaText);
 
-            //配置文件目录
-            var configDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "CoreProxyConfigs");
-            if (!Directory.Exists(configDir))
-            {
-                Directory.CreateDirectory(configDir);
-            }
-
             var urls = serverItems.Select(x => $"http://*:{x.LocalListenerPort}")
                 .ToList();
             var urlsString = string.Join(";", urls);
@@ -57,7 +50,9 @@ namespace CoreProxy
             AppContext.SetSwitch("System.Net.Http.SocketsHttpHandler.Http2UnencryptedSupport", true);
             AppContext.SetSwitch("Microsoft.AspNetCore.Server.Kestrel.EnableWindows81Http2", true);
 
-            var builder = WebApplication.CreateSlimBuilder([.. argsList]);
+            //内容根固定为 exe 所在目录：作为 Windows 服务/COM 组件启动时，当前目录并不是 exe 目录，
+            //否则 appsettings.json（日志级别等）和 wwwroot 都会找不到
+            var builder = WebApplication.CreateSlimBuilder(argsList.ToArray());
             builder.Services.ConfigureHttpJsonOptions(options => options.SerializerOptions.TypeInfoResolverChain.Insert(0, AppJsonSerializerContext.Default));
 
             if (Microsoft.Extensions.Hosting.WindowsServices.WindowsServiceHelpers.IsWindowsService())
@@ -179,33 +174,6 @@ namespace CoreProxy
 
                 httpContext.Response.ContentType = "text/plain; charset=utf-8";
                 await httpContext.Response.WriteAsync(text, Encoding.UTF8);
-            });
-
-            var group = _app.MapGroup("/web/api/servers");
-            group.MapPost("/", async ([FromBody] ServerItem serverItem) =>
-            {
-                var fileName = Path.Combine(configDir, $"{serverItem.LocalListenerPort}.txt");
-                await File.WriteAllTextAsync(fileName, System.Text.Json.JsonSerializer.Serialize(serverItem, AppJsonSerializerContext.Default.ServerItem));
-                return Results.Ok(serverItem);
-            });
-
-            group.MapGet("/", async () =>
-            {
-                var files = Directory.GetFiles(configDir, "*.txt");
-                var serverItems = new List<ServerItem>();
-                foreach (var file in files)
-                {
-                    var content = await File.ReadAllTextAsync(file);
-                    var serverItem = System.Text.Json.JsonSerializer.Deserialize(content, AppJsonSerializerContext.Default.ServerItem);
-                    if (serverItem != null)
-                    {
-                        serverItems.Add(serverItem);
-                    }
-                }
-
-                serverItems = serverItems.OrderBy(x => x.LocalListenerPort)
-                    .ToList();
-                return Results.Ok(serverItems);
             });
 
             //http代理
