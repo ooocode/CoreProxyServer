@@ -72,6 +72,41 @@ namespace CoreProxy.Exe.Tests
             ClientTestHelpers.AssertBytesEqual(clientHello, seenByNext!, "TLS 字节必须原样保留");
         }
 
+        /// <summary>
+        /// 首包只到了 1 个字节时必须继续等，不能立刻判定。
+        /// 注意：这条用例不区分新旧实现（Kestrel 解析器在数据不完整时不抛异常，旧代码也走对了分支），
+        /// 它锁定的是"至少要 2 字节才判定"这条规则本身
+        /// </summary>
+        [TestMethod]
+        public async Task TLS首包被拆成单字节时仍走HTTP分支()
+        {
+            var (service, _) = CreateService(new FakeTunnel(), new TestHostApplicationLifetime());
+            var context = new TestConnectionContext(LocalPort);
+            using var cts = new CancellationTokenSource(Timeout);
+
+            var clientHello = new byte[] { 0x16, 0x03, 0x01, 0x00, 0x2F, 0x01, 0x00, 0x00, 0x2B, 0x03, 0x03 }
+                .Concat(ClientTestHelpers.RandomBytes(48, seed: 31)).ToArray();
+
+            //先只发第 1 个字节，确保服务读到的是"只有 1 字节"的状态
+            await context.BrowserWriter.WriteAsync(clientHello.AsMemory(0, 1), cts.Token);
+            await Task.Delay(200);
+            await context.BrowserWriter.WriteAsync(clientHello.AsMemory(1), cts.Token);
+            context.CompleteBrowser();
+
+            var nextCalled = false;
+            byte[]? seenByNext = null;
+            ConnectionDelegate next = async connection =>
+            {
+                nextCalled = true;
+                seenByNext = await TestPipeline.ReadAllAsync(connection.Transport.Input, cts.Token);
+            };
+
+            await service.OnConnectedAsync(context, next).WaitAsync(Timeout);
+
+            Assert.IsTrue(nextCalled, "TLS 握手必须交给后续中间件，而不是被当成 SOCKS5 丢掉");
+            ClientTestHelpers.AssertBytesEqual(clientHello, seenByNext!, "TLS 字节必须原样保留");
+        }
+
         [TestMethod]
         public async Task 非socket5握手不回复任何字节()
         {

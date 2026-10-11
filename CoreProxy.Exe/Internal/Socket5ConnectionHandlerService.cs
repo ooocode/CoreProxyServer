@@ -11,6 +11,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using System.Buffers;
 using System.Diagnostics;
+using System.IO.Pipelines;
 using System.Net;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -43,7 +44,20 @@ namespace CoreProxy.Internal
               connection.ConnectionClosed, hostApplicationLifetime.ApplicationStopping);
             var cancellationToken = cancellationSource.Token;
 
-            var firstResult = await connection.Transport.Input.ReadAsync(cancellationToken);
+            //探嗅至少需要 2 个字节（TLS 前缀是 0x16 0x03），这里显式等够再判定；
+            //顺带处理"连上就关、一个字节都没发"的情况（旧实现会继续走 SOCKS5 分支）
+            ReadResult firstResult;
+            do
+            {
+                firstResult = await connection.Transport.Input.ReadAsync(cancellationToken);
+                if (firstResult.IsCompleted && firstResult.Buffer.Length == 0)
+                {
+                    //对端什么都没发就关了
+                    return;
+                }
+            }
+            while (firstResult.Buffer.Length < 2);
+
             var buffer = firstResult.Buffer;
 
             var isHttpRequest = IsHttp(buffer);
@@ -119,9 +133,19 @@ namespace CoreProxy.Internal
 
         private static bool IsHttp(ReadOnlySequence<byte> buffer)
         {
+            //TLS ClientHello 前缀：0x16(Handshake) + 0x03(TLS 主版本) 表示这是 HTTPS。
+            //必须按字节判定：原先靠 BadHttpRequestException 的消息文本比对，
+            //那是本地化、版本相关的字符串，一旦 Kestrel 改文案或启用本地化，
+            //HTTPS 会静默走 SOCKS5 分支，随后因版本号不是 0x05 被丢弃（表现为"HTTPS 打不开"且无日志）
+            var reader = new SequenceReader<byte>(buffer);
+            if (reader.TryPeek(0, out var first) && reader.TryPeek(1, out var second)
+                && first == 0x16 && second == 0x03)
+            {
+                return true;
+            }
+
             try
             {
-                var reader = new SequenceReader<byte>(buffer);
                 var handler = new ProbeHandler();
                 var parser = new HttpParser<ProbeHandler>();
 
@@ -129,16 +153,11 @@ namespace CoreProxy.Internal
                 parser.ParseRequestLine(handler, ref reader);
                 return true;
             }
-            catch (BadHttpRequestException ex)
+            catch (BadHttpRequestException)
             {
-                //自定义处理...
-                if (ex.Message == "Detected a TLS handshake to an endpoint that does not have TLS enabled.")
-                {
-                    //https
-                    return true;
-                }
+                //既不是 TLS 也不是 HTTP
+                return false;
             }
-            return false;
         }
 
         class ProbeHandler : IHttpRequestLineHandler, IHttpHeadersHandler

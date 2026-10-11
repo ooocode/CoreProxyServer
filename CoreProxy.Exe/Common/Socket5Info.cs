@@ -110,6 +110,12 @@ namespace CoreProxy.Common
             {
                 //域名
                 var domainNameLength = await Read1BytesAsync(pipeReader, cancellationToken);
+                if (domainNameLength == 0)
+                {
+                    //RFC 1928 规定域名长度至少为 1，长度为 0 说明不是合法请求
+                    throw new Exception("域名长度不能为 0");
+                }
+
                 using var addressBytes = await ReadBytesAsync(pipeReader, domainNameLength, cancellationToken);
                 socket5Result.Address = Encoding.UTF8.GetString(addressBytes.Span);
 

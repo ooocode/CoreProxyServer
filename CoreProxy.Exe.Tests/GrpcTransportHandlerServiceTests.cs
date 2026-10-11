@@ -174,6 +174,72 @@ namespace CoreProxy.Exe.Tests
             await task.WaitAsync(Timeout);
         }
 
+        // ---------------- 半关闭与截断 ----------------
+
+        /// <summary>
+        /// 浏览器发完后服务器隔 6 秒（超过旧的 5 秒收尾窗口）才回数据，响应必须完整送达。
+        /// 这是"浏览器发完就按固定超时强拆"的回归测试
+        /// </summary>
+        [TestMethod]
+        public async Task 浏览器发完后长响应不被截断()
+        {
+            var tunnel = new FakeTunnel();
+            var context = new TestConnectionContext();
+            using var cts = new CancellationTokenSource(Timeout);
+            using var tokenSource = new CancellationTokenSource();
+
+            var task = CreateService().DualStreamHandlerAsync(tunnel.Client, context.Transport, "tcp://example.com:443", ProxyType.Socket5, tokenSource);
+            tunnel.SendHandshake();
+            await TestPipeline.ReadExactlyAsync(context.BrowserReader, ClientTestHelpers.ConnectOk.Length, cts.Token);
+
+            await context.BrowserWriter.WriteAsync(ClientTestHelpers.RandomBytes(1024, seed: 21), cts.Token);
+            context.CompleteBrowser();
+
+            //超过旧的 5 秒收尾窗口后才回数据
+            await Task.Delay(TimeSpan.FromSeconds(6));
+
+            var response = ClientTestHelpers.RandomBytes(64 * 1024, seed: 22);
+            var receivedTask = TestPipeline.ReadExactlyAsync(context.BrowserReader, response.Length, cts.Token);
+            foreach (var chunk in ClientTestHelpers.Chunked(response, seed: 23))
+            {
+                tunnel.SendData(chunk);
+            }
+
+            tunnel.CompleteServerStream();
+
+            ClientTestHelpers.AssertBytesEqual(response, await receivedTask);
+            await task.WaitAsync(Timeout);
+        }
+
+        /// <summary>
+        /// 浏览器发完的那一刻就要向服务器半关闭，而不是等收尾窗口结束。
+        /// 旧实现把 CompleteAsync 放在 finally，服务器要等 5 秒才知道请求发完
+        /// </summary>
+        [TestMethod]
+        public async Task 浏览器发完立刻向服务器半关闭()
+        {
+            var tunnel = new FakeTunnel();
+            var context = new TestConnectionContext();
+            using var cts = new CancellationTokenSource(Timeout);
+            using var tokenSource = new CancellationTokenSource();
+
+            var task = CreateService().DualStreamHandlerAsync(tunnel.Client, context.Transport, "tcp://example.com:443", ProxyType.Socket5, tokenSource);
+            tunnel.SendHandshake();
+            await TestPipeline.ReadExactlyAsync(context.BrowserReader, ClientTestHelpers.ConnectOk.Length, cts.Token);
+
+            await context.BrowserWriter.WriteAsync(ClientTestHelpers.RandomBytes(1024, seed: 24), cts.Token);
+            context.CompleteBrowser();
+
+            //服务器侧一直保持打开：旧实现必须等满 5 秒兜底才会补 FIN
+            var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+            await ClientTestHelpers.WaitUntilAsync(() => tunnel.RequestStream.Completed, TimeSpan.FromSeconds(3));
+            Assert.IsTrue(stopwatch.ElapsedMilliseconds < 2000,
+                $"半关闭应立刻发生，实际耗时 {stopwatch.ElapsedMilliseconds}ms");
+
+            tunnel.CompleteServerStream();
+            await task.WaitAsync(Timeout);
+        }
+
         // ---------------- 收尾与资源 ----------------
 
         [TestMethod]

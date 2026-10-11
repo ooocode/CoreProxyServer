@@ -56,6 +56,7 @@ namespace CoreProxy.Internal
             logger.LogInformation("开始连接 {server}", targetUri);
             cancellationToken.ThrowIfCancellationRequested();
             using var duplexStreamingCall = greeterClient.StreamHandler(headers: entries, cancellationToken: cancellationToken);
+            var requestStreamCompleted = false;
             try
             {
                 if (!await duplexStreamingCall.ResponseStream.MoveNext(cancellationToken))
@@ -79,9 +80,32 @@ namespace CoreProxy.Internal
                 //未完成的任务
                 var todoTask = completeTask == taskClient ? taskServer : taskClient;
 
-                //再给最多 5 秒排空剩余数据；若两方向都已结束则立即返回
-                await Task.WhenAny(todoTask, Task.Delay(TimeSpan.FromSeconds(5), cancellationToken));
+                if (completeTask == taskClient && taskClient.Status == TaskStatus.RanToCompletion)
+                {
+                    //浏览器正常发完：立刻向服务器半关闭（补 FIN），让服务器知道请求已经发完。
+                    //不能拖到最后再补——那样服务器要等收尾窗口结束才知道，它的大响应会被截断
+                    try
+                    {
+                        await duplexStreamingCall.RequestStream.CompleteAsync();
+                        requestStreamCompleted = true;
+                    }
+                    catch (Exception ex) when (ex is RpcException or InvalidOperationException or OperationCanceledException)
+                    {
+                        //RPC 已经结束，半关闭没有意义
+                    }
+                }
 
+                if (requestStreamCompleted)
+                {
+                    //服务器此刻才知道请求发完，它的响应可能比"浏览器发完"晚任意长时间，
+                    //所以必须一直等到服务器关闭或浏览器断开。这里加超时就是截断数据
+                    await Task.WhenAny(todoTask, Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken));
+                }
+                else
+                {
+                    //其余情况（服务器先关闭、浏览器异常、取消）：另一个方向已经没有可送达的数据，给个收尾窗口即可
+                    await Task.WhenAny(todoTask, Task.Delay(TimeSpan.FromSeconds(5), cancellationToken));
+                }
 
                 tokenSource.Cancel();
 
@@ -109,7 +133,19 @@ namespace CoreProxy.Internal
             finally
             {
                 tokenSource.Cancel();
-                await duplexStreamingCall.RequestStream.CompleteAsync();
+
+                //已经半关闭过就不再补，避免收尾阶段抛异常盖住真正的结果
+                if (!requestStreamCompleted)
+                {
+                    try
+                    {
+                        await duplexStreamingCall.RequestStream.CompleteAsync();
+                    }
+                    catch (Exception ex) when (ex is RpcException or InvalidOperationException or OperationCanceledException or ObjectDisposedException)
+                    {
+                        //RPC 可能已经结束
+                    }
+                }
             }
         }
 

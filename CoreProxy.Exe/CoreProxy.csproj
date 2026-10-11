@@ -62,7 +62,8 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<Protobuf Include="proto\TextFile.proto">
+		<!-- 与 CoreProxy.Server.Orleans 共用仓库根目录下的同一份协议定义，避免两端漂移 -->
+		<Protobuf Include="..\proto\TextFile.proto">
 			<GrpcServices>Client</GrpcServices>
 		</Protobuf>
 	</ItemGroup>

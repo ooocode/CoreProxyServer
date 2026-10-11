@@ -135,16 +135,11 @@ namespace CoreProxy.Exe.Tests
             AssertBytesEqual(payload, await TestPipeline.ReadExactlyAsync(pipe.Reader, payload.Length, cts.Token));
         }
 
-        /// <summary>
-        /// 记录当前行为：RFC 1928 要求域名长度至少为 1，但这里长度为 0 时得到空地址而不是报错。
-        /// 这条用例只锁定现状，不代表这是期望行为
-        /// </summary>
+        /// <summary>RFC 1928 要求域名长度至少为 1；长度为 0 是非法请求，必须拒绝而不是当成空地址下发</summary>
         [TestMethod]
-        public async Task 域名长度为0时得到空地址_记录现状()
+        public async Task 域名长度为0时抛异常()
         {
-            var result = await ParseAsync(Request(0x03, [], port: 80));
-
-            Assert.AreEqual(string.Empty, result.Address);
+            await Assert.ThrowsExceptionAsync<Exception>(() => ParseAsync(Request(0x03, [], port: 80)));
         }
 
         // ---------------- 辅助 ----------------
