@@ -3,6 +3,7 @@ using CoreProxy.Server.Orleans.Services;
 using Google.Protobuf;
 using Grpc.Core;
 using Hello;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Net.Http.Headers;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
@@ -24,8 +25,14 @@ namespace CoreProxy.Server.Orleans.Tests.Infrastructure
         private readonly ChannelStreamReader<HttpData> clientReader;
         private readonly Channel<HttpData> responseChannel = Channel.CreateUnbounded<HttpData>();
 
-        private Tunnel(string? uri, string? authorization, IPAddress clientIpAddress, TestHostApplicationLifetime lifetime)
+        private Tunnel(string? uri, string? authorization, IPAddress clientIpAddress, TestHostApplicationLifetime lifetime,
+            TimeSpan? connectTimeout)
         {
+            var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["ConnectTimeoutSeconds"] = ((int)(connectTimeout ?? TimeSpan.FromSeconds(20)).TotalSeconds).ToString(),
+            }).Build();
+
             Lifetime = lifetime;
 
             var headers = new Metadata();
@@ -44,7 +51,8 @@ namespace CoreProxy.Server.Orleans.Tests.Infrastructure
                 lifetime,
                 new CertificatePassword { Password = Password },
                 NullLogger<MyGrpcService>.Instance,
-                hubContext: null!); //StreamHandler 不涉及 SignalR
+                hubContext: null!, //StreamHandler 不涉及 SignalR
+                configuration);
 
             clientReader = new ChannelStreamReader<HttpData>(clientChannel.Reader);
             Task = service.StreamHandler(
@@ -57,8 +65,8 @@ namespace CoreProxy.Server.Orleans.Tests.Infrastructure
         }
 
         public static Tunnel Start(string? uri, string? authorization = null, IPAddress? clientIpAddress = null,
-            TestHostApplicationLifetime? lifetime = null) =>
-            new(uri, authorization, clientIpAddress ?? IPAddress.Loopback, lifetime ?? new TestHostApplicationLifetime());
+            TestHostApplicationLifetime? lifetime = null, TimeSpan? connectTimeout = null) =>
+            new(uri, authorization, clientIpAddress ?? IPAddress.Loopback, lifetime ?? new TestHostApplicationLifetime(), connectTimeout);
 
         public Task Task { get; }
 

@@ -6,6 +6,7 @@ using Google.Protobuf.WellKnownTypes;
 using Grpc.Core;
 using Hello;
 using Microsoft.AspNetCore.SignalR;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Net.Http.Headers;
 using System.Buffers;
 using System.Net;
@@ -18,8 +19,20 @@ namespace CoreProxy.Server.Orleans.Services
         IHostApplicationLifetime hostApplicationLifetime,
         CertificatePassword certificatePassword,
         ILogger<MyGrpcService> logger,
-        IHubContext<ChatHub> hubContext) : Greeter.GreeterBase
+        IHubContext<ChatHub> hubContext,
+        IConfiguration configuration) : Greeter.GreeterBase
     {
+        /// <summary>
+        /// 解析目标 + 建立连接的独立超时。
+        /// 不能只依赖客户端取消：目标服务器卡住（不回 SYN/ACK）时，一条隧道会一直挂着，
+        /// 实测过一次服务端连某个 CDN 迟迟不返回、客户端侧挂了 4 分钟。
+        /// 可用 ConnectTimeoutSeconds 配置覆盖
+        /// </summary>
+        private readonly TimeSpan connectTimeout =
+            int.TryParse(configuration["ConnectTimeoutSeconds"], out var connectTimeoutSeconds) && connectTimeoutSeconds > 0
+                ? TimeSpan.FromSeconds(connectTimeoutSeconds)
+                : TimeSpan.FromSeconds(20);
+
         private void CheckPassword(ServerCallContext context)
         {
             var ipAddress = context.GetHttpContext().Connection.RemoteIpAddress;
@@ -59,10 +72,8 @@ namespace CoreProxy.Server.Orleans.Services
                         context.CancellationToken, hostApplicationLifetime.ApplicationStopping);
             var cancellationToken = cancellationSource.Token;
 
-            var ip = await ResolveIpAddressAsync(host, cancellationToken);
-
-            //连接目标服务器
-            await using var target = await TargetConnection.ConnectAsync(new IPEndPoint(ip, port), cancellationToken);
+            //解析目标 + 连接目标服务器（带独立超时）
+            await using var target = await ConnectToTargetAsync(host, port, cancellationToken);
 
             //发送空包，表示连接成功
             await responseStream.WriteAsync(new()
@@ -143,6 +154,32 @@ namespace CoreProxy.Server.Orleans.Services
                 {
                     logger.LogInformation("结束连接目标服务器 ConnectionId:{connectionId}", connectionId);
                 }
+            }
+        }
+
+
+        /// <summary>
+        /// 解析目标地址并建立连接，整个过程受 connectTimeout 约束。
+        /// 超时按 Unavailable 返回（可重试），与"客户端主动取消"区分开
+        /// </summary>
+        /// <param name="host"></param>
+        /// <param name="port"></param>
+        /// <param name="cancellationToken"></param>
+        /// <returns></returns>
+        private async Task<TargetConnection> ConnectToTargetAsync(string host, int port, CancellationToken cancellationToken)
+        {
+            using var timeoutSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeoutSource.CancelAfter(connectTimeout);
+
+            try
+            {
+                var ip = await ResolveIpAddressAsync(host, timeoutSource.Token);
+                return await TargetConnection.ConnectAsync(new IPEndPoint(ip, port), timeoutSource.Token);
+            }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+                //是本地超时而不是客户端取消：给一个明确、可重试的状态，而不是让它一直挂着
+                throw new RpcException(new Status(StatusCode.Unavailable, $"{host}:{port}"));
             }
         }
 

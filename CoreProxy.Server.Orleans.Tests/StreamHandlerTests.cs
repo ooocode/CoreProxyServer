@@ -3,6 +3,7 @@ using CoreProxy.Server.Orleans.Tests.Infrastructure;
 using Google.Protobuf;
 using Grpc.Core;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
 
@@ -533,6 +534,103 @@ namespace CoreProxy.Server.Orleans.Tests
 
                 using var target = await server.AcceptAsync(Timeout);
                 await tunnel.ReadHandshakeAsync(Timeout);
+            }
+        }
+
+        // ---------------- 建连超时 ----------------
+
+        /// <summary>
+        /// 目标把监听队列塞满后不再回 SYN/ACK，连接会一直挂着。
+        /// 服务端必须在自己的超时后以 Unavailable 失败，而不是只依赖客户端取消
+        /// （实测过一次服务端连某个 CDN 迟迟不返回、客户端侧挂了 4 分钟）
+        /// </summary>
+        [TestMethod]
+        public async Task 目标建连超时返回Unavailable()
+        {
+            using var blockedServer = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+            blockedServer.Bind(new IPEndPoint(IPAddress.Loopback, 0));
+            blockedServer.Listen(1);
+            var port = ((IPEndPoint)blockedServer.LocalEndPoint!).Port;
+
+            var blockers = new List<Socket>();
+            try
+            {
+                //塞满 accept 队列：后续 connect 会一直等，不会成功也不会被拒
+                for (var i = 0; i < 4; i++)
+                {
+                    var socket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+                    try
+                    {
+                        await socket.ConnectAsync(new IPEndPoint(IPAddress.Loopback, port)).WaitAsync(TimeSpan.FromSeconds(2));
+                        blockers.Add(socket);
+                    }
+                    catch
+                    {
+                        socket.Dispose();
+                    }
+                }
+
+                await using var tunnel = Tunnel.Start($"http://127.0.0.1:{port}/", connectTimeout: TimeSpan.FromSeconds(1));
+
+                var stopwatch = Stopwatch.StartNew();
+                var exception = await Assert.ThrowsExceptionAsync<RpcException>(
+                    async () => await tunnel.Task.WaitAsync(TimeSpan.FromSeconds(15)));
+                stopwatch.Stop();
+
+                Assert.AreEqual(StatusCode.Unavailable, exception.Status.StatusCode, "建连超时应返回 Unavailable（可重试）");
+                Assert.IsTrue(stopwatch.Elapsed < TimeSpan.FromSeconds(12),
+                    $"应当在自己的超时后尽快失败，实际 {stopwatch.Elapsed.TotalSeconds:F1}s");
+            }
+            finally
+            {
+                foreach (var socket in blockers)
+                {
+                    socket.Dispose();
+                }
+            }
+        }
+
+        /// <summary>客户端主动取消不能被当成建连超时（否则会把取消误报成 Unavailable）</summary>
+        [TestMethod]
+        public async Task 客户端取消不算建连超时()
+        {
+            using var blockedServer = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+            blockedServer.Bind(new IPEndPoint(IPAddress.Loopback, 0));
+            blockedServer.Listen(1);
+            var port = ((IPEndPoint)blockedServer.LocalEndPoint!).Port;
+
+            var blockers = new List<Socket>();
+            try
+            {
+                for (var i = 0; i < 4; i++)
+                {
+                    var socket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+                    try
+                    {
+                        await socket.ConnectAsync(new IPEndPoint(IPAddress.Loopback, port)).WaitAsync(TimeSpan.FromSeconds(2));
+                        blockers.Add(socket);
+                    }
+                    catch
+                    {
+                        socket.Dispose();
+                    }
+                }
+
+                //超时设得很长，保证失败只可能来自客户端取消
+                await using var tunnel = Tunnel.Start($"http://127.0.0.1:{port}/", connectTimeout: TimeSpan.FromMinutes(5));
+
+                await Task.Delay(300);
+                tunnel.Cancel();
+
+                await Assert.ThrowsExceptionAsync<OperationCanceledException>(
+                    async () => await tunnel.Task.WaitAsync(TimeSpan.FromSeconds(10)));
+            }
+            finally
+            {
+                foreach (var socket in blockers)
+                {
+                    socket.Dispose();
+                }
             }
         }
 
