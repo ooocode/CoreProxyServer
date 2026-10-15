@@ -52,24 +52,24 @@ builder.WebHost.ConfigureKestrel(serverOptions =>
     //// --- HTTP/2 流量控制窗口 (核心中的核心) ---
     //// ConnectionWindow 必须略大于所有 StreamWindow 的总和
     //// 设置为 64MB 以完全覆盖 25MB 的 BDP，留出缓冲余量
-    //serverOptions.Limits.Http2.InitialConnectionWindowSize = 1024 * 1024 * 64;
+    serverOptions.Limits.Http2.InitialConnectionWindowSize = 1024 * 1024 * 64;
 
     //// 单个 Stream 的窗口设置为 32MB，确保单个双向流就能跑满带宽
-    //serverOptions.Limits.Http2.InitialStreamWindowSize = 1024 * 1024 * 32;
+    serverOptions.Limits.Http2.InitialStreamWindowSize = 1024 * 1024 * 32;
 
     //// --- 缓冲区与帧大小 ---
     //// 增加最大帧大小以减少 Header 处理频率 (Max: 64KB - 1)
-    //serverOptions.Limits.Http2.MaxFrameSize = 16777215;
+    serverOptions.Limits.Http2.MaxFrameSize = 16777215;
 
     //// 响应缓冲区：为了跑满 1Gbps，Kestrel 需要足够的内存来暂存即将发往网卡的数据
     //// 设置为 4MB 可以在 0GC 和 吞吐量之间取得平衡
-    //serverOptions.Limits.MaxResponseBufferSize = 1024 * 1024 * 4;
+    serverOptions.Limits.MaxResponseBufferSize = 1024 * 1024 * 4;
 
     //// 请求缓冲区：同样设置为 4MB
-    //serverOptions.Limits.MaxRequestBufferSize = 1024 * 1024 * 4;
+    serverOptions.Limits.MaxRequestBufferSize = 1024 * 1024 * 4;
 
-    //serverOptions.Limits.MinRequestBodyDataRate = null; // 高延迟下建议关闭或调低，防止误判为慢速攻击
-    //serverOptions.Limits.MinResponseDataRate = null;
+    serverOptions.Limits.MinRequestBodyDataRate = null; // 高延迟下建议关闭或调低，防止误判为慢速攻击
+    serverOptions.Limits.MinResponseDataRate = null;
 });
 
 builder.WebHost.UseKestrelHttpsConfiguration();
