@@ -23,6 +23,13 @@ var certificatePassword = GetCertificatePassword(certificate2);
 
 builder.Services.AddSingleton(certificatePassword);
 
+//目标主机名解析缓存：代理里大量隧道指向同一后端，TTL 内只解析一次，把 DNS 从建连关键路径上拿掉。
+//默认 60s；配 0 可禁用缓存（每次建连都重新解析）。
+builder.Services.AddSingleton(_ => new TargetResolver(
+    int.TryParse(builder.Configuration["TargetDnsCacheTtlSeconds"], out var ttlSeconds) && ttlSeconds >= 0
+        ? TimeSpan.FromSeconds(ttlSeconds)
+        : TimeSpan.FromSeconds(60)));
+
 builder.WebHost.ConfigureKestrel(serverOptions =>
 {
     // 保活探测：连接上连续 30 秒没有任何【入站】帧时，服务端向客户端发 PING。

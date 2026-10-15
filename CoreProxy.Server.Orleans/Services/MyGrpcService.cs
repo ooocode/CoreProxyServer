@@ -20,7 +20,8 @@ namespace CoreProxy.Server.Orleans.Services
         CertificatePassword certificatePassword,
         ILogger<MyGrpcService> logger,
         IHubContext<ChatHub> hubContext,
-        IConfiguration configuration) : Greeter.GreeterBase
+        IConfiguration configuration,
+        TargetResolver targetResolver) : Greeter.GreeterBase
     {
         /// <summary>
         /// 解析目标 + 建立连接的独立超时。
@@ -173,7 +174,7 @@ namespace CoreProxy.Server.Orleans.Services
 
             try
             {
-                var ip = await ResolveIpAddressAsync(host, timeoutSource.Token);
+                var ip = await targetResolver.ResolveAsync(host, timeoutSource.Token);
                 return await TargetConnection.ConnectAsync(new IPEndPoint(ip, port), timeoutSource.Token);
             }
             catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
@@ -181,28 +182,6 @@ namespace CoreProxy.Server.Orleans.Services
                 //是本地超时而不是客户端取消：给一个明确、可重试的状态，而不是让它一直挂着
                 throw new RpcException(new Status(StatusCode.Unavailable, $"{host}:{port}"));
             }
-        }
-
-
-        /// <summary>
-        /// 解析目标 IP：字面量直接使用，域名走 DNS 解析，优先 IPv4
-        /// </summary>
-        /// <param name="host"></param>
-        /// <param name="cancellationToken"></param>
-        /// <returns></returns>
-        private static async Task<IPAddress> ResolveIpAddressAsync(string host, CancellationToken cancellationToken)
-        {
-            //客户端直接传 IP 时省去一次 DNS 解析
-            if (IPAddress.TryParse(host, out var ipAddress))
-            {
-                return ipAddress;
-            }
-
-            var addresses = await Dns.GetHostAddressesAsync(host, cancellationToken);
-
-            return Array.Find(addresses, static x => x.AddressFamily == AddressFamily.InterNetwork)
-                ?? Array.Find(addresses, static x => x.AddressFamily == AddressFamily.InterNetworkV6)
-                ?? throw new RpcException(new Status(StatusCode.InvalidArgument, host));
         }
 
 

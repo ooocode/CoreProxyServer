@@ -1,3 +1,4 @@
+using CoreProxy.Server.Orleans.Internal;
 using CoreProxy.Server.Orleans.Models;
 using CoreProxy.Server.Orleans.Services;
 using Google.Protobuf;
@@ -26,7 +27,7 @@ namespace CoreProxy.Server.Orleans.Tests.Infrastructure
         private readonly Channel<HttpData> responseChannel = Channel.CreateUnbounded<HttpData>();
 
         private Tunnel(string? uri, string? authorization, IPAddress clientIpAddress, TestHostApplicationLifetime lifetime,
-            TimeSpan? connectTimeout)
+            TimeSpan? connectTimeout, TargetResolver? resolver)
         {
             var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
             {
@@ -52,7 +53,8 @@ namespace CoreProxy.Server.Orleans.Tests.Infrastructure
                 new CertificatePassword { Password = Password },
                 NullLogger<MyGrpcService>.Instance,
                 hubContext: null!, //StreamHandler 不涉及 SignalR
-                configuration);
+                configuration,
+                resolver ?? new TargetResolver(TimeSpan.FromSeconds(60)));
 
             clientReader = new ChannelStreamReader<HttpData>(clientChannel.Reader);
             Task = service.StreamHandler(
@@ -65,8 +67,8 @@ namespace CoreProxy.Server.Orleans.Tests.Infrastructure
         }
 
         public static Tunnel Start(string? uri, string? authorization = null, IPAddress? clientIpAddress = null,
-            TestHostApplicationLifetime? lifetime = null, TimeSpan? connectTimeout = null) =>
-            new(uri, authorization, clientIpAddress ?? IPAddress.Loopback, lifetime ?? new TestHostApplicationLifetime(), connectTimeout);
+            TestHostApplicationLifetime? lifetime = null, TimeSpan? connectTimeout = null, TargetResolver? resolver = null) =>
+            new(uri, authorization, clientIpAddress ?? IPAddress.Loopback, lifetime ?? new TestHostApplicationLifetime(), connectTimeout, resolver);
 
         public Task Task { get; }
 
