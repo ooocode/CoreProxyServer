@@ -13,12 +13,23 @@ jobs:
     - uses: actions/checkout@v4
     - name: Build ARM64
       run: |
-        docker run --rm -v "${{ github.workspace }}:/w" -w /w debian:10 bash -c '
+        docker run --rm -v "${{ github.workspace }}:/w" -w /w debian:10 bash -euo pipefail -c '
+          # 这里刻意留在 debian:10（glibc 2.28）：NativeAOT 链的是构建环境的 glibc，
+          # 用 buster 构建出来的产物才能在老发行版上跑。请不要为了图省事换成更新的基础镜像。
+          # buster 已 EOL，源必须改指 archive.debian.org。该归档在负载下会偶发 404
+          #（例如 llvm-7-runtime 的 .deb 时有时无），会让整条 apt 事务失败；
+          # 原来没开 set -e，脚本会静默继续，最终以 "curl: command not found" / exit 127
+          # 这种完全误导性的方式收场。所以这里：开重试 + 容忍缺失包 + 装完显式校验工具链。
           sed -i "s|deb.debian.org|archive.debian.org|g; s|security.debian.org|archive.debian.org|g" /etc/apt/sources.list
-          apt-get -o Acquire::Check-Valid-Until=false update
-          apt-get install -y ca-certificates curl zip libicu-dev clang gcc-aarch64-linux-gnu g++-aarch64-linux-gnu binutils-aarch64-linux-gnu
+          apt-get -o Acquire::Check-Valid-Until=false -o Acquire::Retries=5 update
+          apt-get install -y -o Acquire::Check-Valid-Until=false -o Acquire::Retries=5 --fix-missing \
+            ca-certificates curl zip libicu-dev clang gcc-aarch64-linux-gnu g++-aarch64-linux-gnu binutils-aarch64-linux-gnu
+          # 工具链必须齐全，否则后面只会以难懂的错误收场（上面两项分别对应 publish 用到的 clang 与 objcopy）
+          command -v clang
+          command -v aarch64-linux-gnu-objcopy
           curl -fsSL https://dot.net/v1/dotnet-install.sh | bash -s -- --channel 11.0 --quality preview --install-dir /dotnet
           export PATH=/dotnet:$PATH
+          command -v dotnet
           dotnet publish CoreProxy.Server.Orleans/CoreProxy.Server.Orleans.csproj -c Release -r linux-arm64 -p:PublishAot=true -p:CppCompilerAndLinker=clang -p:ObjCopyName=aarch64-linux-gnu-objcopy -o output-arm64
         '
     - run: sudo chown -R $(id -u):$(id -g) output-arm64
