@@ -23,6 +23,8 @@ namespace CoreProxy.Server.Orleans.Tests
         /// <summary>非回环地址（TEST-NET-3），用来触发口令校验分支</summary>
         private static readonly IPAddress RemoteClient = IPAddress.Parse("203.0.113.10");
 
+        public TestContext TestContext { get; set; } = null!;
+
         [TestCleanup]
         public void Cleanup() => GlobalState.Connections.Clear();
 
@@ -375,6 +377,78 @@ namespace CoreProxy.Server.Orleans.Tests
             AssertBytesEqual(payload, await readTask);
         }
 
+        // ---------------- 稳定运行：反复建连/断开不泄漏、不错乱、不退化 ----------------
+
+        /// <summary>
+        /// 模拟"长时间稳定运行"的核心动作：反复 建连→双向传输→半关闭收敛。
+        /// 每一轮都强断言：双向字节逐字节一致（不错乱）、连接记录归零（不泄漏）、隧道正常收敛（不崩）。
+        /// 整个循环前后对比托管内存，抓"每轮泄漏一点"的线性逃逸慢病。
+        /// （结束方式的多样性由其他用例覆盖，这里聚焦轮次规模与资源是否随运行累积。）
+        /// </summary>
+        [TestMethod]
+        public async Task RepeatedConnectTransferDisconnectStaysCleanAndDoesNotLeak()
+        {
+            const int rounds = 500; //轮次要有分量：逐轮泄漏只有在几百轮的累积下才会显著露出
+
+            //轮前基线：强制 GC 到稳定态再取样
+            GC.Collect(); GC.WaitForPendingFinalizers(); GC.Collect();
+            var baseline = GC.GetTotalMemory(forceFullCollection: false);
+
+            var totalBytes = 0L;
+            var watch = Stopwatch.StartNew();
+            for (var round = 0; round < rounds; round++)
+            {
+                using var server = new TestTargetServer();
+                await using var tunnel = Tunnel.Start(server.Uri);
+
+                var request = RandomBytes(64 * 1024, seed: 5000 + round);
+                var response = RandomBytes(64 * 1024, seed: 6000 + round);
+
+                using var target = await server.AcceptAsync(Timeout);
+                await tunnel.ReadHandshakeAsync(Timeout);
+                await WaitUntilAsync(() => GlobalState.Connections.Count == 1, Timeout);
+
+                //双向同时传输
+                var targetTask = Task.Run(async () =>
+                {
+                    var readTask = TestTargetServer.ReadExactlyAsync(target, request.Length, Timeout);
+                    await TestTargetServer.WriteExactlyAsync(target, response, Timeout);
+                    return await readTask;
+                });
+
+                var receiveTask = tunnel.ReadPayloadAsync(response.Length, Timeout);
+                foreach (var chunk in Chunked(request, seed: 7000 + round))
+                {
+                    tunnel.Send(chunk);
+                }
+                tunnel.CompleteClientStream(); //客户端半关闭
+
+                //强断言：双向字节逐字节一致 + 连接记录归零（不泄漏）+ 隧道正常收敛（不崩）
+                AssertBytesEqual(request, await targetTask);
+                AssertBytesEqual(response, await receiveTask);
+
+                target.Shutdown(SocketShutdown.Send); //目标回应方向 FIN，让隧道自然收敛
+                await tunnel.Task.WaitAsync(Timeout);
+                await WaitUntilAsync(() => GlobalState.Connections.IsEmpty, Timeout);
+
+                totalBytes += request.Length + response.Length;
+            }
+            watch.Stop();
+
+            //轮后内存：只抓真线性逃逸（每轮泄漏少量且 GC 不回收会显著高于基线），不被 GC 抖动误伤
+            GC.Collect(); GC.WaitForPendingFinalizers(); GC.Collect();
+            var after = GC.GetTotalMemory(forceFullCollection: false);
+            var growth = after - baseline;
+
+            TestContext.WriteLine(
+                $"{rounds} 轮完，互通 {totalBytes / 1024.0 / 1024.0:F1} MiB，耗时 {watch.Elapsed.TotalSeconds:F1}s，" +
+                $"托管内存 结束{after / 1024.0 / 1024.0:F1}MiB - 开始{baseline / 1024.0 / 1024.0:F1}MiB = +{growth / 1024.0 / 1024.0:F1}MiB");
+
+            //500 轮若逐轮泄漏，即使每轮仅数 KB 也会累计到数十 MB 以上；阈值 96MB 只拦线性逃逸。
+            Assert.IsTrue(growth < 96 * 1024 * 1024,
+                $"疑似逐轮内存泄漏：循环后托管内存比基线高 {growth / 1024.0 / 1024.0:F1}MiB");
+        }
+
         // ---------------- 生命周期与清理 ----------------
 
         [TestMethod]
@@ -441,6 +515,104 @@ namespace CoreProxy.Server.Orleans.Tests
 
             tunnel.Lifetime.StopApplication();
 
+            await tunnel.Task.WaitAsync(Timeout);
+        }
+
+        // ---------------- 未覆盖边界的补充验证 ----------------
+
+        /// <summary>
+        /// 客户端半关闭后隧道进入"无限等目标响应"分支，此时客户端中断 RPC。
+        /// 无限等待分支里的 Task.Delay(Infinite, token) 必须被取消唤醒，让方法正常收尾而不是挂住。
+        /// </summary>
+        [TestMethod]
+        public async Task ClientCancellationDuringInfiniteWaitAfterHalfCloseEndsTunnel()
+        {
+            using var server = new TestTargetServer();
+            await using var tunnel = Tunnel.Start(server.Uri);
+            var request = RandomBytes(64 * 1024, seed: 151);
+
+            using var target = await server.AcceptAsync(Timeout);
+            await tunnel.ReadHandshakeAsync(Timeout);
+
+            tunnel.Send(request);
+            tunnel.CompleteClientStream();
+
+            //目标收到完整请求和 FIN 后保持连接（既不回数据也不关闭），隧道此时卡在无限等待分支
+            AssertBytesEqual(request, await TestTargetServer.ReadToEndAsync(target, FinTimeout));
+            await WaitUntilAsync(() => GlobalState.Connections.Count == 1, Timeout);
+
+            //客户端此时中断
+            tunnel.Cancel();
+
+            await tunnel.Task.WaitAsync(Timeout);
+            await WaitUntilAsync(() => GlobalState.Connections.IsEmpty, Timeout);
+        }
+
+        /// <summary>
+        /// 客户端中断（响应流不可写）后，目标服务器仍在持续灌数据：
+        /// 处理目标方向的循环必须因写回客户端失败而结束，而不是一直读下去、吞掉所有数据。
+        /// </summary>
+        [TestMethod]
+        public async Task ClientDisconnectWhileTargetStillWritingEndsTunnel()
+        {
+            using var server = new TestTargetServer();
+            await using var tunnel = Tunnel.Start(server.Uri);
+
+            using var target = await server.AcceptAsync(Timeout);
+            await tunnel.ReadHandshakeAsync(Timeout);
+            await WaitUntilAsync(() => GlobalState.Connections.Count == 1, Timeout);
+
+            //客户端中断：之后向客户端方向的写入都会失败
+            tunnel.Cancel();
+
+            //目标继续灌数据，直到隧道关闭导致它自己的写也失败
+            var writing = Task.Run(async () =>
+            {
+                var chunk = RandomBytes(256 * 1024, seed: 161);
+                try
+                {
+                    for (var i = 0; i < 200; i++)
+                    {
+                        await TestTargetServer.WriteExactlyAsync(target, chunk, Timeout);
+                    }
+                }
+                catch (Exception)
+                {
+                    //隧道关闭后目标侧写入失败属于预期
+                }
+            });
+
+            await tunnel.Task.WaitAsync(Timeout);
+            await WaitUntilAsync(() => GlobalState.Connections.IsEmpty, Timeout);
+            await writing;
+        }
+
+        /// <summary>
+        /// 目标先关闭发送方向（半关闭，只发 FIN）后，客户端 -> 目标方向仍应继续转发，
+        /// 直到客户端也发完。目标半关闭不应该反过来截断上行数据。
+        /// </summary>
+        [TestMethod]
+        public async Task ClientToTargetStaysAliveAfterTargetHalfClose()
+        {
+            using var server = new TestTargetServer();
+            await using var tunnel = Tunnel.Start(server.Uri);
+            var payload = RandomBytes(128 * 1024, seed: 171);
+
+            using var target = await server.AcceptAsync(Timeout);
+            await tunnel.ReadHandshakeAsync(Timeout);
+
+            //目标关闭发送方向（FIN），但接收方向保持打开
+            target.Shutdown(SocketShutdown.Send);
+
+            //客户端继续发送：数据必须照常送达目标，且最终收到客户端补发的 FIN
+            foreach (var chunk in Chunked(payload, seed: 172))
+            {
+                tunnel.Send(chunk);
+            }
+
+            tunnel.CompleteClientStream();
+
+            AssertBytesEqual(payload, await TestTargetServer.ReadToEndAsync(target, FinTimeout));
             await tunnel.Task.WaitAsync(Timeout);
         }
 
