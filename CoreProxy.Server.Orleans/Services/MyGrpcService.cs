@@ -112,7 +112,8 @@ namespace CoreProxy.Server.Orleans.Services
             GlobalState.Connections.TryAdd(connectionId, new ConnectItem
             {
                 Kind = ConnectionKind.Grpc,
-                ClientIp = StripPeerToIp(context.Peer),
+                Peer = context.Peer,                    // 原始串，供 ClientIpAddress 派生保真
+                ClientIp = StripPeerToIp(context.Peer), // 纯 IP，供管理页展示
                 Target = $"{host}:{port}",
                 DateTime = DateTimeOffset.UtcNow
             });

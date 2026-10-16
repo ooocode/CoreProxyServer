@@ -28,6 +28,16 @@ namespace CoreProxy.Server.Orleans.Services
         private const string BasicPrefix = "Basic ";
 
         /// <summary>
+        /// 判定某请求路径是否属于受保护的管理面。
+        /// 注意 /admin 与 /admin.html 是两个不同的路径段：StartsWithSegments("/admin") 匹配不到
+        /// /admin.html，漏掉它会让静态页面绕过鉴权被直接访问，故两个前缀都要显式列出。
+        /// </summary>
+        public static bool RequiresAuth(PathString path) =>
+            path.StartsWithSegments("/admin")
+            || path.StartsWithSegments("/admin.html")
+            || path == "/api/status";
+
+        /// <summary>
         /// 校验 HTTP Basic 凭据。口令取解码后 ":" 之后那一段（无 ":" 则取整段），
         /// 用常数时间比较避免时序泄漏。缺头、scheme 不符、base64 非法一律返回 false 且不抛异常。
         /// </summary>

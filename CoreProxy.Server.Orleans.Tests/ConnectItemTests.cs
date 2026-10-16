@@ -56,6 +56,23 @@ namespace CoreProxy.Server.Orleans.Tests
 
             Assert.AreEqual("10.0.0.9:9000", item.ClientIpAddress);
         }
+
+        [TestMethod]
+        public void DerivedClientIpAddress_UsesRawPeer_WhenPeerPresent()
+        {
+            // gRPC 隧道：原始串是 "{context.Peer} {host}:{port}"，Peer 形如 ipv4:1.2.3.4:54321。
+            // 必须逐字节保真 —— gRPC GetStatus 的 IpAddress 由此派生，不能因为页面想要干净 IP 就改掉它。
+            var item = new ConnectItem
+            {
+                Kind = ConnectionKind.Grpc,
+                Peer = "ipv4:127.0.0.1:54321",
+                ClientIp = "127.0.0.1",
+                Target = "10.0.0.5:8080",
+                DateTime = DateTimeOffset.UtcNow
+            };
+
+            Assert.AreEqual("ipv4:127.0.0.1:54321 10.0.0.5:8080", item.ClientIpAddress);
+        }
     }
 
     /// <summary>

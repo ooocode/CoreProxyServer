@@ -2,7 +2,7 @@ namespace CoreProxy.Server.Orleans.Internal
 {
     /// <summary>
     /// 一条管理页上展示的 gRPC 隧道。ClientIp/Target 在 gRPC 写入时保证非空，
-    /// 因此这里是普通 string 而非 string?。序列化走 source-gen（见 AdminJsonContext）。
+    /// 因此这里是普通 string 而非 string?。序列化走 source-gen（AOT）。
     /// </summary>
     public sealed record RuntimeTunnel(string ClientIp, string Target, DateTimeOffset StartedAt);
 

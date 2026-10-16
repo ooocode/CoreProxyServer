@@ -102,6 +102,24 @@ namespace CoreProxy.Server.Orleans.Tests
             Assert.IsFalse(AdminApi.CheckBasicAuth(CtxWith("Bearer abc123"), "abc123"));
         }
 
+        // 受保护路径的判定必须覆盖 /admin.html。/admin 与 /admin.html 是两个不同的路径段，
+        // StartsWithSegments("/admin") 匹配不到后者——这里正是曾出现过的静态文件绕过鉴权 bug。
+        [DataTestMethod]
+        [DataRow("/admin", true)]
+        [DataRow("/admin/", true)]
+        [DataRow("/admin/index.html", true)]
+        [DataRow("/admin.html", true)]
+        [DataRow("/ADMIN.HTML", true)]
+        [DataRow("/api/status", true)]
+        [DataRow("/", false)]
+        [DataRow("/administrator", false)]
+        [DataRow("/chathub", false)]
+        [DataRow("/push/abc", false)]
+        public void RequiresAuth_MatchesProtectedPathsOnly(string path, bool expected)
+        {
+            Assert.AreEqual(expected, AdminApi.RequiresAuth(new PathString(path)), "path=" + path);
+        }
+
         [TestMethod]
         public async Task HandleStatus_WithoutAuth_Returns401WithWwwAuthenticate()
         {

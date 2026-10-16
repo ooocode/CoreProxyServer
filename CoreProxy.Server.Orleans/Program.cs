@@ -138,14 +138,10 @@ app.UseWebSockets();
 
 // 管理页鉴权：/admin 静态文件与 /api/status 一律要求 HTTP Basic 凭据（本机回环也不例外）。
 // 必须排在 UseStaticFiles 之前，否则静态文件会先被放出去、鉴权形同虚设。
-// 注意：StartsWithSegments 按"路径段"匹配，/admin 档不住 /admin.html（其首段是 admin.html），
-// 所以两个前缀都要显式列出，否则静态文件会绕过鉴权被直接访问。
+// 受保护路径的判定见 AdminApi.RequiresAuth（已有回归测试覆盖 /admin.html 这类易漏路径）。
 app.Use(async (ctx, next) =>
 {
-    bool isAdmin = ctx.Request.Path.StartsWithSegments("/admin")
-        || ctx.Request.Path.StartsWithSegments("/admin.html");
-
-    if (isAdmin || ctx.Request.Path == "/api/status")
+    if (AdminApi.RequiresAuth(ctx.Request.Path))
     {
         if (!AdminApi.CheckBasicAuth(ctx, certificatePassword.Password))
         {
