@@ -60,7 +60,8 @@ namespace CoreProxy.Server.Orleans.Services
                     servers.TryAdd(connectionId, serverConnectionContext);
                     GlobalState.Connections.TryAdd(connectionId, new ConnectItem
                     {
-                        ClientIpAddress = $"{host}:{port}",
+                        Kind = ConnectionKind.Http,
+                        Target = $"{host}:{port}",
                         DateTime = DateTimeOffset.UtcNow
                     });
 

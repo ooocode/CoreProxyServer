@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>活跃隧道</title>
+<style>
+  :root { color-scheme: light dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 24px;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
+    background: #f6f7f9; color: #1c1e21;
+  }
+  @media (prefers-color-scheme: dark) {
+    body { background: #16181c; color: #e4e6eb; }
+    table { background: #1e2126; }
+    th { background: #24272e; }
+    tr + tr td { border-top-color: #2b2f36; }
+    .muted { color: #9aa0a6; }
+    button { background: #2b2f36; color: #e4e6eb; border-color: #3a3f47; }
+  }
+  header { display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; margin-bottom: 18px; }
+  h1 { font-size: 20px; margin: 0; font-weight: 600; }
+  .count { font-size: 15px; }
+  .count b { font-size: 22px; }
+  .muted { color: #6b7280; font-size: 13px; }
+  .spacer { flex: 1; }
+  button {
+    padding: 6px 14px; font-size: 14px; border-radius: 6px; cursor: pointer;
+    border: 1px solid #d0d5dd; background: #fff; color: #1c1e21;
+  }
+  button:hover { border-color: #98a2b3; }
+  table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 8px; overflow: hidden; }
+  th, td { padding: 10px 14px; text-align: left; font-size: 14px; }
+  th { background: #f0f2f5; font-weight: 600; font-size: 13px; letter-spacing: .02em; }
+  tr + tr td { border-top: 1px solid #eceef1; }
+  td.mono { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
+  .empty { padding: 40px; text-align: center; }
+  .banner { padding: 10px 14px; border-radius: 6px; margin-bottom: 14px; font-size: 14px; display: none; }
+  .banner.show { display: block; }
+  .banner.warn { background: #fff4e5; color: #8a5300; }
+  @media (prefers-color-scheme: dark) { .banner.warn { background: #3a2c12; color: #f0c07a; } }
+</style>
+</head>
+<body>
+  <header>
+    <h1>活跃隧道</h1>
+    <div class="count">活跃连接：<b id="total">0</b></div>
+    <div class="spacer"></div>
+    <span class="muted" id="updated"></span>
+    <button id="refresh" type="button">刷新</button>
+  </header>
+
+  <div class="banner warn" id="banner"></div>
+
+  <table>
+    <thead>
+      <tr><th>客户端 IP</th><th>目标地址</th><th>已运行时长</th></tr>
+    </thead>
+    <tbody id="rows"></tbody>
+  </table>
+  <div class="empty muted" id="empty">暂无活动隧道</div>
+
+<script>
+(function () {
+  var rowsEl = document.getElementById('rows');
+  var totalEl = document.getElementById('total');
+  var emptyEl = document.getElementById('empty');
+  var updatedEl = document.getElementById('updated');
+  var bannerEl = document.getElementById('banner');
+
+  // 最近一次拉到的数据；时长由本地每秒重算，不在轮询间重取
+  var items = [];
+
+  function formatDuration(ms) {
+    if (!isFinite(ms) || ms < 0) ms = 0;
+    var s = Math.floor(ms / 1000);
+    var h = Math.floor(s / 3600);
+    var m = Math.floor((s % 3600) / 60);
+    var sec = s % 60;
+    if (h > 0) return h + 'h ' + m + 'm';
+    if (m > 0) return m + 'm ' + sec + 's';
+    return sec + 's';
+  }
+
+  function renderRows() {
+    rowsEl.textContent = '';
+    var now = Date.now();
+    items.forEach(function (item) {
+      var tr = document.createElement('tr');
+
+      var tdIp = document.createElement('td');
+      tdIp.className = 'mono';
+      tdIp.textContent = item.clientIp;
+      tr.appendChild(tdIp);
+
+      var tdTarget = document.createElement('td');
+      tdTarget.className = 'mono';
+      tdTarget.textContent = item.target;
+      tr.appendChild(tdTarget);
+
+      var tdAge = document.createElement('td');
+      var started = Date.parse(item.startedAt);
+      tdAge.textContent = isNaN(started) ? '—' : formatDuration(now - started);
+      tr.appendChild(tdAge);
+
+      rowsEl.appendChild(tr);
+    });
+    emptyEl.style.display = items.length === 0 ? 'block' : 'none';
+  }
+
+  function showBanner(text) {
+    bannerEl.textContent = text;
+    bannerEl.classList.add('show');
+  }
+
+  function clearBanner() {
+    bannerEl.classList.remove('show');
+  }
+
+  function fetchStatus() {
+    return fetch('/api/status', { credentials: 'same-origin', cache: 'no-store' })
+      .then(function (res) {
+        if (res.status === 401) {
+          showBanner('未通过鉴权：请刷新页面并在浏览器弹框中输入密码。');
+          return null;
+        }
+        if (!res.ok) {
+          showBanner('读取失败：HTTP ' + res.status);
+          return null;
+        }
+        return res.json();
+      })
+      .then(function (data) {
+        if (!data) return;
+        clearBanner();
+        items = Array.isArray(data.items) ? data.items : [];
+        totalEl.textContent = typeof data.total === 'number' ? data.total : items.length;
+        updatedEl.textContent = '更新于 ' + new Date().toLocaleTimeString('zh-CN');
+        renderRows();
+      })
+      .catch(function () {
+        showBanner('读取失败：无法连接服务端。');
+      });
+  }
+
+  document.getElementById('refresh').addEventListener('click', fetchStatus);
+
+  fetchStatus();
+  setInterval(fetchStatus, 5000);   // 每 5 秒重新拉取
+  setInterval(renderRows, 1000);    // 时长每秒本地递增
+})();
+</script>
+</body>
+</html>

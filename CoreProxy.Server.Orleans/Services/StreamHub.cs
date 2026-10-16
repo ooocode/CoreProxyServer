@@ -38,7 +38,8 @@ namespace CoreProxy.Server.Orleans.Services
             //添加连接信息
             GlobalState.Connections.TryAdd(connectionId, new ConnectItem
             {
-                ClientIpAddress = Context.GetHttpContext()?.Connection?.RemoteIpAddress?.ToString() ?? string.Empty,
+                Kind = ConnectionKind.Signalr,
+                ClientIp = Context.GetHttpContext()?.Connection?.RemoteIpAddress?.ToString() ?? string.Empty,
                 DateTime = DateTimeOffset.UtcNow
             });
 

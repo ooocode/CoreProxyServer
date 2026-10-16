@@ -52,6 +52,26 @@ namespace CoreProxy.Server.Orleans.Services
 
         public static long GetUnixTimeMilliseconds() => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 
+        /// <summary>
+        /// 把 gRPC 的 Peer 字符串（形如 ipv4:127.0.0.1:54321 / ipv6:[::1]:54321，带 scheme 前缀和端口）
+        /// 剥成纯 IP 字符串，供管理页直接展示"客户端 IP"，避免前端再去解析前缀/端口。
+        /// </summary>
+        internal static string? StripPeerToIp(string? peer)
+        {
+            if (string.IsNullOrWhiteSpace(peer))
+            {
+                return null;
+            }
+
+            var s = peer;
+            if (s.StartsWith("ipv4:", StringComparison.Ordinal) || s.StartsWith("ipv6:", StringComparison.Ordinal))
+            {
+                s = s[(s.IndexOf(':') + 1)..];
+            }
+
+            return IPEndPoint.TryParse(s, out var ep) ? ep.Address.ToString() : null;
+        }
+
         public override async Task StreamHandler(IAsyncStreamReader<HttpData> requestStream, IServerStreamWriter<HttpData> responseStream, ServerCallContext context)
         {
             CheckPassword(context);
@@ -91,7 +111,10 @@ namespace CoreProxy.Server.Orleans.Services
             //添加连接信息
             GlobalState.Connections.TryAdd(connectionId, new ConnectItem
             {
-                ClientIpAddress = $"{context.Peer} {host}:{port}",
+                Kind = ConnectionKind.Grpc,
+                Peer = context.Peer,                    // 原始串，供 ClientIpAddress 派生保真
+                ClientIp = StripPeerToIp(context.Peer), // 纯 IP，供管理页展示
+                Target = $"{host}:{port}",
                 DateTime = DateTimeOffset.UtcNow
             });
 
