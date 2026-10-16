@@ -1,6 +1,6 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk.Web">
 	<PropertyGroup>
-		<TargetFramework Condition=" '$(Configuration)'=='Debug' ">net10.0</TargetFramework>
+		<TargetFramework Condition=" '$(Configuration)'=='Debug' ">net11.0</TargetFramework>
 		<TargetFramework Condition=" '$(Configuration)'=='Release' ">net11.0</TargetFramework>
 		<Nullable>enable</Nullable>
 		<ImplicitUsings>enable</ImplicitUsings>
@@ -36,6 +36,11 @@
 	<ItemGroup>
 		<!-- 与 CoreProxy.Exe 共用仓库根目录下的同一份协议定义，避免两端漂移 -->
 		<Protobuf Include="..\proto\TextFile.proto" GrpcServices="Server" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<!-- 让测试项目可直接单测 TargetResolver.PickPreferred 等 internal 成员 -->
+		<InternalsVisibleTo Include="CoreProxy.Server.Orleans.Tests" />
 	</ItemGroup>
 
 	<ItemGroup>

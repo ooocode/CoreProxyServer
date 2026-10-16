@@ -6,6 +6,7 @@ using CoreProxy.Server.Orleans.Services;
 using Microsoft.AspNetCore.Connections;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Options;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
@@ -23,12 +24,16 @@ var certificatePassword = GetCertificatePassword(certificate2);
 
 builder.Services.AddSingleton(certificatePassword);
 
+builder.Services.AddMemoryCache();
+
 //目标主机名解析缓存：代理里大量隧道指向同一后端，TTL 内只解析一次，把 DNS 从建连关键路径上拿掉。
 //默认 60s；配 0 可禁用缓存（每次建连都重新解析）。
-builder.Services.AddSingleton(_ => new TargetResolver(
-    int.TryParse(builder.Configuration["TargetDnsCacheTtlSeconds"], out var ttlSeconds) && ttlSeconds >= 0
+builder.Services.AddSingleton(sp => new TargetResolver(
+    sp.GetRequiredService<IMemoryCache>(),
+    int.TryParse(builder.Configuration["TargetDnsCacheTtlSeconds"], out int ttlSeconds) && ttlSeconds >= 0
         ? TimeSpan.FromSeconds(ttlSeconds)
         : TimeSpan.FromSeconds(60)));
+
 
 builder.WebHost.ConfigureKestrel(serverOptions =>
 {

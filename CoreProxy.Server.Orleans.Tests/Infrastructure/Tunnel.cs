@@ -4,6 +4,7 @@ using CoreProxy.Server.Orleans.Services;
 using Google.Protobuf;
 using Grpc.Core;
 using Hello;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Net.Http.Headers;
@@ -54,7 +55,7 @@ namespace CoreProxy.Server.Orleans.Tests.Infrastructure
                 NullLogger<MyGrpcService>.Instance,
                 hubContext: null!, //StreamHandler 不涉及 SignalR
                 configuration,
-                resolver ?? new TargetResolver(TimeSpan.FromSeconds(60)));
+                resolver ?? new TargetResolver(new MemoryCache(new MemoryCacheOptions()), TimeSpan.FromSeconds(60)));
 
             clientReader = new ChannelStreamReader<HttpData>(clientChannel.Reader);
             Task = service.StreamHandler(

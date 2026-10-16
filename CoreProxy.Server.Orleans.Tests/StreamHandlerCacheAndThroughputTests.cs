@@ -1,5 +1,6 @@
 using CoreProxy.Server.Orleans.Internal;
 using CoreProxy.Server.Orleans.Tests.Infrastructure;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System.Diagnostics;
 
@@ -22,24 +23,19 @@ namespace CoreProxy.Server.Orleans.Tests
 
         /// <summary>
         /// 多条隧道指向同一主机名，共用一个解析器实例（即生产里 DI 的单例）。
-        /// 只有第一次建连会发起解析，其余全部命中缓存。
+        /// 走真实 DnsResolver（114）解析 localhost → 127.0.0.1；只有第一次建连 miss，其余全部命中缓存。
         /// </summary>
         [TestMethod]
         public async Task RepeatedTunnelsToSameHostResolveDnsOnlyOnce()
         {
             using var server = new TestTargetServer();
-            var calls = 0;
-            //替身解析器返回监听器的回环地址；主机名随便取，只要走"域名解析"分支即可
-            var resolver = new TargetResolver(TimeSpan.FromHours(1), (host, cancellationToken) =>
-            {
-                Interlocked.Increment(ref calls);
-                return Task.FromResult(new[] { server.Address });
-            });
+            var cache = new MemoryCache(new MemoryCacheOptions { TrackStatistics = true });
+            var resolver = new TargetResolver(cache, TimeSpan.FromHours(1));
 
             for (var i = 0; i < 3; i++)
             {
-                await using var tunnel = Tunnel.Start($"http://shared-backend.internal:{server.Port}/", resolver: resolver);
-                var target = await server.AcceptAsync(Timeout); //真实连接建立成功
+                await using var tunnel = Tunnel.Start($"http://localhost:{server.Port}/", resolver: resolver);
+                var target = await server.AcceptAsync(Timeout); //真实连接建立成功，证明解析结果落到了监听地址
                 await tunnel.ReadHandshakeAsync(Timeout);
 
                 tunnel.CompleteClientStream();
@@ -47,25 +43,22 @@ namespace CoreProxy.Server.Orleans.Tests
                 await tunnel.Task.WaitAsync(Timeout);
             }
 
-            Assert.AreEqual(1, calls, "共享解析器下，3 条隧道只应触发 1 次 DNS 解析");
-            Assert.AreEqual(1, resolver.CacheCount);
+            var stats = cache.GetCurrentStatistics()!;
+            Assert.AreEqual(1, stats.TotalMisses, "共享解析器下，3 条隧道只应发起 1 次 DNS 解析（其余命中缓存）");
+            Assert.AreEqual(1, stats.CurrentEntryCount);
         }
 
-        /// <summary>关闭缓存的解析器，每条隧道都重新解析（行为可配，保底语义不变）</summary>
+        /// <summary>TTL=0 关闭缓存：每条隧道重新解析，且不写入缓存</summary>
         [TestMethod]
         public async Task DisabledCacheResolvesEveryTunnel()
         {
             using var server = new TestTargetServer();
-            var calls = 0;
-            var resolver = new TargetResolver(TimeSpan.Zero, (host, cancellationToken) =>
-            {
-                Interlocked.Increment(ref calls);
-                return Task.FromResult(new[] { server.Address });
-            });
+            var cache = new MemoryCache(new MemoryCacheOptions { TrackStatistics = true });
+            var resolver = new TargetResolver(cache, TimeSpan.Zero);
 
             for (var i = 0; i < 3; i++)
             {
-                await using var tunnel = Tunnel.Start($"http://no-cache.internal:{server.Port}/", resolver: resolver);
+                await using var tunnel = Tunnel.Start($"http://localhost:{server.Port}/", resolver: resolver);
                 var target = await server.AcceptAsync(Timeout);
                 await tunnel.ReadHandshakeAsync(Timeout);
 
@@ -74,7 +67,7 @@ namespace CoreProxy.Server.Orleans.Tests
                 await tunnel.Task.WaitAsync(Timeout);
             }
 
-            Assert.AreEqual(3, calls, "TTL=0 时应每次建连都解析");
+            Assert.AreEqual(0, cache.GetCurrentStatistics()!.CurrentEntryCount, "TTL=0 时不应写入缓存");
         }
 
         // ---------------- 数据面：吞吐回归 ----------------

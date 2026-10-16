@@ -20,7 +20,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 构建与测试命令
 
-**目标框架随配置切换**（csproj 刻意如此，测试项目镜像同一逻辑）：`Debug` → `net10.0`，`Release` → `net11.0`（预览版 SDK）。本地日常开发用 `Debug`。CI 用 `.NET 11.0.x` 预览版 SDK 做 `-c Release` 的 AOT 发布。
+**目标框架**（csproj 用按配置的 `Condition` 切换，测试项目镜像同一逻辑）：`Debug` 与 `Release` **现在都是 `net11.0`**（预览版 SDK）——原先 Debug 的 `net10.0` 已随 `TargetResolver` 改用 net11 的 `DnsResolver` 统一到 net11。本地日常开发用 `Debug`，需要 **.NET 11 预览版 SDK**（当前 `11.0.100-rc.2.*`），net10 SDK 不再能构建。CI 用 `.NET 11.0.x` 预览版 SDK 做 `-c Release` 的 AOT 发布。
 
 ```bash
 # 构建（在仓库根或 CoreProxy.Server.Orleans 下）
@@ -60,7 +60,7 @@ dotnet run -c Release --project tools/bench -- \
 
 - **`MyGrpcService.StreamHandler`（隧道核心）**：双向 gRPC 流 ↔ 目标 TCP。`TargetResolver` 解析目标（带 TTL 缓存）→ `TargetConnection.ConnectAsync` 建真实 TCP → 客户端循环与目标循环双向转发。切换/校对半关闭行为时重点读 [MyGrpcService.cs](CoreProxy.Server.Orleans/Services/MyGrpcService.cs) 内关于"是否补发 FIN"、"5 秒收尾窗口 vs 无限等待"的注释——这是最容易改错、测试覆盖最密的逻辑。
 - **`TargetConnection`（Internal）**：刻意**不用** Kestrel 的 `IConnectionFactory`/`SocketConnectionContextFactory`，而是自持一个裸 `Socket`。原因：`FlushAsync` 返回时数据可能还没进内核，半关闭补发的 FIN 会抢在数据前面把流截断（实测 423905 字节丢 565 字节）。用裸 `SendAsync`（返回即已交内核）才能硬保证 FIN 顺序。
-- **`TargetResolver`（Internal）**：目标主机名解析 + TTL 缓存（默认 60s，可用 `TargetDnsCacheTtlSeconds` 配 0 禁用）。刻意不做 single-flight。构造参数可注入替身解析器与 `TimeProvider` 供测试。
+- **`TargetResolver`（Internal）**：目标主机名解析 + TTL 缓存，缓存改用 `IMemoryCache`（`Program.cs` 里 `AddMemoryCache()`；构造参数 `(IMemoryCache, TimeSpan)`，默认 60s，可用 `TargetDnsCacheTtlSeconds` 配 0 禁用；TTL≤0 直接绕过缓存）。解析走 net11 新增的 `DnsResolver`，**硬编码 `114.114.114.114`**（`static readonly`，无注入点、不做 single-flight）；实测它会越过该服务器回退到本地/hosts 解析，故 `localhost`、内网主机名仍能解析。IP 字面量直接返回、不进缓存；无可用地址（NXDOMAIN/无记录）抛 `InvalidArgument`。地址选择固定取一条（`PickPreferred`，`internal static`，IPv4 优先、缺则 IPv6），不做多 A 记录轮询。
 - **`GlobalState`（Internal）**：静态 `ConcurrentDictionary`，记录活跃连接供 `GetStatus` 查询。它是进程内静态状态，跨连接的生命周期清理都围绕它。
 - **`FileLogger`（Internal）**：自定义异步文件日志 —— 有界队列（满即丢、可计数）+ 后台消费/flush 服务。`StopAsync` 有停机保证（先 `queue.Complete()` 再兜底排空），且 `ExecuteAsync` 的 I/O 异常绝不冒泡成宿主故障。.NET 10 的 `BackgroundService.StartAsync` 不再同步执行 `ExecuteAsync`，停机处理依赖这一语义。
 - **SignalR Hub**：`ChatHub` 维护设备在线表（`GloableSessionsManager.SignalrOnlineClients`）；`StreamHub.EchoStream` 走 `IConnectionFactory`（注意与隧道核心不同，这里用是 Kestrel 工厂）；`P2PStreamHandler` 用 Channel 做 master/slave 会话桥接。
@@ -71,7 +71,7 @@ dotnet run -c Release --project tools/bench -- \
 `CoreProxy.Server.Orleans.Tests` 的测试是**活的传输层测试**，不是 mock：
 
 - `Infrastructure/Tunnel.cs` 把真实 `MyGrpcService.StreamHandler` 与假的流/`ServerCallContext`、**真实的 Kestrel socket 目标连接**（`TestTargetServer`，用真 Socket 扮演目标服务器）装配起来，逐字节校验转发正确性、半关闭 FIN、取消/停机、口令校验、建连超时等。
-- 可复现性优先：`TargetResolver`/`FileLogger` 测试注入 `TimeProvider`（手动时钟）与替身解析器；`FileLogger` 用临时目录。
+- 可复现性：`FileLogger` 测试用临时目录；`TargetResolver` 的纯函数用例（`PickPreferred`、IP 字面量直返）无网络依赖。**但注意** `TargetResolver` 当前**没有可注入的解析器**，其 DNS/TTL 用例走**真实 DNS**（`localhost`、`baidu.com`、`.invalid`），过期则靠 `MemoryCacheOptions.Clock` 注入假时钟推进——所以这些用例在**离线、或 `114.114.114.114` 不可达**的环境会假性失败，排查时先确认网络而非代码（`InternalsVisibleTo` 已开给测试项目）。
 - 有随机分片/随机大小的压力测试（`RandomizedBidirectionalStress`、`FinArrivesAfterAllDataWhenTargetReadsSlowly`），专门抓"半关闭丢尾字节"这类偶发 bug。
 - 改转发/半关闭/建连逻辑后，`StreamHandlerTests` 是必跑回归集；改日志后跑 `FileLoggerTests`；改解析后跑 `TargetResolverTests`。
 
