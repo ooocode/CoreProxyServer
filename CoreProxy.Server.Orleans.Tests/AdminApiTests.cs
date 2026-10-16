@@ -1,5 +1,8 @@
 using CoreProxy.Server.Orleans.Internal;
+using CoreProxy.Server.Orleans.Services;
+using Microsoft.AspNetCore.Http;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using System.Text;
 
 namespace CoreProxy.Server.Orleans.Tests
 {
@@ -37,6 +40,94 @@ namespace CoreProxy.Server.Orleans.Tests
             GlobalState.Connections.TryAdd("s1", new ConnectItem { Kind = ConnectionKind.Signalr, ClientIp = "2.2.2.2", DateTime = DateTimeOffset.UtcNow });
 
             Assert.AreEqual(0, ConnectionRepository.GetGrpcTunnels().Count);
+        }
+    }
+
+    /// <summary>
+    /// 管理页与 /api/status 的凭据校验（HTTP Basic）。不做回环豁免：本机访问同样要密码。
+    /// </summary>
+    [TestClass]
+    public sealed class AdminApiTests
+    {
+        [TestCleanup]
+        public void Cleanup() => GlobalState.Connections.Clear();
+
+        private static DefaultHttpContext CtxWith(string? header)
+        {
+            var ctx = new DefaultHttpContext();
+            if (header != null)
+            {
+                ctx.Request.Headers.Authorization = header;
+            }
+            return ctx;
+        }
+
+        private static string Basic(string credential) =>
+            "Basic " + Convert.ToBase64String(Encoding.UTF8.GetBytes(credential));
+
+        [TestMethod]
+        public void CheckBasicAuth_AcceptsCorrectPassword()
+        {
+            var pw = "abc123";
+            Assert.IsTrue(AdminApi.CheckBasicAuth(CtxWith(Basic(":" + pw)), pw));
+        }
+
+        [TestMethod]
+        public void CheckBasicAuth_AcceptsCorrectPassword_WithUserName()
+        {
+            Assert.IsTrue(AdminApi.CheckBasicAuth(CtxWith(Basic("admin:abc123")), "abc123"));
+        }
+
+        [TestMethod]
+        public void CheckBasicAuth_RejectsWrongPassword()
+        {
+            Assert.IsFalse(AdminApi.CheckBasicAuth(CtxWith(Basic("user:wrong")), "right"));
+        }
+
+        [TestMethod]
+        public void CheckBasicAuth_InvalidBase64_ReturnsFalseWithoutThrow()
+        {
+            Assert.IsFalse(AdminApi.CheckBasicAuth(CtxWith("Basic not-base64!"), "any"));
+        }
+
+        [TestMethod]
+        public void CheckBasicAuth_MissingHeader_ReturnsFalse()
+        {
+            Assert.IsFalse(AdminApi.CheckBasicAuth(CtxWith(null), "any"));
+        }
+
+        [TestMethod]
+        public void CheckBasicAuth_NonBasicScheme_ReturnsFalse()
+        {
+            Assert.IsFalse(AdminApi.CheckBasicAuth(CtxWith("Bearer abc123"), "abc123"));
+        }
+
+        [TestMethod]
+        public async Task HandleStatus_WithoutAuth_Returns401WithWwwAuthenticate()
+        {
+            GlobalState.Connections.Clear();
+            var ctx = CtxWith(null);
+            await AdminApi.HandleStatusAsync(ctx, "pw");
+            Assert.AreEqual(401, ctx.Response.StatusCode);
+            Assert.AreEqual("Basic realm=\"admin\"", ctx.Response.Headers.WWWAuthenticate.ToString());
+        }
+
+        [TestMethod]
+        public async Task HandleStatus_WithAuth_ReturnsOnlyGrpcTunnels()
+        {
+            GlobalState.Connections.Clear();
+            GlobalState.Connections.TryAdd("g", new ConnectItem { Kind = ConnectionKind.Grpc, ClientIp = "1.1.1.1", Target = "10.0.0.1:80", DateTime = DateTimeOffset.UtcNow });
+            GlobalState.Connections.TryAdd("s", new ConnectItem { Kind = ConnectionKind.Signalr, ClientIp = "2.2.2.2", DateTime = DateTimeOffset.UtcNow });
+            var pw = "pw";
+            var ctx = CtxWith(Basic(":" + pw));
+            ctx.Response.Body = new MemoryStream();
+            await AdminApi.HandleStatusAsync(ctx, pw);
+            ctx.Response.Body.Position = 0;
+            var json = await new StreamReader(ctx.Response.Body).ReadToEndAsync();
+            Assert.AreEqual(200, ctx.Response.StatusCode);
+            Assert.IsTrue(json.Contains("\"clientIp\":\"1.1.1.1\""), "gRPC 客户端 IP 应在，但 JSON=" + json);
+            Assert.IsFalse(json.Contains("2.2.2.2"), "SignalR 记录不应上榜，但 JSON=" + json);
+            Assert.IsTrue(json.Contains("\"total\":1"), "total 只应数 gRPC，但 JSON=" + json);
         }
     }
 }

@@ -136,6 +136,25 @@ var app = builder.Build();
 
 app.UseWebSockets();
 
+// 管理页鉴权：/admin 静态文件与 /api/status 一律要求 HTTP Basic 凭据（本机回环也不例外）。
+// 必须排在 UseStaticFiles 之前，否则静态文件会先被放出去、鉴权形同虚设。
+app.Use(async (ctx, next) =>
+{
+    if (ctx.Request.Path.StartsWithSegments("/admin") || ctx.Request.Path == "/api/status")
+    {
+        if (!AdminApi.CheckBasicAuth(ctx, certificatePassword.Password))
+        {
+            ctx.Response.StatusCode = 401;
+            ctx.Response.Headers.WWWAuthenticate = "Basic realm=\"admin\"";
+            return;
+        }
+    }
+
+    await next();
+});
+
+app.UseStaticFiles();
+
 app.MapGet("/", () =>
 {
     const string text = """
@@ -169,6 +188,9 @@ app.MapGet("/", () =>
 app.MapGrpcService<MyGrpcService>();
 app.MapHub<ChatHub>("/chathub");
 app.MapHub<StreamHub>("/StreamHub");
+
+// 管理页数据：返回当前 gRPC 隧道清单（鉴权见上面的中间件）
+app.MapGet("/api/status", (HttpContext ctx) => AdminApi.HandleStatusAsync(ctx, certificatePassword.Password));
 
 HttpMap.MapProxy(app);
 
