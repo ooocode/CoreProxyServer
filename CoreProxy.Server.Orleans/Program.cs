@@ -6,6 +6,7 @@ using CoreProxy.Server.Orleans.Services;
 using Microsoft.AspNetCore.Connections;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Options;
 using System.Security.Cryptography;
@@ -25,6 +26,13 @@ var certificatePassword = GetCertificatePassword(certificate2);
 builder.Services.AddSingleton(certificatePassword);
 
 builder.Services.AddMemoryCache();
+
+// 管理 API 的强类型 JSON 走 source-gen（AOT 友好），避免 minimal API 在运行时反射序列化。
+// 只挂 admin 专用 context（含 InvokeRequest/InvokePayload 等），不掺反射兜底 resolver：
+// AOT 发布下 DefaultJsonTypeInfoResolver 会触发 IL2026/IL3050，且所有走 HTTP JSON 的类型都已在此 context 声明。
+// 该 context 刻意与 SignalR 共用的 AppJsonSerializerContext 分开（改后者会改掉 SignalR 线上协议格式）。
+builder.Services.ConfigureHttpJsonOptions(options =>
+    options.SerializerOptions.TypeInfoResolver = AdminJsonContext.Default);
 
 //目标主机名解析缓存：代理里大量隧道指向同一后端，TTL 内只解析一次，把 DNS 从建连关键路径上拿掉。
 //默认 60s；配 0 可禁用缓存（每次建连都重新解析）。
@@ -194,12 +202,19 @@ app.MapGet("/", () =>
 
 app.MapGrpcService<MyGrpcService>();
 app.MapHub<ChatHub>("/chathub");
-app.MapHub<StreamHub>("/StreamHub");
 
 // 管理页数据：返回当前 gRPC 隧道清单（鉴权见上面的中间件）
-app.MapGet("/api/status", (HttpContext ctx) => AdminApi.HandleStatusAsync(ctx, certificatePassword.Password));
+app.MapGet("/api/status", (HttpContext ctx) => AdminApi.HandleStatus(ctx, certificatePassword.Password));
 
-HttpMap.MapProxy(app);
+// 在线 SignalR 设备及其上报的可调用方法（鉴权同上）
+app.MapGet("/api/devices", (HttpContext ctx) => AdminApi.HandleDevices(ctx, certificatePassword.Password));
+
+// 按 deviceId 向 SignalR 在线设备调用其上报的某个方法并等返回值（鉴权同上）
+// 请求体 InvokeRequest 由 minimal API 强类型绑定（source-gen，见上面的 ConfigureHttpJsonOptions）
+app.MapPost("/api/invoke", (InvokeRequest request, HttpContext ctx) =>
+    AdminApi.HandleInvokeAsync(
+        request, certificatePassword.Password, ctx,
+        ctx.RequestServices.GetRequiredService<IHubContext<ChatHub>>()));
 
 app.Run();
 

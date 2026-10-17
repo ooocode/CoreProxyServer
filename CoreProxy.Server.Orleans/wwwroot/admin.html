@@ -22,6 +22,7 @@
   }
   header { display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; margin-bottom: 18px; }
   h1 { font-size: 20px; margin: 0; font-weight: 600; }
+  h2 { font-size: 16px; margin: 30px 0 12px; font-weight: 600; }
   .count { font-size: 15px; }
   .count b { font-size: 22px; }
   .muted { color: #6b7280; font-size: 13px; }
@@ -41,6 +42,46 @@
   .banner.show { display: block; }
   .banner.warn { background: #fff4e5; color: #8a5300; }
   @media (prefers-color-scheme: dark) { .banner.warn { background: #3a2c12; color: #f0c07a; } }
+
+  /* 可调用方法标签 */
+  .chip {
+    display: inline-block; padding: 2px 8px; margin: 2px 4px 2px 0; border-radius: 10px;
+    font-size: 12px; background: #e8f0fe; color: #1a56db;
+    font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) { .chip { background: #24305c; color: #a8c2ff; } }
+
+  /* 调用面板 */
+  .panel {
+    display: flex; gap: 14px; flex-wrap: wrap; align-items: flex-end;
+    background: #fff; padding: 16px; border-radius: 8px;
+  }
+  @media (prefers-color-scheme: dark) { .panel { background: #1e2126; } }
+  .panel label { display: flex; flex-direction: column; gap: 5px; font-size: 13px; color: #6b7280; }
+  @media (prefers-color-scheme: dark) { .panel label { color: #9aa0a6; } }
+  .panel select, .panel input {
+    padding: 7px 9px; font-size: 14px; border-radius: 6px;
+    border: 1px solid #d0d5dd; background: #fff; color: #1c1e21; min-width: 190px;
+    font-family: inherit;
+  }
+  @media (prefers-color-scheme: dark) {
+    .panel select, .panel input { background: #16181c; color: #e4e6eb; border-color: #3a3f47; }
+  }
+  .panel select:disabled, .panel input:disabled { opacity: .5; }
+
+  /* 调用结果 */
+  .result {
+    margin-top: 12px; padding: 12px 14px; border-radius: 6px; font-size: 14px;
+    display: none; white-space: pre-wrap; word-break: break-all;
+    font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  }
+  .result.show { display: block; }
+  .result.ok { background: #e7f6ec; color: #116329; }
+  .result.err { background: #fdeaea; color: #a02622; }
+  @media (prefers-color-scheme: dark) {
+    .result.ok { background: #12301c; color: #7ee2a0; }
+    .result.err { background: #3a1a1a; color: #f5a3a0; }
+  }
 </style>
 </head>
 <body>
@@ -62,6 +103,30 @@
   </table>
   <div class="empty muted" id="empty">暂无活动隧道</div>
 
+  <h2>在线设备 / 可调用方法</h2>
+  <table>
+    <thead>
+      <tr><th>设备 ID</th><th>机器名</th><th>用户名</th><th>可调用方法</th><th>操作</th></tr>
+    </thead>
+    <tbody id="deviceRows"></tbody>
+  </table>
+  <div class="empty muted" id="deviceEmpty">暂无在线设备</div>
+
+  <h2>调用设备方法</h2>
+  <div class="panel">
+    <label>设备
+      <select id="invDevice"></select>
+    </label>
+    <label>方法
+      <select id="invMethod"></select>
+    </label>
+    <label>payload
+      <input id="invPayload" type="text" placeholder="传给方法的字符串参数（可空）">
+    </label>
+    <button id="invoke" type="button">调用</button>
+  </div>
+  <div class="result" id="invResult"></div>
+
 <script>
 (function () {
   var rowsEl = document.getElementById('rows');
@@ -70,8 +135,16 @@
   var updatedEl = document.getElementById('updated');
   var bannerEl = document.getElementById('banner');
 
+  var deviceRowsEl = document.getElementById('deviceRows');
+  var deviceEmptyEl = document.getElementById('deviceEmpty');
+  var invDeviceEl = document.getElementById('invDevice');
+  var invMethodEl = document.getElementById('invMethod');
+  var invPayloadEl = document.getElementById('invPayload');
+  var invResultEl = document.getElementById('invResult');
+
   // 最近一次拉到的数据；时长由本地每秒重算，不在轮询间重取
   var items = [];
+  var devices = [];
 
   function formatDuration(ms) {
     if (!isFinite(ms) || ms < 0) ms = 0;
@@ -84,21 +157,20 @@
     return sec + 's';
   }
 
+  function td(text, mono) {
+    var el = document.createElement('td');
+    if (mono) el.className = 'mono';
+    el.textContent = text;
+    return el;
+  }
+
   function renderRows() {
     rowsEl.textContent = '';
     var now = Date.now();
     items.forEach(function (item) {
       var tr = document.createElement('tr');
-
-      var tdIp = document.createElement('td');
-      tdIp.className = 'mono';
-      tdIp.textContent = item.clientIp;
-      tr.appendChild(tdIp);
-
-      var tdTarget = document.createElement('td');
-      tdTarget.className = 'mono';
-      tdTarget.textContent = item.target;
-      tr.appendChild(tdTarget);
+      tr.appendChild(td(item.clientIp, true));
+      tr.appendChild(td(item.target, true));
 
       var tdAge = document.createElement('td');
       var started = Date.parse(item.startedAt);
@@ -108,6 +180,145 @@
       rowsEl.appendChild(tr);
     });
     emptyEl.style.display = items.length === 0 ? 'block' : 'none';
+  }
+
+  function renderDevices() {
+    deviceRowsEl.textContent = '';
+    devices.forEach(function (d) {
+      var tr = document.createElement('tr');
+      tr.appendChild(td(d.deviceId, true));
+      tr.appendChild(td(d.machineName || '—'));
+      tr.appendChild(td(d.userName || '—'));
+
+      // 可调用方法：标签形式；没上报任何方法时明确标注（这种设备调什么都会 409）
+      var tdMethods = document.createElement('td');
+      if (d.methods && d.methods.length) {
+        d.methods.forEach(function (m) {
+          var span = document.createElement('span');
+          span.className = 'chip';
+          span.textContent = m;
+          tdMethods.appendChild(span);
+        });
+      } else {
+        var none = document.createElement('span');
+        none.className = 'muted';
+        none.textContent = '未上报方法';
+        tdMethods.appendChild(none);
+      }
+      tr.appendChild(tdMethods);
+
+      var tdAction = document.createElement('td');
+      if (d.methods && d.methods.length) {
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.textContent = '调用';
+        btn.addEventListener('click', function () { pickDevice(d.deviceId); });
+        tdAction.appendChild(btn);
+      } else {
+        tdAction.appendChild(td('—', false));
+      }
+      tr.appendChild(tdAction);
+
+      deviceRowsEl.appendChild(tr);
+    });
+    deviceEmptyEl.style.display = devices.length === 0 ? 'block' : 'none';
+  }
+
+  // 重填下拉框时保留当前选择，避免每 5 秒轮询把用户正在选的值冲掉
+  function fillSelect(select, values, keep, placeholder) {
+    var previous = keep && values.indexOf(select.value) >= 0 ? select.value : '';
+    select.textContent = '';
+    if (values.length === 0) {
+      var opt = document.createElement('option');
+      opt.value = '';
+      opt.textContent = placeholder;
+      select.appendChild(opt);
+      select.disabled = true;
+      return '';
+    }
+    select.disabled = false;
+    values.forEach(function (v) {
+      var opt = document.createElement('option');
+      opt.value = v;
+      opt.textContent = v;
+      select.appendChild(opt);
+    });
+    select.value = previous || values[0];
+    return select.value;
+  }
+
+  function syncPanel() {
+    var ids = devices.map(function (d) { return d.deviceId; });
+    var deviceId = fillSelect(invDeviceEl, ids, true, '无在线设备');
+    syncMethods(deviceId);
+  }
+
+  function syncMethods(deviceId) {
+    var device = null;
+    for (var i = 0; i < devices.length; i++) {
+      if (devices[i].deviceId === deviceId) { device = devices[i]; break; }
+    }
+    var methods = device && device.methods ? device.methods : [];
+    fillSelect(invMethodEl, methods, true, '无可调用方法');
+  }
+
+  function pickDevice(deviceId) {
+    invDeviceEl.value = deviceId;
+    syncMethods(deviceId);
+    invPayloadEl.focus();
+    invPayloadEl.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }
+
+  function showInvokeResult(ok, text) {
+    invResultEl.textContent = text;
+    invResultEl.className = 'result show ' + (ok ? 'ok' : 'err');
+  }
+
+  // 把 HTTP 状态码翻译成人话，和 AdminApi 的分层语义一一对应
+  function explain(status) {
+    switch (status) {
+      case 401: return '未通过鉴权（401）：请刷新页面重新输入密码。';
+      case 400: return '请求无效（400）：缺少 deviceId 或 method。';
+      case 404: return '设备不在线（404）：该 deviceId 当前没有活跃连接。';
+      case 409: return '设备未上报该方法（409）：只能调用设备主动声明支持的 method。';
+      case 502: return '端上调用失败（502）：设备未实现该方法、已断开，或等待返回值超时。';
+      default:  return '调用失败：HTTP ' + status;
+    }
+  }
+
+  function invoke() {
+    var deviceId = invDeviceEl.value;
+    var method = invMethodEl.value;
+    if (!deviceId || !method) {
+      showInvokeResult(false, '请先选择设备与方法。');
+      return;
+    }
+
+    invResultEl.className = 'result show';
+    invResultEl.textContent = '调用中…';
+
+    fetch('/api/invoke', {
+      method: 'POST',
+      credentials: 'same-origin',
+      cache: 'no-store',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ deviceId: deviceId, method: method, payload: invPayloadEl.value })
+    })
+      .then(function (res) {
+        return res.text().then(function (text) { return { status: res.status, text: text }; });
+      })
+      .then(function (r) {
+        if (r.status === 200) {
+          var result = r.text;
+          try { result = JSON.parse(r.text).result; } catch (e) { /* 非 JSON 就原样展示 */ }
+          showInvokeResult(true, '✓ ' + method + ' 返回：\n' + result);
+        } else {
+          showInvokeResult(false, explain(r.status));
+        }
+      })
+      .catch(function () {
+        showInvokeResult(false, '调用失败：无法连接服务端。');
+      });
   }
 
   function showBanner(text) {
@@ -145,10 +356,35 @@
       });
   }
 
-  document.getElementById('refresh').addEventListener('click', fetchStatus);
+  function fetchDevices() {
+    return fetch('/api/devices', { credentials: 'same-origin', cache: 'no-store' })
+      .then(function (res) {
+        if (!res.ok) return null;   // 鉴权/网络问题已由 fetchStatus 的横幅提示，这里静默
+        return res.json();
+      })
+      .then(function (data) {
+        if (!data) return;
+        devices = Array.isArray(data.items) ? data.items : [];
+        renderDevices();
+        syncPanel();
+      })
+      .catch(function () { /* 静默：状态区已有横幅 */ });
+  }
 
-  fetchStatus();
-  setInterval(fetchStatus, 5000);   // 每 5 秒重新拉取
+  function refreshAll() {
+    fetchStatus();
+    fetchDevices();
+  }
+
+  document.getElementById('refresh').addEventListener('click', refreshAll);
+  document.getElementById('invoke').addEventListener('click', invoke);
+  invDeviceEl.addEventListener('change', function () { syncMethods(invDeviceEl.value); });
+  invPayloadEl.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') invoke();
+  });
+
+  refreshAll();
+  setInterval(refreshAll, 5000);    // 每 5 秒重新拉取
   setInterval(renderRows, 1000);    // 时长每秒本地递增
 })();
 </script>

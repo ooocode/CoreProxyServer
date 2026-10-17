@@ -8,45 +8,41 @@ import "google/protobuf/timestamp.proto";
 
 package hello;
 
-
-
 // The greeting service definition.
 service Greeter {
   rpc StreamHandler(stream HttpData) returns (stream HttpData);
   rpc GetStatus(GetStatusRequest) returns (StatusReply);
-
-  //p2p
-  rpc P2PStreamHandler(stream HttpData) returns (stream HttpData);
   rpc GetSignalrOnlineClients(google.protobuf.Empty) returns (SignalrOnlineClients);
 }
 
-
 message HttpData{
-  bytes Payload = 1;
+  bytes Payload              = 1;
   int64 UnixTimeMilliseconds = 2;
 }
 
 message GetStatusRequest{
-	bool IncludeDetail = 1;
+  bool IncludeDetail = 1;
 }
 
 message StatusReply{
-  int32 SocketCount = 1;
+  int32                 SocketCount = 1;
   repeated StatusDetail Connections = 2;
 }
 
 message StatusDetail{
-  string IpAddress = 1;
-  google.protobuf.Timestamp DateTime = 2;
+  string                    IpAddress = 1;
+  google.protobuf.Timestamp DateTime  = 2;
 }
 
 message SignalrOnlineClients{
-	repeated SignalrOnlineClient Clients = 1;
+  repeated SignalrOnlineClient Clients = 1;
 }
 
 message SignalrOnlineClient{
-	string DeviceId = 1;
-	string MachineName = 2;
-	string UserName = 3;
-	string ConnectionId = 4;
+  string DeviceId     = 1;
+  string MachineName  = 2;
+  string UserName     = 3;
+  string ConnectionId = 4;
+	// 设备主动上报的、可被服务端调用（server→client）的方法名列表。
+  repeated string Methods = 5;
 }
