@@ -22,6 +22,15 @@ namespace CoreProxy.Server.Orleans.Services
         TargetResolver targetResolver) : Greeter.GreeterBase
     {
         /// <summary>
+        /// 判断异常是否属于"客户端主动断开"这一正常收尾，而非真实故障。
+        /// 代理两端任一端断开（浏览器关闭、gRPC RST、连接被对端重置）都会让另一方向抛这类异常。
+        /// 注意：目标连接本身的 SocketException（目标不可达/中断）**不算**收尾，仍按真实故障记 Error。
+        /// </summary>
+        internal static bool IsClientTeardown(Exception ex) =>
+            ex is IOException                      // 客户端重置请求流（RST_STREAM）/连接被重置
+            || (ex is RpcException rpc && rpc.StatusCode is StatusCode.Cancelled or StatusCode.Aborted);
+
+        /// <summary>
         /// 解析目标 + 建立连接的独立超时。
         /// 不能只依赖客户端取消：目标服务器卡住（不回 SYN/ACK）时，一条隧道会一直挂着，
         /// 实测过一次服务端连某个 CDN 迟迟不返回、客户端侧挂了 4 分钟。
@@ -159,6 +168,17 @@ namespace CoreProxy.Server.Orleans.Services
                         if (logger.IsEnabled(LogLevel.Information))
                         {
                             logger.LogInformation("数据流转发取消 - ConnectionId:{connectionId}", connectionId);
+                        }
+                    }
+                    catch (Exception ex) when (IsClientTeardown(ex))
+                    {
+                        //客户端主动断开/RST 请求流是【正常收尾】（浏览器关闭、连接被重置、代理链路结束），
+                        //不是故障。此前一律走 LogError，导致每次正常请求结束都刷一条 error，淹没真实故障。
+                        //此处仍记下原因（Information），并保留 ex 供需要时排查。
+                        if (logger.IsEnabled(LogLevel.Information))
+                        {
+                            logger.LogInformation("数据流转发提前结束（客户端断开）- ConnectionId:{connectionId} {reason}",
+                                connectionId, ex.Message);
                         }
                     }
                     catch (Exception ex)

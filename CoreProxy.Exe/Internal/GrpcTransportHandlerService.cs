@@ -116,12 +116,13 @@ namespace CoreProxy.Internal
                     }
                     catch (RpcException ex) when (ex.Status.StatusCode == StatusCode.Cancelled)
                     {
-                        logger.LogWarning("Grpc取消");
+                        // 隧道正常收尾（一端主动取消）不是故障，此前刷 Warning 会淹没真实问题
+                        logger.LogDebug("Grpc取消: {message}", ex.Message);
                     }
                     catch (OperationCanceledException)
                     {
                         /* 忽略正常的取消 */
-                        logger.LogWarning("操作取消");
+                        logger.LogDebug("操作取消");
                     }
                     catch (Exception ex)
                     {
