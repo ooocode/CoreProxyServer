@@ -53,7 +53,6 @@ namespace CoreProxy.Server.Orleans.Tests.Infrastructure
                 lifetime,
                 new CertificatePassword { Password = Password },
                 NullLogger<MyGrpcService>.Instance,
-                hubContext: null!, //StreamHandler 不涉及 SignalR
                 configuration,
                 resolver ?? new TargetResolver(new MemoryCache(new MemoryCacheOptions()), TimeSpan.FromSeconds(60)));
 

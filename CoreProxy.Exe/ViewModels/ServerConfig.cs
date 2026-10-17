@@ -12,9 +12,7 @@ namespace CoreProxy.ViewModels
         [
             nameof(ServerItem.LocalListenerPort),
             nameof(ServerItem.ServerHttpAddress),
-            nameof(ServerItem.Password),
-            nameof(ServerItem.RequestHttpVersion),
-            nameof(ServerItem.IsUseSignalR)
+            nameof(ServerItem.Password)
         ];
 
         /// <summary>读取指定目录下的 appsettings.json，文件不存在直接抛异常</summary>
@@ -71,9 +69,7 @@ namespace CoreProxy.ViewModels
             return ServerItem.Create(
                 localListenerPort: ParseInt(section, item, nameof(ServerItem.LocalListenerPort)),
                 serverHttpAddress: Required(section, item, nameof(ServerItem.ServerHttpAddress)),
-                password: Required(section, item, nameof(ServerItem.Password)),
-                requestHttpVersion: ParseHttpVersion(section, item),
-                isUseSignalR: ParseBool(section, item, nameof(ServerItem.IsUseSignalR)));
+                password: Required(section, item, nameof(ServerItem.Password)));
         }
 
         private static string Required(IConfigurationSection section, string item, string key)
@@ -91,26 +87,6 @@ namespace CoreProxy.ViewModels
             return int.TryParse(Required(section, item, key), out var value)
                 ? value
                 : throw new InvalidOperationException($"{item} 的 {key} 不是整数：{section[key]}");
-        }
-
-        private static bool ParseBool(IConfigurationSection section, string item, string key)
-        {
-            return Value(section, key) is not { } text
-                ? false
-                : bool.TryParse(text, out var value)
-                    ? value
-                    : throw new InvalidOperationException($"{item} 的 {key} 只能是 true 或 false：{text}");
-        }
-
-        private static RequestHttpVersion ParseHttpVersion(IConfigurationSection section, string item)
-        {
-            var key = nameof(ServerItem.RequestHttpVersion);
-            return Value(section, key) is not { } text
-                ? RequestHttpVersion.Auto
-                : Enum.TryParse<RequestHttpVersion>(text, ignoreCase: true, out var value)
-                    ? value
-                    : throw new InvalidOperationException(
-                        $"{item} 的 {key} 只能是 {string.Join("、", Enum.GetNames<RequestHttpVersion>())}：{text}");
         }
     }
 }

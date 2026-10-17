@@ -1,5 +1,4 @@
 using CoreProxy.BackgroundServices;
-using CoreProxy.Common;
 using CoreProxy.Internal;
 using CoreProxy.ViewModels;
 using DotNext.IO.Pipelines;
@@ -11,21 +10,12 @@ using Microsoft.AspNetCore.Connections;
 using Microsoft.AspNetCore.Connections.Features;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Http.Connections.Client;
-using Microsoft.AspNetCore.Http.Connections.Features;
-using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.SignalR.Client;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Net.Http.Headers;
 using Prometheus;
-using System.IO;
-using System.IO.Pipelines;
-using System.Net;
-using System.Net.Http;
 using System.Text;
-using System.Threading.Tasks;
 
 namespace CoreProxy
 {
@@ -68,7 +58,6 @@ namespace CoreProxy
             builder.Services.AddSingleton(serverItems);
             builder.Services.AddSingleton<Socket5ConnectionHandlerService>();
             builder.Services.AddSingleton<GrpcTransportHandlerService>();
-            builder.Services.AddSingleton<SignalRTransportHandlerService>();
             builder.WebHost.UseKestrelHttpsConfiguration();
             builder.WebHost.ConfigureKestrel(static serverOptions =>
             {
@@ -108,8 +97,6 @@ namespace CoreProxy
             }
 
 
-
-            builder.Services.AddHostedService<SignalRConnectBackgroundService>();
 
             builder.Services.AddHostedService<StatBackgroundService>();
             if (builder.Environment.IsDevelopment())
@@ -213,13 +200,5 @@ namespace CoreProxy
 
         [LoggerMessage(Level = LogLevel.Information, Message = "{remoteIpAddress} 获取pac.txt文件")]
         private static partial void ShowPacLog(ILogger logger, string? remoteIpAddress);
-    }
-
-    public class SignalRetryPolicy : IRetryPolicy
-    {
-        public TimeSpan? NextRetryDelay(RetryContext retryContext)
-        {
-            return TimeSpan.FromSeconds(5);
-        }
     }
 }

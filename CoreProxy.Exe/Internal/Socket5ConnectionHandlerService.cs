@@ -10,11 +10,9 @@ using Microsoft.AspNetCore.Server.Kestrel.Core.Internal.Http;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using System.Buffers;
-using System.Diagnostics;
 using System.IO.Pipelines;
 using System.Net;
 using System.Runtime.InteropServices;
-using System.Text;
 
 namespace CoreProxy.Internal
 {
@@ -33,7 +31,6 @@ namespace CoreProxy.Internal
         GrpcTransportHandlerService grpcTransportHandlerService,
         IHostApplicationLifetime hostApplicationLifetime,
         List<ServerItem> serverItems,
-        SignalRTransportHandlerService signalRTransportHandlerService,
         ILogger<Socket5ConnectionHandlerService> logger)
     {
         private static readonly byte[] Bytes50 = [5, 0];
@@ -118,13 +115,7 @@ namespace CoreProxy.Internal
             ArgumentNullException.ThrowIfNull(ipEndPoint, nameof(ipEndPoint));
 
             var serverItem = serverItems.First(x => x.LocalListenerPort == ipEndPoint.Port);
-            //     //if (ipEndPoint.Port == 1079 && enableSignalR)
-            //     //{
-            //await signalRTransportHandlerService.DualStreamHandlerAsync(serverItem,
-            //    connection,
-            //    socket5Result.Address, socket5Result.Port, ProxyType.Socket5, tokenSource.Token);
-            // }
-            //else
+
             var processGrpcClient = grpcClientFactory.CreateClient<Greeter.GreeterClient>(serverItem.LocalListenerPort.ToString());
             await grpcTransportHandlerService.DualStreamHandlerAsync(processGrpcClient, connection.Transport,
                 socket5Result.Uri, ProxyType.Socket5, tokenSource);

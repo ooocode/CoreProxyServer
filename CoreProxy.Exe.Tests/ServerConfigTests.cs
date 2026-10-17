@@ -27,8 +27,6 @@ namespace CoreProxy.Exe.Tests
                 Assert.IsTrue(Uri.TryCreate(serverItem.ServerHttpAddress, UriKind.Absolute, out _),
                     $"{serverItem.LocalListenerPort} 的 ServerHttpAddress 不是合法绝对地址：{serverItem.ServerHttpAddress}");
                 Assert.IsTrue(serverItem.Password.Length > 0, $"{serverItem.LocalListenerPort} 的 Password 是空的");
-                Assert.IsTrue(Enumerable.Contains(Enum.GetValues<RequestHttpVersion>(), serverItem.RequestHttpVersion),
-                    $"{serverItem.LocalListenerPort} 的 RequestHttpVersion 超出枚举范围：{serverItem.RequestHttpVersion}");
             }
 
             Assert.AreEqual(serverItems.Count, serverItems.Select(x => x.LocalListenerPort).Distinct().Count(),
@@ -58,32 +56,6 @@ namespace CoreProxy.Exe.Tests
             Assert.AreEqual(1, serverItems.Count);
             Assert.AreEqual(1079, serverItems[0].LocalListenerPort);
             Assert.AreEqual("P1", serverItems[0].Password);
-        }
-
-        /// <summary>RequestHttpVersion 写枚举名，五种取值都要能解析出来</summary>
-        [TestMethod]
-        public void RequestHttpVersion按枚举名解析()
-        {
-            var serverItems = Load(
-                """
-                {
-                  "Servers": [
-                    { "LocalListenerPort": 1, "ServerHttpAddress": "https://a:1", "Password": "P", "RequestHttpVersion": "Auto", "IsUseSignalR": false },
-                    { "LocalListenerPort": 2, "ServerHttpAddress": "https://a:2", "Password": "P", "RequestHttpVersion": "Version11", "IsUseSignalR": false },
-                    { "LocalListenerPort": 3, "ServerHttpAddress": "https://a:3", "Password": "P", "RequestHttpVersion": "Version20", "IsUseSignalR": true },
-                    { "LocalListenerPort": 4, "ServerHttpAddress": "https://a:4", "Password": "P", "RequestHttpVersion": "Version30", "IsUseSignalR": false },
-                    { "LocalListenerPort": 5, "ServerHttpAddress": "https://a:5", "Password": "P" }
-                  ]
-                }
-                """);
-
-            Assert.AreEqual(RequestHttpVersion.Auto, serverItems[0].RequestHttpVersion);
-            Assert.AreEqual(RequestHttpVersion.Version11, serverItems[1].RequestHttpVersion);
-            Assert.AreEqual(RequestHttpVersion.Version20, serverItems[2].RequestHttpVersion);
-            Assert.IsTrue(serverItems[2].IsUseSignalR);
-            Assert.AreEqual(RequestHttpVersion.Version30, serverItems[3].RequestHttpVersion);
-            Assert.AreEqual(RequestHttpVersion.Auto, serverItems[4].RequestHttpVersion, "没写 RequestHttpVersion 时按 Auto 处理");
-            Assert.IsFalse(serverItems[4].IsUseSignalR, "没写 IsUseSignalR 时按 false 处理");
         }
 
         // ---------------- 写错了要报错，不能静默生效 ----------------
@@ -187,22 +159,6 @@ namespace CoreProxy.Exe.Tests
 
             var exception = Assert.ThrowsException<InvalidOperationException>(() => ServerConfig.Load(configuration));
             StringAssert.Contains(exception.Message, "LocalListenerPort");
-        }
-
-        [TestMethod]
-        public void RequestHttpVersion写了枚举以外的值时报错()
-        {
-            var configuration = BuildConfiguration(
-                """
-                {
-                  "Servers": [
-                    { "LocalListenerPort": 1081, "ServerHttpAddress": "https://a:1", "Password": "P", "RequestHttpVersion": "Version21" }
-                  ]
-                }
-                """);
-
-            var exception = Assert.ThrowsException<InvalidOperationException>(() => ServerConfig.Load(configuration));
-            StringAssert.Contains(exception.Message, "Version21");
         }
 
         // ---------------- 辅助 ----------------

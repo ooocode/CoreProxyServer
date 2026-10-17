@@ -4,7 +4,6 @@ using DotNext.IO.Pipelines;
 using Google.Protobuf;
 using Grpc.Core;
 using Hello;
-using Microsoft.AspNetCore.Connections;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using Microsoft.Net.Http.Headers;

@@ -5,7 +5,6 @@ using Google.Protobuf;
 using Google.Protobuf.WellKnownTypes;
 using Grpc.Core;
 using Hello;
-using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Net.Http.Headers;
 using System.Buffers;
@@ -19,7 +18,6 @@ namespace CoreProxy.Server.Orleans.Services
         IHostApplicationLifetime hostApplicationLifetime,
         CertificatePassword certificatePassword,
         ILogger<MyGrpcService> logger,
-        IHubContext<ChatHub> hubContext,
         IConfiguration configuration,
         TargetResolver targetResolver) : Greeter.GreeterBase
     {

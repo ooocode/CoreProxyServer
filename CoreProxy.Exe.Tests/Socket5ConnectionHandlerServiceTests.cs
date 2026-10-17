@@ -205,7 +205,6 @@ namespace CoreProxy.Exe.Tests
                 grpcHandler,
                 lifetime,
                 serverItems,
-                null!, //SignalR 分支在代码里被注释掉了，不会用到
                 NullLogger<Socket5ConnectionHandlerService>.Instance);
 
             return (service, factory);
