@@ -148,7 +148,7 @@
     </tr>
     <tr>
       <td><strong>调用端</strong>（管理后台 / 运维脚本）</td>
-      <td>按 <code>deviceId</code> 找到在线设备，调用它上报过的某个方法，并同步等待返回值。</td>
+      <td>调用在线设备上报过的某个方法并同步等待返回值：带 <code>deviceId</code> 时把候选限定在该设备 ID 的连接内（同 ID 多条连接则随机选一条）；不带时在所有上报了该方法的在线连接中随机选一条。</td>
       <td><code>POST /api/invoke</code></td>
       <td>HTTP Basic</td>
     </tr>
@@ -159,6 +159,10 @@
 
 <pre><code>调用端 ──HTTP/2 + Basic Auth──▶ 服务端 /api/invoke
                                       │
+                                      │ 选目标：
+                                      │   带 deviceId → 精确指定该在线设备
+                                      │   不带        → 在支持该 method 的在线设备中随机选一台
+                                      │
                                       │ 白名单校验（设备上线时上报的方法）
                                       ▼
                                   SignalR 长连接（/chathub）
@@ -166,7 +170,8 @@
                                       ▼
                                    设备端 Handler
                                       │
-                                      └── 返回值 ──▶ 服务端 ──▶ HTTP 200 JSON</code></pre>
+                                      └── 返回值 ──▶ 服务端 ──▶ HTTP 200 JSON
+                                                                    （回显实际承接调用的 deviceId）</code></pre>
 
 <div class="warn">
   <p><span class="label">安全提示：</span><code>/chathub</code> 本身不做 HTTP Basic 鉴权，能访问到服务端端口的人都可以注册成设备。因此：</p>
@@ -216,7 +221,7 @@
       <td><code>deviceId</code></td>
       <td>string</td>
       <td><strong>是</strong></td>
-      <td>设备唯一标识。同一时刻只能有一个在线连接使用同一个 <code>deviceId</code>。</td>
+      <td>设备标识。<strong>同一个 <code>deviceId</code> 允许多条连接同时在线</strong>（重连、同机多实例等），服务端按 <code>connectionId</code> 分别记录，互不覆盖。</td>
     </tr>
     <tr>
       <td><code>machineName</code></td>
@@ -236,7 +241,7 @@
       <td>否</td>
       <td>
         <strong>设备主动上报的、允许服务端调用的方法名列表</strong>。
-        <code>/api/invoke</code> 只会放行这个列表里的方法；不上报则任何调用都会得到 <code>409</code>。
+        <code>/api/invoke</code> 只会放行这个列表里的方法。没上报的连接不会成为任何调用的候选；若某个 <code>deviceId</code> 下的所有连接都没上报，精确调用该 ID 会得到 <code>409</code>。
       </td>
     </tr>
   </tbody>
@@ -263,8 +268,8 @@
     <tr><td>缺少 <code>info</code> 查询参数</td><td>连接被拒（服务端抛 <code>缺少info</code>），客户端 <code>StartAsync</code> 失败。</td></tr>
     <tr><td><code>info</code> 不是合法 JSON</td><td>连接被拒（<code>info不是合法JSON</code>）。</td></tr>
     <tr><td><code>deviceId</code> 缺失或为空白</td><td>连接被拒（<code>info缺少deviceId</code>）。</td></tr>
-    <tr><td><code>deviceId</code> 已被另一条在线连接占用</td><td>连接被拒（<code>设备xxx重复上线</code>）。原连接不受影响；旧连接断开后可重新使用该 ID。</td></tr>
-    <tr><td>连接断开（主动关闭 / 网络中断 / 服务端回收）</td><td>该设备从在线表移除，之后 <code>/api/invoke</code> 返回 <code>404</code>。</td></tr>
+    <tr><td>同一个 <code>deviceId</code> 再次上线</td><td><strong>允许</strong>。新连接与已有连接同时在线，各自有独立的 <code>connectionId</code>；管理页会显示为多行。</td></tr>
+    <tr><td>连接断开（主动关闭 / 网络中断 / 服务端回收）</td><td>只从在线表移除<strong>这条连接自己</strong>，同 <code>deviceId</code> 的其它连接不受影响。若该 ID 已无任何连接，精确调用它会返回 <code>404</code>。</td></tr>
   </tbody>
 </table>
 
@@ -391,7 +396,7 @@ options.WebSocketFactory = async (context, cancellationToken) =&gt;
 
 <h3>3.6 重连</h3>
 <p>建议启用 <code>WithAutomaticReconnect()</code>。重连时客户端会复用同一个 URL（同一个 <code>info</code>），服务端会重新登记设备。</p>
-<p>注意：如果服务端还没来得及清理旧连接，重连可能短暂收到“设备重复上线”的拒绝；自动重连会继续重试。对可靠性要求高时，也可以在 <code>Closed</code> 事件里做带退避的手动重连。</p>
+<p>服务端按 <code>connectionId</code> 分别登记连接：同一个 <code>deviceId</code> 的新连接与尚未清理的旧连接可以<strong>同时在线</strong>，不会互相拒绝。旧连接后续由断开事件或保活回收独立移除，不影响新连接。对可靠性要求高时，也可以在 <code>Closed</code> 事件里做带退避的手动重连。</p>
 
 <h2 id="methods">4. 设备端：注册可被调用的方法</h2>
 
@@ -435,9 +440,18 @@ connection.On&lt;string, string&gt;("Echo", async payload =&gt;
 <pre><code>POST https://&lt;服务器地址&gt;:6099/api/invoke
 Authorization: Basic &lt;Base64("任意用户名:" + 口令)&gt;
 Content-Type: application/json
-HTTP/2
+HTTP/2</code></pre>
 
-{
+<p><strong>A. 不指定设备</strong>（推荐用于多台设备提供同一能力的场景）：服务端会在所有上报了 <code>method</code> 的在线客户端中均匀随机选一台。</p>
+
+<pre><code>{
+  "method": "Ping",
+  "payload": "hello"
+}</code></pre>
+
+<p><strong>B. 精确指定设备</strong>：只调用这一台；它没上报该方法时返回 <code>409</code>。</p>
+
+<pre><code>{
   "deviceId": "pc-001",
   "method": "Ping",
   "payload": "hello"
@@ -448,11 +462,16 @@ HTTP/2
     <tr><th>字段</th><th>类型</th><th>必填</th><th>说明</th></tr>
   </thead>
   <tbody>
-    <tr><td><code>deviceId</code></td><td>string</td><td>是</td><td>目标在线设备的 ID。</td></tr>
-    <tr><td><code>method</code></td><td>string</td><td>是</td><td>要调用的方法名，必须在设备上报的 <code>methods</code> 中（大小写不敏感）。</td></tr>
+    <tr><td><code>deviceId</code></td><td>string | null</td><td>否</td><td>目标设备 ID。省略、<code>null</code> 或空白时进入<strong>全局随机模式</strong>；传入时只在 DeviceId 相同的在线连接中选。同一个 <code>deviceId</code> 可能有多条连接，此时在该 ID 下支持 <code>method</code> 的连接中随机选一条。</td></tr>
+    <tr><td><code>method</code></td><td>string</td><td>是</td><td>要调用的方法名。只有把它写进 <code>info.methods</code> 的设备才会成为候选（大小写不敏感匹配）。</td></tr>
     <tr><td><code>payload</code></td><td>string | null</td><td>否</td><td>原样作为唯一参数传给设备 handler。省略或为 <code>null</code> 时按空字符串 <code>""</code> 下发。</td></tr>
   </tbody>
 </table>
+
+<div class="note">
+  <p><strong>随机选择的范围：</strong>候选单位是<strong>连接</strong>而不是 <code>deviceId</code>：先按请求里的 <code>deviceId</code>（若提供）过滤，再按 <code>method</code> 白名单过滤，最后从剩下的连接中均匀随机抽一条。不做轮询、不做会话粘滞。该集合是请求到达时在线表的快照；如果被选中的连接恰好在调用发出前断开，本次请求返回 <code>502</code>，服务端<strong>不会自动改选另一条</strong>——需要重试时由调用方决定（下一次请求会重新随机）。</p>
+  <p><strong>怎么知道落到了哪台：</strong>响应里的 <code>deviceId</code> / <code>connectionId</code> 是<strong>实际承接本次调用</strong>的设备与连接。同一 <code>deviceId</code> 可能对应多条连接，<code>connectionId</code> 才是唯一凭证；随机模式下不要拿请求里的值做记录。</p>
+</div>
 
 <h3>5.2 成功响应（HTTP 200）</h3>
 <pre><code>{
@@ -462,8 +481,9 @@ HTTP/2
   "result": "pong:hello"
 }</code></pre>
 <ul>
-  <li><code>connectionId</code> 是服务端当前为这台设备分配的 SignalR 连接 ID（同名设备多次上线时可用于区分）。</li>
-  <li><code>method</code> 是服务端实际下发的<strong>精确拼写</strong>（即设备上报的那个）。</li>
+  <li><code>deviceId</code> 是<strong>实际承接本次调用</strong>的设备。随机模式下由服务端选出，可能每次不同。</li>
+  <li><code>connectionId</code> 是服务端为<strong>这条连接</strong>分配的 SignalR 连接 ID。同一个 <code>deviceId</code> 允许多条连接同时在线，<code>connectionId</code> 是区分它们的唯一凭证。</li>
+  <li><code>method</code> 是服务端实际下发的<strong>精确拼写</strong>（即被选中设备上报的那个）。即使请求写的是小写 <code>ping</code>，这里也会回显设备上报的 <code>Ping</code>。</li>
   <li><code>result</code> 是设备 handler 返回值的原样透传，类型始终是字符串。</li>
 </ul>
 
@@ -477,16 +497,16 @@ HTTP/2
       <td><code>200</code></td><td>调用成功</td><td>设备在线、方法已上报、handler 正常返回 string。</td>
     </tr>
     <tr>
-      <td><code>400</code></td><td>请求不合法</td><td><code>deviceId</code> 或 <code>method</code> 缺失 / 空白；请求体不是合法 JSON。</td>
+      <td><code>400</code></td><td>请求不合法</td><td><code>method</code> 缺失 / 空白；请求体不是合法 JSON。<code>deviceId</code> 可省略。</td>
     </tr>
     <tr>
       <td><code>401</code></td><td>未通过鉴权</td><td>缺少 <code>Authorization</code>、不是 Basic、base64 非法、口令不匹配。</td>
     </tr>
     <tr>
-      <td><code>404</code></td><td>设备不在线</td><td><code>deviceId</code> 不在当前在线表中（从未上线、已断开、ID 写错）。</td>
+      <td><code>404</code></td><td>没有可调用的目标</td><td>全局随机模式：当前没有任何在线连接上报该方法。精确模式：该 <code>deviceId</code> 当前没有任何在线连接（从未上线、已断开、ID 写错）。</td>
     </tr>
     <tr>
-      <td><code>409</code></td><td>方法未上报</td><td>设备在线，但它的 <code>info.methods</code> 里没有这个方法（大小写不敏感比较后仍无匹配）。</td>
+      <td><code>409</code></td><td>方法未上报</td><td>仅精确模式：该 <code>deviceId</code> 有在线连接，但<strong>没有任何一条</strong>在 <code>info.methods</code> 里上报这个方法（大小写不敏感比较后仍无匹配）。全局随机模式不会返回 409——不支持该方法的连接根本不会成为候选。</td>
     </tr>
     <tr>
       <td><code>502</code></td><td>端上调用失败</td><td>设备在调用瞬间断开、客户端没有注册该 handler、handler 抛异常、handler 不返回 string、超过 30 秒未返回。</td>
@@ -502,8 +522,8 @@ HTTP/2
 
 <pre><code>using System.Net;
 using System.Net.Http.Headers;
+using System.Net.Http.Json;
 using System.Text;
-using System.Text.Json;
 
 const string server = "https://127.0.0.1:6099";
 const string clientPassword = "&lt;服务端 ssl/client-password.txt 的内容&gt;";
@@ -527,20 +547,36 @@ var basic = Convert.ToBase64String(
 http.DefaultRequestHeaders.Authorization =
     new AuthenticationHeaderValue("Basic", basic);
 
-var body = JsonSerializer.Serialize(new
+// PostAsJsonAsync 自动完成 JSON 序列化，并设置 Content-Type: application/json
+
+// A. 不指定设备：服务端在所有上报了 Ping 的在线客户端中随机选一台
+using var response = await http.PostAsJsonAsync("/api/invoke", new
 {
-    deviceId = "pc-001",
     method = "Ping",
     payload = "hello"
 });
 
-using var response = await http.PostAsync(
-    "/api/invoke",
-    new StringContent(body, Encoding.UTF8, "application/json"));
+// B. 精确指定设备：在匿名对象里加回 deviceId 即可
+// using var response = await http.PostAsJsonAsync("/api/invoke", new
+// {
+//     deviceId = "pc-001",
+//     method = "Ping",
+//     payload = "hello"
+// });
 
 Console.WriteLine($"HTTP {(int)response.StatusCode}");
 Console.WriteLine(await response.Content.ReadAsStringAsync());
-// 200 {"deviceId":"pc-001","connectionId":"...","method":"Ping","result":"pong:hello"}</code></pre>
+// 200 {"deviceId":"实际被选中的设备","connectionId":"...","method":"Ping","result":"pong:hello"}
+
+// 成功时也可以直接反序列化为强类型：
+// public sealed record InvokeResult(string DeviceId, string ConnectionId, string Method, string Result);
+// var result = await response.Content.ReadFromJsonAsync&lt;InvokeResult&gt;();
+// Console.WriteLine(result?.Result);</code></pre>
+
+<div class="note">
+  <p><strong>先判断状态码，再反序列化。</strong>非 2xx（401/404/409/502）的响应体通常是空的，直接 <code>ReadFromJsonAsync</code> 会抛 <code>JsonException</code>。用 <code>response.IsSuccessStatusCode</code> 或 <code>EnsureSuccessStatusCode()</code> 先分流。</p>
+  <p><strong>AOT 客户端：</strong><code>PostAsJsonAsync</code> / <code>ReadFromJsonAsync</code> 默认走反射序列化。若调用方是 AOT 发布，改用带 <code>JsonTypeInfo&lt;T&gt;</code> 的重载，并定义 source-gen 的 <code>JsonSerializerContext</code>（与文档开头设备端使用 <code>JsonSerializer.Serialize</code> 的场景分开处理）。</p>
+</div>
 
 <div class="warn">
   <p><span class="label">不要用默认的 HTTP/1.1 客户端。</span><code>HttpClient</code> 默认请求版本是 1.1；必须显式设置 <code>DefaultRequestVersion = HttpVersion.Version20</code>（建议同时用 <code>RequestVersionExact</code>），否则连接会被服务端断开。Git Bash 自带的 curl 通常不支持 HTTP/2，也不适合用来验证这个接口。</p>
@@ -551,6 +587,7 @@ Console.WriteLine(await response.Content.ReadAsStringAsync());
 $pass = (Get-Content .\ssl\client-password.txt -Raw).Trim()
 $auth = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes("admin:$pass"))
 
+# 精确指定设备；去掉 body 里的 deviceId 即为随机模式
 Invoke-WebRequest -SkipCertificateCheck -HttpVersion 2.0 -Method Post `
   -Uri https://127.0.0.1:6099/api/invoke `
   -Headers @{ Authorization = "Basic $auth" } `
@@ -574,7 +611,7 @@ Invoke-WebRequest -SkipCertificateCheck -HttpVersion 2.0 -Method Post `
     }
   ]
 }</code></pre>
-<p>排查 <code>404</code> / <code>409</code> 时先看这里：设备是否在线、<code>methods</code> 里到底有没有那个方法。</p>
+<p>返回的是<strong>在线连接</strong>列表：每条连接一项，<code>total</code> 是连接数而不是去重后的设备数。同一个 <code>deviceId</code> 可能出现多次，用 <code>connectionId</code> 区分。排查 <code>404</code> / <code>409</code> 时先看这里：该 <code>deviceId</code> 是否还有在线连接、这些连接的 <code>methods</code> 里到底有没有那个方法。</p>
 
 <h3>6.2 GET <code>/api/status</code> —— 当前 gRPC 隧道清单</h3>
 <pre><code>{
@@ -604,6 +641,7 @@ Invoke-WebRequest -SkipCertificateCheck -HttpVersion 2.0 -Method Post `
 using Microsoft.AspNetCore.SignalR.Client;
 using System.Net;
 using System.Net.Http.Headers;
+using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 
@@ -661,18 +699,17 @@ http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
     "Basic", Convert.ToBase64String(Encoding.UTF8.GetBytes("admin:" + password)));
 
 static async Task Invoke(HttpClient client, string label,
-                         string deviceId, string method, string? payload)
+                         string? deviceId, string method, string? payload)
 {
-    var body = JsonSerializer.Serialize(new { deviceId, method, payload });
-    using var response = await client.PostAsync(
-        "/api/invoke",
-        new StringContent(body, Encoding.UTF8, "application/json"));
+    // deviceId 传 null 时 JSON 里是 "deviceId":null，服务端按随机模式处理
+    using var response = await client.PostAsJsonAsync(
+        "/api/invoke", new { deviceId, method, payload });
     var text = await response.Content.ReadAsStringAsync();
-    Console.WriteLine($"[invoke] {label,-16} HTTP {(int)response.StatusCode} {text}");
+    Console.WriteLine($"[invoke] {label,-18} HTTP {(int)response.StatusCode} {text}");
 }
 
-await Invoke(http, "normal",           "doc-sample-001", "Ping", "hello");
-await Invoke(http, "case-insensitive", "doc-sample-001", "ping", "hello");
+await Invoke(http, "pinned",           "doc-sample-001", "Ping", "hello");
+await Invoke(http, "random-by-method", null,             "ping", "hello");
 await Invoke(http, "not-online",       "no-such-device", "Ping", "hello");
 await Invoke(http, "not-declared",     "doc-sample-001", "Nope", "hello");
 
@@ -687,12 +724,13 @@ Console.WriteLine("[hub] stopped");</code></pre>
 
 <h3>7.4 实测输出</h3>
 <pre><code>[hub] connected, connectionId=PoHpKFOATQmnNm7Ob2O63A
-[invoke] normal           HTTP 200 {"deviceId":"doc-sample-001","connectionId":"PoHpKFOATQmnNm7Ob2O63A","method":"Ping","result":"pong:hello"}
-[invoke] case-insensitive HTTP 200 {"deviceId":"doc-sample-001","connectionId":"PoHpKFOATQmnNm7Ob2O63A","method":"Ping","result":"pong:hello"}
-[invoke] not-online       HTTP 404
-[invoke] not-declared     HTTP 409
+[invoke] pinned             HTTP 200 {"deviceId":"doc-sample-001","connectionId":"PoHpKFOATQmnNm7Ob2O63A","method":"Ping","result":"pong:hello"}
+[invoke] random-by-method   HTTP 200 {"deviceId":"doc-sample-001","connectionId":"PoHpKFOATQmnNm7Ob2O63A","method":"Ping","result":"pong:hello"}
+[invoke] not-online         HTTP 404
+[invoke] not-declared       HTTP 409
 [devices] {"total":1,"items":[{"deviceId":"doc-sample-001","machineName":"DESKTOP-PR0BBBD","userName":"alice","connectionId":"PoHpKFOATQmnNm7Ob2O63A","methods":["Ping","Echo"]}]}
 [hub] stopped</code></pre>
+<p class="step">本次示例只有一台设备，所以随机模式必然落到它；多设备时的分配实测见第 9 节。请求 <code>deviceId:null</code> 即不指定设备。</p>
 
 <h2 id="troubleshooting">8. 常见问题排查</h2>
 
@@ -726,8 +764,8 @@ Console.WriteLine("[hub] stopped");</code></pre>
       <td><code>info</code> 没有 URL 编码、JSON 写错，或 <code>deviceId</code> 为空。用 <code>Uri.EscapeDataString</code> 编码整段 JSON。</td>
     </tr>
     <tr>
-      <td><code>设备xxx重复上线</code></td>
-      <td>同一个 <code>deviceId</code> 已有在线连接。换 ID，或等旧连接断开。重连场景稍等重试即可。</td>
+      <td>同一 <code>deviceId</code> 多连接时，不知道调用落到了哪条</td>
+      <td>看响应里的 <code>connectionId</code>；<code>/api/devices</code> 也会逐条列出在线连接。服务端允许同一 <code>deviceId</code> 多连接，不会报“重复上线”。</td>
     </tr>
     <tr>
       <td>HTTP <code>401</code></td>
@@ -735,11 +773,11 @@ Console.WriteLine("[hub] stopped");</code></pre>
     </tr>
     <tr>
       <td>HTTP <code>404</code></td>
-      <td>设备不在线：<code>deviceId</code> 写错、设备已断开，或连接还没建立完成。用 <code>/api/devices</code> 确认。</td>
+      <td>随机模式：当前没有任何在线设备上报该方法；精确模式：<code>deviceId</code> 写错、设备已断开，或连接还没建立完成。用 <code>/api/devices</code> 确认在线设备与方法清单。</td>
     </tr>
     <tr>
       <td>HTTP <code>409</code></td>
-      <td>设备在线，但 <code>info.methods</code> 里没有该方法。注意上报的是<strong>白名单</strong>，且大小写不敏感匹配。</td>
+      <td>仅精确模式：该 <code>deviceId</code> 有在线连接，但<strong>没有任何一条</strong>在 <code>info.methods</code> 里上报该方法。注意上报的是<strong>白名单</strong>，且大小写不敏感匹配。全局随机模式不会出现此状态码。</td>
     </tr>
     <tr>
       <td>HTTP <code>502</code></td>
@@ -759,7 +797,10 @@ Console.WriteLine("[hub] stopped");</code></pre>
   <li><strong>连接</strong>：HTTPS + HTTP/2 WebSocket（<code>HttpMessageHandlerFactory</code> + <code>WebSocketConfiguration(HttpVersion=2.0)</code>）连接 <code>/chathub</code> 成功，服务端分配 <code>ConnectionId</code>；<code>WebSocketFactory</code> + 显式 <code>HttpMessageInvoker</code> 的等价写法同样实测成功。</li>
   <li><strong>配置矩阵</strong>：单独设置 <code>HttpVersion=2.0</code> 而不提供 handler，抛 <code>An HttpMessageInvoker instance must be passed...</code>；提供 handler 后又把证书回调设在 <code>ClientWebSocketOptions</code> 上，抛 <code>... must not be set on ClientWebSocketOptions...</code>；完全不设置 <code>HttpVersion</code>，连接被 H2-only 端点重置。三种失败均在本地复现。</li>
   <li><strong>调用</strong>：<code>/api/invoke</code> 正常调用返回 <code>200</code> 和 <code>result:"pong:hello"</code>；方法名用小写 <code>ping</code> 同样成功，响应中的 <code>method</code> 回显为设备上报的精确拼写 <code>Ping</code>。</li>
-  <li><strong>失败分支</strong>：设备不在线 → <code>404</code>；方法未上报 → <code>409</code>；不带凭据 → <code>401</code>。</li>
+  <li><strong>随机选择（3 台虚拟设备实测）</strong>：<code>verify-a</code>/<code>verify-b</code> 上报 <code>Ping</code>，<code>verify-c</code> 只上报 <code>Other</code>。不带 <code>deviceId</code> 调用 <code>Ping</code> 共 <strong>400 次</strong>，全部 <code>200</code>，实际承接设备只有 <code>verify-a</code>（189 次）与 <code>verify-b</code>（211 次）；<code>verify-c</code> 一次都没被选中。调用 <code>Other</code> 20 次则全部落到唯一支持者 <code>verify-c</code>。</li>
+  <li><strong>随机模式的其他分支</strong>：<code>method</code> 写小写 <code>ping</code> 仍命中并回显 <code>Ping</code>；<code>deviceId</code> 为空白字符串按随机模式处理；不带 <code>deviceId</code> 调用无人上报的 <code>Nope</code> → <code>404</code>；精确指定 <code>verify-c</code> 调用 <code>Ping</code> → <code>409</code>；精确指定不存在设备 → <code>404</code>；响应中的 <code>deviceId</code>/<code>connectionId</code> 均为实际承接者。</li>
+  <li><strong>失败分支</strong>：随机模式下无设备支持该方法、或精确模式下设备不在线 → <code>404</code>；精确模式下方法未上报 → <code>409</code>；不带凭据 → <code>401</code>。</li>
+  <li><strong>同一 deviceId 多连接（实测）</strong>：用 <code>deviceId=dup</code> 同时建立 3 条连接（两条上报 <code>Ping</code>，一条只上报 <code>Other</code>）全部成功；<code>/api/devices</code> 返回 <code>total=4</code>（另有 1 台 <code>other-dev</code>），其中 <code>dup</code> 占 3 行。精确指定 <code>dup</code> 调 <code>Ping</code> 300 次，只落到两条支持者（132 / 168 次），从未落到只支持 <code>Other</code> 的连接；调 <code>Other</code> 始终落到唯一支持者；<code>dup</code> 有连接但无人支持 <code>Nope</code> → <code>409</code>，指定不存在的 <code>deviceId</code> → <code>404</code>。断开其中一条后在线连接数由 4 变 3，同 ID 的其余连接不受影响；随后同 ID 重连成功，新连接重新进入候选。</li>
   <li><strong>HTTP/1.1 对照</strong>：curl 走 HTTP/1.1 访问同一端点为 <code>Recv failure: Connection was aborted</code>，确认必须使用 HTTP/2。</li>
   <li><strong>说明</strong>：本地测试关闭了证书校验；生产环境请改为信任服务端证书。</li>
 </ul>

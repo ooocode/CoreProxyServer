@@ -1,7 +1,6 @@
 ﻿using Hello;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using System.Threading.Channels;
 
 namespace CoreProxy.Server.Orleans.Services
 {
@@ -44,24 +43,12 @@ namespace CoreProxy.Server.Orleans.Services
     [JsonSerializable(typeof(DeviceInfo))]
     public partial class DeviceJsonContext : JsonSerializerContext;
 
-    public class SessionInfo
-    {
-        /// <summary>
-        /// 发起人
-        /// </summary>
-        public required string Creator { get; set; }
-
-        public required Channel<ReadOnlyMemory<byte>> ChannelA { get; set; }
-
-        public required Channel<ReadOnlyMemory<byte>> ChannelB { get; set; }
-    }
-
     public static class GloableSessionsManager
     {
-        public static readonly System.Collections.Concurrent.ConcurrentDictionary<string, SessionInfo> SessionList = [];
-
         /// <summary>
-        /// signalr在线客户端 [deviceId-SignalrOnlineClient]
+        /// SignalR 在线客户端 [connectionId-SignalrOnlineClient]。
+        /// 刻意用 ConnectionId 而不是 DeviceId 做键：同一个 DeviceId 允许多条连接同时在线
+        /// （重连、同机多实例等），这样断开时只移除自己那条，不会误删同 ID 的其它连接。
         /// </summary>
         public static readonly System.Collections.Concurrent.ConcurrentDictionary<string, SignalrOnlineClient> SignalrOnlineClients = [];
     }

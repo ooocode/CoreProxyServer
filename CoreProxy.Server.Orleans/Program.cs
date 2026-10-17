@@ -209,7 +209,8 @@ app.MapGet("/api/status", (HttpContext ctx) => AdminApi.HandleStatus(ctx, certif
 // 在线 SignalR 设备及其上报的可调用方法（鉴权同上）
 app.MapGet("/api/devices", (HttpContext ctx) => AdminApi.HandleDevices(ctx, certificatePassword.Password));
 
-// 按 deviceId 向 SignalR 在线设备调用其上报的某个方法并等返回值（鉴权同上）
+// 调用 SignalR 在线设备上报的某个方法并等返回值（鉴权同上）：
+// 带 deviceId 精确指定设备；不带 deviceId 则从所有上报了该方法的在线设备中随机选一个。
 // 请求体 InvokeRequest 由 minimal API 强类型绑定（source-gen，见上面的 ConfigureHttpJsonOptions）
 app.MapPost("/api/invoke", (InvokeRequest request, HttpContext ctx) =>
     AdminApi.HandleInvokeAsync(

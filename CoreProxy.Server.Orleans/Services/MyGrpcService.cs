@@ -5,12 +5,10 @@ using Google.Protobuf;
 using Google.Protobuf.WellKnownTypes;
 using Grpc.Core;
 using Hello;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Net.Http.Headers;
 using System.Buffers;
 using System.Net;
 using System.Net.Sockets;
-using System.Threading.Channels;
 
 namespace CoreProxy.Server.Orleans.Services
 {

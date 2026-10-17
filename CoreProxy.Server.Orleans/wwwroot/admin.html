@@ -106,7 +106,7 @@
   <h2>在线设备 / 可调用方法</h2>
   <table>
     <thead>
-      <tr><th>设备 ID</th><th>机器名</th><th>用户名</th><th>可调用方法</th><th>操作</th></tr>
+      <tr><th>设备 ID</th><th>连接 ID</th><th>机器名</th><th>用户名</th><th>可调用方法</th><th>操作</th></tr>
     </thead>
     <tbody id="deviceRows"></tbody>
   </table>
@@ -187,10 +187,12 @@
     devices.forEach(function (d) {
       var tr = document.createElement('tr');
       tr.appendChild(td(d.deviceId, true));
+      // 同一 deviceId 允许多条连接，必须把 connectionId 展示出来才能区分这些行
+      tr.appendChild(td(d.connectionId || '—', true));
       tr.appendChild(td(d.machineName || '—'));
       tr.appendChild(td(d.userName || '—'));
 
-      // 可调用方法：标签形式；没上报任何方法时明确标注（这种设备调什么都会 409）
+      // 可调用方法：标签形式；没上报任何方法时明确标注（这条连接不会成为任何调用的候选）
       var tdMethods = document.createElement('td');
       if (d.methods && d.methods.length) {
         d.methods.forEach(function (m) {
@@ -247,19 +249,69 @@
     return select.value;
   }
 
+  // 设备下拉框：第一项是"随机"（value 为空 = 不指定 deviceId，由服务端按方法选）。
+  // 不能复用 fillSelect：它会把空值当成"未选择"并强制回落到第一台设备，随机项会被 5 秒轮询冲掉。
+  function fillDeviceSelect() {
+    // 同一 deviceId 可能有多条连接：下拉框按 deviceId 去重，括号里标出连接数。
+    var counts = {};
+    var ids = [];
+    devices.forEach(function (d) {
+      if (!counts[d.deviceId]) {
+        counts[d.deviceId] = 0;
+        ids.push(d.deviceId);
+      }
+      counts[d.deviceId]++;
+    });
+    var previous = invDeviceEl.value;
+    invDeviceEl.textContent = '';
+
+    if (ids.length === 0) {
+      var empty = document.createElement('option');
+      empty.value = '';
+      empty.textContent = '无在线设备';
+      invDeviceEl.appendChild(empty);
+      invDeviceEl.disabled = true;
+      return '';
+    }
+
+    invDeviceEl.disabled = false;
+    var random = document.createElement('option');
+    random.value = '';
+    random.textContent = '随机（按方法自动选择）';
+    invDeviceEl.appendChild(random);
+    ids.forEach(function (id) {
+      var opt = document.createElement('option');
+      opt.value = id;
+      opt.textContent = counts[id] > 1 ? id + '（' + counts[id] + ' 条连接）' : id;
+      invDeviceEl.appendChild(opt);
+    });
+
+    // 之前选的是随机（''）就保持随机；选的是设备且仍在线就保持该设备；掉线则回落到随机。
+    invDeviceEl.value = ids.indexOf(previous) >= 0 ? previous : '';
+    return invDeviceEl.value;
+  }
+
   function syncPanel() {
-    var ids = devices.map(function (d) { return d.deviceId; });
-    var deviceId = fillSelect(invDeviceEl, ids, true, '无在线设备');
-    syncMethods(deviceId);
+    syncMethods(fillDeviceSelect());
   }
 
   function syncMethods(deviceId) {
-    var device = null;
-    for (var i = 0; i < devices.length; i++) {
-      if (devices[i].deviceId === deviceId) { device = devices[i]; break; }
-    }
-    var methods = device && device.methods ? device.methods : [];
-    fillSelect(invMethodEl, methods, true, '无可调用方法');
+    // 指定设备时，取该 deviceId 下【所有连接】上报方法的并集；随机模式取全部连接。
+    // 大小写不敏感去重，保留首次出现的拼写。
+    var methods = [];
+    var seen = {};
+    devices.forEach(function (d) {
+      if (deviceId && d.deviceId !== deviceId) return;
+      (d.methods || []).forEach(function (m) {
+        var key = m.toLowerCase();
+        if (!seen[key]) {
+          seen[key] = true;
+          methods.push(m);
+        }
+      });
+    });
+    methods.sort(function (a, b) { return a.localeCompare(b); });
+    fillSelect(invMethodEl, methods, true, deviceId ? '无可调用方法' : '无设备上报方法');
   }
 
   function pickDevice(deviceId) {
@@ -278,40 +330,48 @@
   function explain(status) {
     switch (status) {
       case 401: return '未通过鉴权（401）：请刷新页面重新输入密码。';
-      case 400: return '请求无效（400）：缺少 deviceId 或 method。';
-      case 404: return '设备不在线（404）：该 deviceId 当前没有活跃连接。';
-      case 409: return '设备未上报该方法（409）：只能调用设备主动声明支持的 method。';
+      case 400: return '请求无效（400）：缺少 method。';
+      case 404: return '没有可调用的目标（404）：指定的 deviceId 没有任何在线连接，或当前没有任何连接上报该方法。';
+      case 409: return '设备未上报该方法（409）：指定 deviceId 时，该 ID 下的在线连接都没有主动声明支持该 method。';
       case 502: return '端上调用失败（502）：设备未实现该方法、已断开，或等待返回值超时。';
       default:  return '调用失败：HTTP ' + status;
     }
   }
 
   function invoke() {
-    var deviceId = invDeviceEl.value;
+    var deviceId = invDeviceEl.value;   // 空 = 随机模式
     var method = invMethodEl.value;
-    if (!deviceId || !method) {
-      showInvokeResult(false, '请先选择设备与方法。');
+    if (!method) {
+      showInvokeResult(false, '请先选择方法。');
       return;
     }
 
     invResultEl.className = 'result show';
     invResultEl.textContent = '调用中…';
 
+    var body = { method: method, payload: invPayloadEl.value };
+    if (deviceId) body.deviceId = deviceId;   // 不指定设备时不发 deviceId，交给服务端随机选
+
     fetch('/api/invoke', {
       method: 'POST',
       credentials: 'same-origin',
       cache: 'no-store',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ deviceId: deviceId, method: method, payload: invPayloadEl.value })
+      body: JSON.stringify(body)
     })
       .then(function (res) {
         return res.text().then(function (text) { return { status: res.status, text: text }; });
       })
       .then(function (r) {
         if (r.status === 200) {
-          var result = r.text;
-          try { result = JSON.parse(r.text).result; } catch (e) { /* 非 JSON 就原样展示 */ }
-          showInvokeResult(true, '✓ ' + method + ' 返回：\n' + result);
+          var payload = null;
+          try { payload = JSON.parse(r.text); } catch (e) { /* 非 JSON 就原样展示 */ }
+          if (payload) {
+            // 必须展示实际承接调用的连接：同一 deviceId 可能有多条连接，只有 connectionId 能区分。
+            showInvokeResult(true, '✓ ' + payload.deviceId + ' · ' + payload.connectionId + ' · ' + payload.method + ' 返回：\n' + payload.result);
+          } else {
+            showInvokeResult(true, '✓ ' + r.text);
+          }
         } else {
           showInvokeResult(false, explain(r.status));
         }

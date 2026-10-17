@@ -6,6 +6,7 @@ namespace CoreProxy.Server.Orleans.Services
     /// <summary>
     /// 设备在线表维护。设备连上来时在 query 的 info 里带一段【明文 JSON】（见 DeviceInfo），
     /// 解析后映射成 proto SignalrOnlineClient 存入 GloableSessionsManager（gRPC GetSignalrOnlineClients 仍按该 proto 返回）。
+    /// 在线表以 ConnectionId 为键：同一个 DeviceId 允许多条连接同时在线，互不覆盖。
     /// </summary>
     public class ChatHub(ILogger<MyGrpcService> logger) : Hub
     {
@@ -25,10 +26,8 @@ namespace CoreProxy.Server.Orleans.Services
                 client.Methods.AddRange(device.Methods);
             }
 
-            if (!GloableSessionsManager.SignalrOnlineClients.TryAdd(client.DeviceId, client))
-            {
-                throw new Exception($"设备{client.DeviceId}重复上线");
-            }
+            // ConnectionId 由 SignalR 为每条连接唯一分配，因此同一 DeviceId 重复上线不会冲突。
+            GloableSessionsManager.SignalrOnlineClients.TryAdd(client.ConnectionId, client);
 
             if (logger.IsEnabled(LogLevel.Information))
             {
@@ -42,27 +41,12 @@ namespace CoreProxy.Server.Orleans.Services
 
         public override async Task OnDisconnectedAsync(Exception? exception)
         {
-            string? info = Context.GetHttpContext()?.Request.Query["info"].ToString().Trim();
-            if (!string.IsNullOrWhiteSpace(info))
+            // 只移除这条连接自己。同一 DeviceId 的其它在线连接不受影响。
+            // 不再依赖 query 里的 info：即便断开时取不到/解析不了 info，也不会漏清理。
+            if (GloableSessionsManager.SignalrOnlineClients.TryRemove(Context.ConnectionId, out var d)
+                && logger.IsEnabled(LogLevel.Error))
             {
-                // 离线路径要尽量不抛：info 坏了也照常走 base，避免把 OnDisconnectedAsync 本身搞崩。
-                string? deviceId = null;
-                try
-                {
-                    deviceId = DeviceInfo.Parse(info).DeviceId;
-                }
-                catch (Exception ex)
-                {
-                    logger.LogWarning(ex, "设备离线时解析 info 失败，跳过在线表清理");
-                }
-
-                if (deviceId is not null && GloableSessionsManager.SignalrOnlineClients.TryRemove(deviceId, out var d))
-                {
-                    if (logger.IsEnabled(LogLevel.Error))
-                    {
-                        logger.LogError("设备离线: {d.DeviceId} {d.ConnectionId}", d.DeviceId, d.ConnectionId);
-                    }
-                }
+                logger.LogError("设备离线: {d.DeviceId} {d.ConnectionId}", d.DeviceId, d.ConnectionId);
             }
 
             await base.OnDisconnectedAsync(exception);

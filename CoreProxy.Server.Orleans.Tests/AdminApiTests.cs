@@ -192,7 +192,7 @@ namespace CoreProxy.Server.Orleans.Tests
             {
                 var c = new SignalrOnlineClient { DeviceId = id, MachineName = "pc-" + id, UserName = "user-" + id, ConnectionId = conn };
                 c.Methods.AddRange(methods);
-                GloableSessionsManager.SignalrOnlineClients.TryAdd(id, c);
+                GloableSessionsManager.SignalrOnlineClients.TryAdd(conn, c);
             }
             Online("b", "conn-b", "Reboot");                 // 单个方法
             Online("a", "conn-a", "SessionStart", "Reboot"); // 多个方法
@@ -209,14 +209,43 @@ namespace CoreProxy.Server.Orleans.Tests
             Assert.IsTrue(json.Contains("\"methods\":[]"), "c 未上报应为空数组，但 JSON=" + json);
             Assert.IsTrue(json.IndexOf("\"deviceId\":\"a\"") < json.IndexOf("\"deviceId\":\"b\""), "应按 DeviceId 排序，但 JSON=" + json);
         }
+
+        // 同一 deviceId 允许多条连接同时在线：每条连接独立一行，total 数连接数，
+        // 排序用 DeviceId + ConnectionId，保证同 ID 的多条连接可区分且输出稳定。
+        [TestMethod]
+        public async Task HandleDevices_DuplicateDeviceId_ListsEveryConnectionSortedByConnectionId()
+        {
+            void Online(string id, string conn, params string[] methods)
+            {
+                var c = new SignalrOnlineClient { DeviceId = id, MachineName = "pc-" + id, UserName = "user-" + id, ConnectionId = conn };
+                c.Methods.AddRange(methods);
+                GloableSessionsManager.SignalrOnlineClients.TryAdd(conn, c);
+            }
+            Online("d1", "conn-b", "Ping");
+            Online("d1", "conn-a", "Ping", "Echo");
+            Online("d2", "conn-c");
+
+            var ctx = await RunGet(Basic(":pw"), c => AdminApi.HandleDevices(c, "pw"));
+            var json = await ReadBodyAsync(ctx);
+
+            Assert.AreEqual(200, ctx.Response.StatusCode);
+            Assert.IsTrue(json.Contains("\"total\":3"), "total 应数连接而非设备，JSON=" + json);
+            Assert.AreEqual(2, json.Split("\"deviceId\":\"d1\"").Length - 1, "d1 的两条连接都应列出，JSON=" + json);
+            var a = json.IndexOf("\"connectionId\":\"conn-a\"");
+            var b = json.IndexOf("\"connectionId\":\"conn-b\"");
+            var c = json.IndexOf("\"connectionId\":\"conn-c\"");
+            Assert.IsTrue(a >= 0 && b >= 0 && c >= 0, "三条连接都应列出，JSON=" + json);
+            Assert.IsTrue(a < b && b < c, "应按 DeviceId + ConnectionId 排序，JSON=" + json);
+        }
     }
 
     /// <summary>
-    /// /api/invoke：按 deviceId 找在线设备，校验它【主动上报】的 Methods 里含请求的 method，再经 SignalR 调用并透传返回值。
+    /// /api/invoke：带 deviceId 时精确调用该在线设备上报的方法；不带 deviceId 时在所有上报了该方法的
+    /// 在线客户端中随机选一个。两条路径都校验设备【主动上报】的 Methods，再经 SignalR 调用并透传返回值。
     /// 请求体现在由 minimal API 强类型绑定（Program.cs 的 MapPost），故这里直接以 <see cref="InvokeRequest"/> 调用
     /// HandleInvokeAsync——"JSON 非法 → 400"由绑定层负责，不在此覆盖。
     /// 端上调用（InvokeAsync 等返回值）依赖 SignalR 协议握手、无法用假 IHubContext 复现，故用 invokeOnClient 注入替换，
-    /// 聚焦 HTTP 分层语义、方法白名单与透传正确性。
+    /// 聚焦 HTTP 分层语义、方法白名单、随机候选过滤与透传正确性。
     /// </summary>
     [TestClass]
     public sealed class InvokeApiTests
@@ -229,12 +258,12 @@ namespace CoreProxy.Server.Orleans.Tests
         private static string Basic(string credential) =>
             "Basic " + Convert.ToBase64String(Encoding.UTF8.GetBytes(credential));
 
-        /// <summary>注册一个已上报若干方法名的在线设备。</summary>
+        /// <summary>注册一条已上报若干方法名的在线连接（同一 deviceId 可注册多条不同 connectionId 的连接）。</summary>
         private static void Online(string deviceId, string connectionId, params string[] methods)
         {
             var client = new SignalrOnlineClient { DeviceId = deviceId, ConnectionId = connectionId };
             client.Methods.AddRange(methods);
-            GloableSessionsManager.SignalrOnlineClients.TryAdd(deviceId, client);
+            GloableSessionsManager.SignalrOnlineClients.TryAdd(connectionId, client);
         }
 
         /// <summary>绝不该被调用的端上调用实现，用于断言"未通过校验就不下发"。</summary>
@@ -275,10 +304,218 @@ namespace CoreProxy.Server.Orleans.Tests
         }
 
         [TestMethod]
-        public async Task Invoke_BlankDeviceId_Returns400()
+        public async Task Invoke_NoDeviceId_NoOnlineDevices_Returns404WithoutInvoking()
         {
-            var ctx = await Run(Basic(":pw"), new InvokeRequest("", "SessionStart", "p"));
-            Assert.AreEqual(400, ctx.Response.StatusCode);
+            var ctx = await Run(Basic(":pw"), new InvokeRequest(null, "SessionStart", "p"), MustNotInvoke);
+            Assert.AreEqual(404, ctx.Response.StatusCode);
+        }
+
+        // 空白 deviceId 等价于不传：走随机模式。有设备在线但没人上报该方法 → 没有可承接的目标 → 404。
+        [TestMethod]
+        public async Task Invoke_BlankDeviceId_NoClientReportedMethod_Returns404WithoutInvoking()
+        {
+            Online("d1", "conn-1", "Reboot");
+            Online("d2", "conn-2"); // 未上报任何方法
+
+            var ctx = await Run(Basic(":pw"), new InvokeRequest("  ", "SessionStart", "p"), MustNotInvoke);
+
+            Assert.AreEqual(404, ctx.Response.StatusCode);
+        }
+
+        // 随机模式的核心：候选只能来自上报了该方法的客户端；不在候选里的设备绝不能被调用。
+        // 200 轮下两台候选都至少被选中一次的概率为 1 - 2^-199，足以排除"永远只选第一台"这类回归。
+        [TestMethod]
+        public async Task Invoke_NoDeviceId_RandomlySelectsAmongClientsReportingMethod()
+        {
+            Online("reboot-only", "conn-r", "Reboot");
+            Online("start-a", "conn-a", "SessionStart");
+            Online("start-b", "conn-b", "SessionStart");
+
+            var hits = new Dictionary<string, int>(StringComparer.Ordinal);
+            var devicesByConn = new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["conn-a"] = "start-a",
+                ["conn-b"] = "start-b",
+            };
+
+            string? lastConn = null;
+            Task<string> Invoke(string connId, string method, string payload, CancellationToken _)
+            {
+                lastConn = connId;
+                hits[connId] = hits.GetValueOrDefault(connId) + 1;
+                Assert.AreEqual("SessionStart", method, "应下发设备上报的精确拼写");
+                Assert.AreEqual("hello", payload, "payload 应原样透传");
+                return Task.FromResult("ok:" + connId);
+            }
+
+            const int rounds = 200;
+            for (var i = 0; i < rounds; i++)
+            {
+                var ctx = await Run(Basic(":pw"), new InvokeRequest(null, "SessionStart", "hello"), Invoke);
+                Assert.AreEqual(200, ctx.Response.StatusCode, "第 " + i + " 轮");
+
+                var json = ReadBody(ctx);
+                var conn = lastConn!;
+                Assert.IsTrue(devicesByConn.ContainsKey(conn), "只应选中上报了该方法的设备，实际 conn=" + conn);
+                Assert.IsTrue(json.Contains($"\"deviceId\":\"{devicesByConn[conn]}\""),
+                    "响应应回显实际承接调用的设备，JSON=" + json);
+                Assert.IsTrue(json.Contains($"\"connectionId\":\"{conn}\""),
+                    "响应应回显实际承接调用的连接，JSON=" + json);
+                Assert.IsTrue(json.Contains($"\"result\":\"ok:{conn}\""), "JSON=" + json);
+            }
+
+            Assert.IsFalse(hits.ContainsKey("conn-r"), "未上报该方法的设备不可能是候选");
+            Assert.IsTrue(hits.GetValueOrDefault("conn-a") > 0, "随机 200 轮中 conn-a 应至少命中一次");
+            Assert.IsTrue(hits.GetValueOrDefault("conn-b") > 0, "随机 200 轮中 conn-b 应至少命中一次");
+        }
+
+        // 随机模式下仍要用【被选中设备上报的精确拼写】下发，而不是请求原文。
+        [TestMethod]
+        public async Task Invoke_NoDeviceId_UsesReportedSpellingOfSelectedDevice()
+        {
+            Online("d1", "conn-1", "SeSsIoNStart");
+
+            string? seenMethod = null;
+            Task<string> Invoke(string connId, string method, string payload, CancellationToken _)
+            {
+                seenMethod = method;
+                return Task.FromResult("ok");
+            }
+
+            var ctx = await Run(Basic(":pw"), new InvokeRequest(null, "sessionstart", "p"), Invoke);
+
+            Assert.AreEqual(200, ctx.Response.StatusCode);
+            Assert.AreEqual("SeSsIoNStart", seenMethod, "应下发设备上报的精确拼写");
+            Assert.IsTrue(ReadBody(ctx).Contains("\"method\":\"SeSsIoNStart\""), "响应 method 应为实际下发的名字");
+        }
+
+        [TestMethod]
+        public async Task Invoke_NoDeviceId_NullPayload_DefaultsToEmptyString()
+        {
+            Online("d1", "conn-1", "SessionStart");
+
+            string? seenPayload = null;
+            Task<string> Invoke(string connectionId, string method, string payload, CancellationToken cancellationToken)
+            {
+                seenPayload = payload;
+                return Task.FromResult("ok");
+            }
+
+            var ctx = await Run(Basic(":pw"), new InvokeRequest(null, "SessionStart", null), Invoke);
+
+            Assert.AreEqual(200, ctx.Response.StatusCode);
+            Assert.AreEqual(string.Empty, seenPayload);
+        }
+
+        [TestMethod]
+        public async Task Invoke_NoDeviceId_ClientFault_Returns502()
+        {
+            Online("d1", "conn-1", "SessionStart");
+            static Task<string> Invoke(string connectionId, string method, string payload, CancellationToken cancellationToken) =>
+                throw new InvalidOperationException("设备已断开");
+
+            var ctx = await Run(Basic(":pw"), new InvokeRequest(null, "SessionStart", "p"), Invoke);
+            Assert.AreEqual(502, ctx.Response.StatusCode);
+        }
+
+        // 同一 DeviceId 允许多条连接：精确指定 d1 时，只在 d1 下【支持该方法】的连接中随机选，
+        // 同 ID 但不支持方法的连接、以及其它 DeviceId 的连接都不能成为候选。
+        [TestMethod]
+        public async Task Invoke_PinnedDeviceId_RandomlySelectsAmongItsConnectionsSupportingMethod()
+        {
+            Online("d1", "conn-a", "Ping");
+            Online("d1", "conn-b", "Ping");
+            Online("d1", "conn-c", "Other");
+            Online("d2", "conn-x", "Ping");
+
+            var hits = new Dictionary<string, int>(StringComparer.Ordinal);
+            string? lastConn = null;
+            Task<string> Invoke(string connId, string method, string payload, CancellationToken _)
+            {
+                lastConn = connId;
+                hits[connId] = hits.GetValueOrDefault(connId) + 1;
+                Assert.AreEqual("Ping", method);
+                return Task.FromResult("ok:" + connId);
+            }
+
+            const int rounds = 200;
+            for (var i = 0; i < rounds; i++)
+            {
+                var ctx = await Run(Basic(":pw"), new InvokeRequest("d1", "Ping", "p"), Invoke);
+                Assert.AreEqual(200, ctx.Response.StatusCode, "第 " + i + " 轮");
+
+                var json = ReadBody(ctx);
+                var conn = lastConn!;
+                Assert.IsTrue(conn is "conn-a" or "conn-b", "只应选中 d1 下支持 Ping 的连接，实际 " + conn);
+                Assert.IsTrue(json.Contains("\"deviceId\":\"d1\""), "JSON=" + json);
+                Assert.IsTrue(json.Contains($"\"connectionId\":\"{conn}\""), "JSON=" + json);
+            }
+
+            Assert.IsFalse(hits.ContainsKey("conn-c"), "同 ID 但未上报该方法的连接不可能是候选");
+            Assert.IsFalse(hits.ContainsKey("conn-x"), "其它 DeviceId 的连接不可能是候选");
+            Assert.IsTrue(hits.GetValueOrDefault("conn-a") > 0, "随机 200 轮中 conn-a 应至少命中一次");
+            Assert.IsTrue(hits.GetValueOrDefault("conn-b") > 0, "随机 200 轮中 conn-b 应至少命中一次");
+        }
+
+        [TestMethod]
+        public async Task Invoke_PinnedDeviceId_OnlyOneConnectionSupportsMethod_AlwaysSelectsIt()
+        {
+            Online("d1", "conn-a", "Ping");
+            Online("d1", "conn-b", "Other");
+
+            string? seenConn = null;
+            Task<string> Invoke(string connId, string method, string payload, CancellationToken _)
+            {
+                seenConn = connId;
+                return Task.FromResult("ok");
+            }
+
+            var ctx = await Run(Basic(":pw"), new InvokeRequest("d1", "Ping", "p"), Invoke);
+
+            Assert.AreEqual(200, ctx.Response.StatusCode);
+            Assert.AreEqual("conn-a", seenConn, "只有 conn-a 支持 Ping");
+        }
+
+        [TestMethod]
+        public async Task Invoke_PinnedDeviceId_NoConnectionSupportsMethod_Returns409WithoutInvoking()
+        {
+            Online("d1", "conn-a", "Other");
+            Online("d1", "conn-b", "Shutdown");
+
+            var ctx = await Run(Basic(":pw"), new InvokeRequest("d1", "Ping", "p"), MustNotInvoke);
+
+            Assert.AreEqual(409, ctx.Response.StatusCode);
+        }
+
+        // 全局随机模式下，同一 DeviceId 的多条连接是彼此独立的候选；不能被字典键合并成一条。
+        [TestMethod]
+        public async Task Invoke_NoDeviceId_DuplicateDeviceIds_AllSupportingConnectionsAreCandidates()
+        {
+            Online("d1", "conn-a", "Ping");
+            Online("d1", "conn-b", "Ping");
+            Online("d2", "conn-x", "Other");
+
+            var hits = new Dictionary<string, int>(StringComparer.Ordinal);
+            string? lastConn = null;
+            Task<string> Invoke(string connId, string method, string payload, CancellationToken _)
+            {
+                lastConn = connId;
+                hits[connId] = hits.GetValueOrDefault(connId) + 1;
+                return Task.FromResult("ok:" + connId);
+            }
+
+            const int rounds = 200;
+            for (var i = 0; i < rounds; i++)
+            {
+                var ctx = await Run(Basic(":pw"), new InvokeRequest(null, "Ping", "p"), Invoke);
+                Assert.AreEqual(200, ctx.Response.StatusCode, "第 " + i + " 轮");
+                Assert.IsTrue(lastConn is "conn-a" or "conn-b", "实际 " + lastConn);
+                Assert.IsTrue(ReadBody(ctx).Contains($"\"connectionId\":\"{lastConn}\""), "响应应回显实际连接");
+            }
+
+            Assert.IsFalse(hits.ContainsKey("conn-x"));
+            Assert.IsTrue(hits.GetValueOrDefault("conn-a") > 0);
+            Assert.IsTrue(hits.GetValueOrDefault("conn-b") > 0);
         }
 
         [TestMethod]
