@@ -431,7 +431,7 @@ connection.On&lt;string, string&gt;("Echo", async payload =&gt;
 </div>
 
 <div class="warn">
-  <p><span class="label">handler 必须有返回值：</span>服务端等的是 <code>InvokeAsync&lt;string&gt;</code> 的结果。如果客户端注册的是无返回值 handler（<code>On&lt;string&gt;</code> + <code>Action</code>）、返回非 string、抛异常或 30 秒内不返回，<code>/api/invoke</code> 都会返回 <code>502</code>。</p>
+  <p><span class="label">handler 必须有返回值：</span>服务端等的是 <code>InvokeAsync&lt;string&gt;</code> 的结果。如果客户端注册的是无返回值 handler（<code>On&lt;string&gt;</code> + <code>Action</code>）、返回非 string 或抛异常，<code>/api/invoke</code> 返回 <code>502</code>；如果超过本次调用的超时时间（默认 900 秒，可用 <code>timeoutSeconds</code> 覆盖），返回 <code>504</code>。</p>
 </div>
 
 <h2 id="invoke">5. 调用端：POST <code>/api/invoke</code></h2>
@@ -465,6 +465,7 @@ HTTP/2</code></pre>
     <tr><td><code>deviceId</code></td><td>string | null</td><td>否</td><td>目标设备 ID。省略、<code>null</code> 或空白时进入<strong>全局随机模式</strong>；传入时只在 DeviceId 相同的在线连接中选。同一个 <code>deviceId</code> 可能有多条连接，此时在该 ID 下支持 <code>method</code> 的连接中随机选一条。</td></tr>
     <tr><td><code>method</code></td><td>string</td><td>是</td><td>要调用的方法名。只有把它写进 <code>info.methods</code> 的设备才会成为候选（大小写不敏感匹配）。</td></tr>
     <tr><td><code>payload</code></td><td>string | null</td><td>否</td><td>原样作为唯一参数传给设备 handler。省略或为 <code>null</code> 时按空字符串 <code>""</code> 下发。</td></tr>
+    <tr><td><code>timeoutSeconds</code></td><td>int | null</td><td>否</td><td>本次等待设备返回值的上限（秒），必须大于 0，<strong>不设上限</strong>；≤ 0 返回 <code>400</code>。省略时用服务端默认值（<code>AdminInvokeTimeoutSeconds</code>，默认 900 秒＝15 分钟）。更长的任务可显式申请任意更大的等待时长（如 3600 秒＝1 小时）。</td></tr>
   </tbody>
 </table>
 
@@ -497,7 +498,7 @@ HTTP/2</code></pre>
       <td><code>200</code></td><td>调用成功</td><td>设备在线、方法已上报、handler 正常返回 string。</td>
     </tr>
     <tr>
-      <td><code>400</code></td><td>请求不合法</td><td><code>method</code> 缺失 / 空白；请求体不是合法 JSON。<code>deviceId</code> 可省略。</td>
+      <td><code>400</code></td><td>请求不合法</td><td><code>method</code> 缺失 / 空白；<code>timeoutSeconds</code> ≤ 0（不设上限）；请求体不是合法 JSON。<code>deviceId</code> 可省略。</td>
     </tr>
     <tr>
       <td><code>401</code></td><td>未通过鉴权</td><td>缺少 <code>Authorization</code>、不是 Basic、base64 非法、口令不匹配。</td>
@@ -509,13 +510,18 @@ HTTP/2</code></pre>
       <td><code>409</code></td><td>方法未上报</td><td>仅精确模式：该 <code>deviceId</code> 有在线连接，但<strong>没有任何一条</strong>在 <code>info.methods</code> 里上报这个方法（大小写不敏感比较后仍无匹配）。全局随机模式不会返回 409——不支持该方法的连接根本不会成为候选。</td>
     </tr>
     <tr>
-      <td><code>502</code></td><td>端上调用失败</td><td>设备在调用瞬间断开、客户端没有注册该 handler、handler 抛异常、handler 不返回 string、超过 30 秒未返回。</td>
+      <td><code>502</code></td><td>端上调用失败</td><td>设备在调用瞬间断开、客户端没有注册该 handler、handler 抛异常、handler 不返回 string。</td>
+    </tr>
+    <tr>
+      <td><code>504</code></td><td>等待返回值超时</td><td>设备在线但 handler 在本次 <code>timeoutSeconds</code>（默认 900 秒，可显式指定更大值）内没有返回。服务端会取消对应的 SignalR 调用；设备之后即使返回，结果也不会再写回这个 HTTP 响应。</td>
     </tr>
   </tbody>
 </table>
 
 <div class="note">
-  <p><strong>30 秒上限：</strong>服务端等待设备返回值的超时是固定 30 秒。超时后 HTTP 返回 <code>502</code>；设备侧即使之后才返回，也不会再写回这个 HTTP 响应。</p>
+  <p><strong>超时：</strong>默认 900 秒（15 分钟），可用服务端配置 <code>AdminInvokeTimeoutSeconds</code> 调整默认值；单个请求可用 <code>timeoutSeconds</code> 显式申请任意更长的窗口（只要求 &gt; 0，不设上限），例如 <code>"timeoutSeconds": 3600</code> 表示 1 小时。超时返回 <code>504</code>，并取消对应的 SignalR 调用。服务端计时器的平台上限约 49.7 天，超过该值时按该上限等待（对实际使用等价于无限）。</p>
+  <p><strong>同步长调用的代价：</strong>等待 15 分钟甚至 1 小时会一直占用 HTTP/2 stream、SignalR invocation 和服务端内存。如果长任务很多，建议改成异步任务模型（提交后立即返回 jobId，设备完成后上报或由调用方轮询），不要用大量同步请求长期挂起。</p>
+  <p><strong>反向代理：</strong>如果前面有 nginx / 网关，确认其读超时大于你申请的值（nginx <code>proxy_read_timeout</code> 默认 60 秒），否则代理会先断开，调用方看到的是代理错误而不是服务端的 <code>504</code>。</p>
 </div>
 
 <h3>5.4 C# 调用示例（HttpClient）</h3>
@@ -536,6 +542,9 @@ var handler = new SocketsHttpHandler
 using var http = new HttpClient(handler)
 {
     BaseAddress = new Uri(server),
+    // HttpClient.Timeout 默认只有 100 秒；要发起 timeoutSeconds > 100 的长调用必须放宽，
+    // 否则请求会先在客户端被 TaskCanceledException 取消，根本等不到服务端的 504。
+    Timeout = TimeSpan.FromMinutes(90),
     // 服务端是 HTTP/2 only，普通请求也必须走 h2
     DefaultRequestVersion = HttpVersion.Version20,
     DefaultVersionPolicy = HttpVersionPolicy.RequestVersionExact
@@ -564,6 +573,15 @@ using var response = await http.PostAsJsonAsync("/api/invoke", new
 //     payload = "hello"
 // });
 
+// C. 长任务：默认 15 分钟，这里显式申请 1 小时（timeoutSeconds 不设上限；同时记得放宽上面的 HttpClient.Timeout）
+// using var longResponse = await http.PostAsJsonAsync("/api/invoke", new
+// {
+//     deviceId = "pc-001",
+//     method = "LongTask",
+//     payload = "hello",
+//     timeoutSeconds = 3600
+// });
+
 Console.WriteLine($"HTTP {(int)response.StatusCode}");
 Console.WriteLine(await response.Content.ReadAsStringAsync());
 // 200 {"deviceId":"实际被选中的设备","connectionId":"...","method":"Ping","result":"pong:hello"}
@@ -574,7 +592,7 @@ Console.WriteLine(await response.Content.ReadAsStringAsync());
 // Console.WriteLine(result?.Result);</code></pre>
 
 <div class="note">
-  <p><strong>先判断状态码，再反序列化。</strong>非 2xx（401/404/409/502）的响应体通常是空的，直接 <code>ReadFromJsonAsync</code> 会抛 <code>JsonException</code>。用 <code>response.IsSuccessStatusCode</code> 或 <code>EnsureSuccessStatusCode()</code> 先分流。</p>
+  <p><strong>先判断状态码，再反序列化。</strong>非 2xx（401/404/409/502/504）的响应体通常是空的，直接 <code>ReadFromJsonAsync</code> 会抛 <code>JsonException</code>。用 <code>response.IsSuccessStatusCode</code> 或 <code>EnsureSuccessStatusCode()</code> 先分流。</p>
   <p><strong>AOT 客户端：</strong><code>PostAsJsonAsync</code> / <code>ReadFromJsonAsync</code> 默认走反射序列化。若调用方是 AOT 发布，改用带 <code>JsonTypeInfo&lt;T&gt;</code> 的重载，并定义 source-gen 的 <code>JsonSerializerContext</code>（与文档开头设备端使用 <code>JsonSerializer.Serialize</code> 的场景分开处理）。</p>
 </div>
 
@@ -611,6 +629,8 @@ using var services = new ServiceCollection()
     .AddHttpClient("coreproxy", client =&gt;
     {
         client.BaseAddress = new Uri(server);
+        // HttpClient.Timeout 默认 100 秒；要支持 timeoutSeconds 大于 100 的长调用必须放宽
+        client.Timeout = TimeSpan.FromMinutes(90);
         // 服务端 HTTP/2 only：默认请求版本必须显式设为 2.0
         client.DefaultRequestVersion = HttpVersion.Version20;
         client.DefaultVersionPolicy = HttpVersionPolicy.RequestVersionExact;
@@ -868,7 +888,7 @@ sealed record InvokeResult(string DeviceId, string ConnectionId, string Method, 
 [devices] {"total":1,"items":[{"deviceId":"doc-sample-001","machineName":"DESKTOP-PR0BBBD","userName":"alice","connectionId":"zFZ8dvngRwWCUQBYiwJhNA","methods":["Ping","Echo"]}]}
 [hub] stopped</code></pre>
 <p class="step">本次示例只有一台设备，所以随机模式必然落到它；多设备时的分配实测见第 9 节。请求 <code>deviceId:null</code> 即不指定设备。</p>
-<p><code>Invoke</code> 成功时把响应体反序列化成 <code>InvokeResult</code> 返回，<code>Result</code> 就是设备方法的返回值原文；非 2xx 时抛出 <code>HttpRequestException</code>，<code>StatusCode</code> 属性就是 404/409/502 等状态码，<code>Message</code> 里带请求 URL、入参和服务端响应体；连接失败或超时也会包一层带上下文的 <code>HttpRequestException</code>。上面的两个预期失败分支显式捕获并打印，生产代码里按需重试或上抛即可。</p>
+<p><code>Invoke</code> 成功时把响应体反序列化成 <code>InvokeResult</code> 返回，<code>Result</code> 就是设备方法的返回值原文；非 2xx 时抛出 <code>HttpRequestException</code>，<code>StatusCode</code> 属性就是 400/401/404/409/502/504 等状态码，<code>Message</code> 里带请求 URL、入参和服务端响应体；连接失败或超时也会包一层带上下文的 <code>HttpRequestException</code>。上面的两个预期失败分支显式捕获并打印，生产代码里按需重试或上抛即可。</p>
 
 <h2 id="troubleshooting">8. 常见问题排查</h2>
 
@@ -918,8 +938,8 @@ sealed record InvokeResult(string DeviceId, string ConnectionId, string Method, 
       <td>仅精确模式：该 <code>deviceId</code> 有在线连接，但<strong>没有任何一条</strong>在 <code>info.methods</code> 里上报该方法。注意上报的是<strong>白名单</strong>，且大小写不敏感匹配。全局随机模式不会出现此状态码。</td>
     </tr>
     <tr>
-      <td>HTTP <code>502</code></td>
-      <td>设备端调用失败：没注册 handler、注册名与上报名大小写不一致、handler 不返回 string、handler 抛异常、超过 30 秒。先核对 <code>methods</code> 与 <code>On(...)</code> 的拼写。</td>
+      <td>HTTP <code>502</code> / <code>504</code></td>
+      <td><code>502</code>：设备端调用失败（没注册 handler、注册名与上报名大小写不一致、handler 不返回 string、handler 抛异常），先核对 <code>methods</code> 与 <code>On(...)</code> 的拼写。<code>504</code>：等待超过本次 <code>timeoutSeconds</code>（默认 900 秒）；长任务请显式传更大的值（不设上限），并同步放宽调用方的 <code>HttpClient.Timeout</code> 与前置代理超时。</td>
     </tr>
     <tr>
       <td>客户端 handler 收不到调用</td>
@@ -945,7 +965,7 @@ sealed record InvokeResult(string DeviceId, string ConnectionId, string Method, 
 </ul>
 
 <hr>
-<p class="step">相关实现位置：<code>CoreProxy.Server.Orleans/Program.cs</code>（<code>/api/invoke</code> 路由、<code>/chathub</code> 映射）、<code>Services/AdminApi.cs</code>（鉴权、状态码、30 秒超时）、<code>Services/ChatHub.cs</code>（<code>info</code> 解析与在线表维护）、<code>Services/GloableSessionsManager.cs</code>（<code>DeviceInfo</code> 与 JSON 规则）。</p>
+<p class="step">相关实现位置：<code>CoreProxy.Server.Orleans/Program.cs</code>（<code>/api/invoke</code> 路由、<code>/chathub</code> 映射）、<code>Services/AdminApi.cs</code>（鉴权、状态码、默认 900 秒 / 可覆盖的超时）、<code>Services/ChatHub.cs</code>（<code>info</code> 解析与在线表维护）、<code>Services/GloableSessionsManager.cs</code>（<code>DeviceInfo</code> 与 JSON 规则）。</p>
 
 </main>
 </body>

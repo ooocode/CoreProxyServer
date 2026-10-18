@@ -19,8 +19,9 @@ namespace CoreProxy.Server.Orleans.Services
     /// <summary>
     /// /api/invoke 的请求体。method 指定要调用的方法，payload 原样传给该方法。
     /// deviceId 可选：传了则精确指定在线设备；不传（或空白）则在【所有上报了该方法的在线客户端】中随机选一个。
+    /// timeoutSeconds 可选：本次等待设备返回值的上限（秒），必须大于 0，不设上限；省略时用服务端默认值 900 秒（15 分钟）。
     /// </summary>
-    public sealed record InvokeRequest(string? DeviceId, string Method, string? Payload);
+    public sealed record InvokeRequest(string? DeviceId, string Method, string? Payload, int? TimeoutSeconds = null);
 
     /// <summary>
     /// /api/invoke 的响应体：deviceId/connectionId 是【实际承接本次调用】的设备与连接，
@@ -51,11 +52,22 @@ namespace CoreProxy.Server.Orleans.Services
     {
         private const string BasicPrefix = "Basic ";
 
+        /// <summary>未指定 timeoutSeconds 时的默认等待上限（15 分钟）。</summary>
+        public const int DefaultInvokeTimeoutSeconds = 900;
+
         /// <summary>
-        /// 等客户端返回值的上限。SignalR 的 InvokeAsync 本身不设超时，
-        /// 客户端既不返回也不断开时会一直挂着，故由服务端这边兜底。
+        /// 等客户端返回值的默认上限。SignalR 的 InvokeAsync 本身不设超时，
+        /// 客户端既不返回也不断开时会一直挂着，故由服务端这边兜底；
+        /// 单次请求可用 InvokeRequest.TimeoutSeconds 覆盖。
         /// </summary>
-        private static readonly TimeSpan InvokeTimeout = TimeSpan.FromSeconds(30);
+        private static readonly TimeSpan DefaultInvokeTimeout = TimeSpan.FromSeconds(DefaultInvokeTimeoutSeconds);
+
+        /// <summary>
+        /// CancellationTokenSource.CancelAfter 能接受的最大延迟（uint.MaxValue - 1 毫秒，约 49.7 天），
+        /// 超过它会抛 ArgumentOutOfRangeException。timeoutSeconds 本身不设业务上限，
+        /// 但计时器必须截到这个平台可表达的范围内；对任何现实等待时长而言两者等价。
+        /// </summary>
+        private static readonly TimeSpan MaxTimerDelay = TimeSpan.FromMilliseconds(uint.MaxValue - 1);
 
         /// <summary>
         /// /api/invoke 的端上调用抽象：(connectionId, method, payload, ct) → 客户端返回值。
@@ -181,12 +193,13 @@ namespace CoreProxy.Server.Orleans.Services
         /// 同 DeviceId 多条连接的唯一凭证。
         /// 请求体由 minimal API 强类型绑定为 <see cref="InvokeRequest"/>（AOT 走 AdminJsonContext 的 source-gen）；
         /// JSON 非法由绑定层直接 400，缺字段则在下面补一次校验。
-        /// 语义分层：401 未鉴权 / 400 缺 method / 404 指定的 deviceId 没有在线连接、或全局模式下无连接支持该方法 /
-        /// 409 指定的 deviceId 有在线连接但没有一条上报该方法 / 502 端上调用失败（客户端断开、未实现、超时）。
-        /// invokeOnClient / invokeTimeout 仅供测试注入；生产调用方不传，默认走真实 SignalR、超时 30s。
+        /// 语义分层：401 未鉴权 / 400 缺 method 或 timeoutSeconds ≤ 0 / 404 指定的 deviceId 没有在线连接、
+        /// 或全局模式下无连接支持该方法 / 409 指定的 deviceId 有在线连接但没有一条上报该方法 /
+        /// 502 端上调用失败（客户端断开、未实现、抛异常）/ 504 等待设备返回值超时。
+        /// invokeOnClient / defaultInvokeTimeout 仅供测试注入；生产调用方不传，默认走真实 SignalR、超时 900s。
         /// </summary>
         public static async Task<IResult> HandleInvokeAsync(InvokeRequest request, string password, HttpContext ctx,
-            IHubContext<ChatHub> hubContext, InvokeOnClient? invokeOnClient = null, TimeSpan? invokeTimeout = null)
+            IHubContext<ChatHub> hubContext, InvokeOnClient? invokeOnClient = null, TimeSpan? defaultInvokeTimeout = null)
         {
             if (RejectUnauthorized(ctx, password) is { } rejection)
             {
@@ -199,6 +212,18 @@ namespace CoreProxy.Server.Orleans.Services
             {
                 return Results.StatusCode(StatusCodes.Status400BadRequest);
             }
+
+            // timeoutSeconds 是调用方显式申请的等待窗口：只拒绝非正数（0/负数无法表达有效的等待窗口），
+            // 不设上限 —— 需要等多久由调用方决定，服务端不做静默截断。
+            if (request.TimeoutSeconds is int requestedSeconds && requestedSeconds <= 0)
+            {
+                return Results.StatusCode(StatusCodes.Status400BadRequest);
+            }
+
+            // 未指定 timeoutSeconds 时用服务端默认值（可由配置覆盖）；指定时以请求为准。
+            var invokeTimeout = request.TimeoutSeconds is int timeoutSeconds
+                ? TimeSpan.FromSeconds(timeoutSeconds)
+                : defaultInvokeTimeout ?? DefaultInvokeTimeout;
 
             // 空白 deviceId 等价于不传（全局随机）；否则只在同 DeviceId 的连接里选。
             var pinnedDeviceId = string.IsNullOrWhiteSpace(request.DeviceId) ? null : request.DeviceId;
@@ -252,7 +277,7 @@ namespace CoreProxy.Server.Orleans.Services
             // 超时 token 既约束 WaitAsync，也传给端上调用：WaitAsync 只让 HTTP 尽快返回，
             // 真正取消 SignalR 调用还要靠这个 token，否则设备一直不返回时调用会永久挂起。
             using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ctx.RequestAborted);
-            timeoutCts.CancelAfter(invokeTimeout ?? InvokeTimeout);
+            timeoutCts.CancelAfter(invokeTimeout < MaxTimerDelay ? invokeTimeout : MaxTimerDelay);
 
             string result;
             try
@@ -261,9 +286,14 @@ namespace CoreProxy.Server.Orleans.Services
                         client.ConnectionId, matchedMethod, request.Payload ?? string.Empty, timeoutCts.Token)
                     .WaitAsync(timeoutCts.Token);
             }
+            catch (Exception) when (timeoutCts.IsCancellationRequested && !ctx.RequestAborted.IsCancellationRequested)
+            {
+                // 只有服务端超时自身触发才归为 504；调用方主动断开时不算网关超时。
+                return Results.StatusCode(StatusCodes.Status504GatewayTimeout);
+            }
             catch (Exception)
             {
-                // 设备断线、客户端没实现该方法、或等返回值超时，都归为端上失败。
+                // 设备断线、客户端没实现该方法、或 handler 抛异常，都归为端上调用失败。
                 return Results.StatusCode(StatusCodes.Status502BadGateway);
             }
 

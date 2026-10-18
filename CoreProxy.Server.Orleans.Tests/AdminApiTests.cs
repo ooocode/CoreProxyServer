@@ -5,7 +5,9 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using System.Diagnostics;
 using System.Text;
+using System.Text.Json;
 
 namespace CoreProxy.Server.Orleans.Tests
 {
@@ -283,7 +285,7 @@ namespace CoreProxy.Server.Orleans.Tests
 
         /// <summary>跑一次 HandleInvokeAsync，并把返回的 IResult 落到 HttpContext 上，返回该 ctx 供断言。</summary>
         private static async Task<DefaultHttpContext> Run(string? header, InvokeRequest request,
-            AdminApi.InvokeOnClient? invokeOnClient = null, TimeSpan? invokeTimeout = null)
+            AdminApi.InvokeOnClient? invokeOnClient = null, TimeSpan? defaultInvokeTimeout = null)
         {
             var ctx = new DefaultHttpContext();
             if (header != null)
@@ -295,7 +297,7 @@ namespace CoreProxy.Server.Orleans.Tests
             // （ILoggerFactory、IJsonOptions…），真实应用中由框架注入，这里补 + 最小日志容器。
             ctx.RequestServices = new ServiceCollection().AddLogging().BuildServiceProvider();
 
-            var result = await AdminApi.HandleInvokeAsync(request, "pw", ctx, HubContext, invokeOnClient, invokeTimeout);
+            var result = await AdminApi.HandleInvokeAsync(request, "pw", ctx, HubContext, invokeOnClient, defaultInvokeTimeout);
             await result.ExecuteAsync(ctx);
             return ctx;
         }
@@ -652,10 +654,10 @@ namespace CoreProxy.Server.Orleans.Tests
             Assert.AreEqual(400, ctx.Response.StatusCode);
         }
 
-        // 设备一直不返回时，HTTP 必须在超时后 502；同时超时要传给端上调用，
+        // 设备一直不返回时，HTTP 必须在超时后 504；同时超时要传给端上调用，
         // 让 SignalR 调用被真正取消——否则 WaitAsync 返回后底层调用会永久悬挂。
         [TestMethod]
-        public async Task Invoke_ClientNeverReturns_TimesOutAs502AndCancelsCall()
+        public async Task Invoke_ClientNeverReturns_TimesOutAs504AndCancelsCall()
         {
             Online("d1", "conn-1", "SessionStart");
 
@@ -669,9 +671,80 @@ namespace CoreProxy.Server.Orleans.Tests
             var ctx = await Run(Basic(":pw"), new InvokeRequest("d1", "SessionStart", "p"), Invoke,
                 TimeSpan.FromMilliseconds(50));
 
-            Assert.AreEqual(502, ctx.Response.StatusCode);
+            Assert.AreEqual(504, ctx.Response.StatusCode);
             Assert.IsTrue(await cancellationObserved.Task.WaitAsync(TimeSpan.FromSeconds(5)),
                 "超时后应取消端上调用，避免 SignalR 调用永久挂起");
+        }
+
+        // timeoutSeconds 不设上限：任意正整数都必须被接受，不能被误判为越界。
+        // int.MaxValue 还顺带覆盖"计时器延迟超过 CancelAfter 平台上限"的路径，确保不会抛 500。
+        [DataTestMethod]
+        [DataRow(3601)]
+        [DataRow(86400)]
+        [DataRow(int.MaxValue)]
+        public async Task Invoke_TimeoutSecondsPositive_IsAccepted(int seconds)
+        {
+            Online("d1", "conn-1", "SessionStart");
+
+            static Task<string> Invoke(string connectionId, string method, string payload, CancellationToken cancellationToken) =>
+                Task.FromResult("ok");
+
+            var ctx = await Run(Basic(":pw"), new InvokeRequest("d1", "SessionStart", "p", seconds), Invoke);
+
+            Assert.AreEqual(200, ctx.Response.StatusCode);
+        }
+
+        // 非正数无法表达有效的等待窗口，必须 400，且不能下发到设备。
+        [DataTestMethod]
+        [DataRow(0)]
+        [DataRow(-1)]
+        public async Task Invoke_TimeoutSecondsNonPositive_Returns400WithoutInvoking(int seconds)
+        {
+            Online("d1", "conn-1", "SessionStart");
+
+            var ctx = await Run(Basic(":pw"), new InvokeRequest("d1", "SessionStart", "p", seconds), MustNotInvoke);
+
+            Assert.AreEqual(400, ctx.Response.StatusCode);
+        }
+
+        // 请求里的 timeoutSeconds 必须覆盖服务端默认值：这里默认给 5 秒、请求给 1 秒，
+        // 若覆盖失效会等 5 秒，elapsed 断言能区分。
+        [TestMethod]
+        public async Task Invoke_TimeoutSecondsOverridesDefault()
+        {
+            Online("d1", "conn-1", "SessionStart");
+
+            var cancellationObserved = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            Task<string> Invoke(string connectionId, string method, string payload, CancellationToken cancellationToken)
+            {
+                cancellationToken.Register(() => cancellationObserved.TrySetResult(true));
+                return new TaskCompletionSource<string>().Task;
+            }
+
+            var startedAt = Stopwatch.GetTimestamp();
+            var ctx = await Run(Basic(":pw"), new InvokeRequest("d1", "SessionStart", "p", 1), Invoke,
+                TimeSpan.FromSeconds(5));
+            var elapsed = Stopwatch.GetElapsedTime(startedAt);
+
+            Assert.AreEqual(504, ctx.Response.StatusCode);
+            Assert.IsTrue(elapsed < TimeSpan.FromSeconds(3),
+                "应按请求的 1 秒超时，而不是默认的 5 秒；实际 " + elapsed);
+            Assert.IsTrue(await cancellationObserved.Task.WaitAsync(TimeSpan.FromSeconds(5)));
+        }
+
+        // source-gen 上下文必须能绑定新增的 timeoutSeconds；缺省时为 null。
+        [TestMethod]
+        public void InvokeRequest_JsonContext_BindsTimeoutSeconds()
+        {
+            var withoutTimeout = JsonSerializer.Deserialize(
+                """{"method":"Ping"}""", AdminJsonContext.Default.InvokeRequest);
+            Assert.IsNotNull(withoutTimeout);
+            Assert.IsNull(withoutTimeout!.TimeoutSeconds);
+
+            var withTimeout = JsonSerializer.Deserialize(
+                """{"method":"Ping","timeoutSeconds":300}""", AdminJsonContext.Default.InvokeRequest);
+            Assert.IsNotNull(withTimeout);
+            Assert.AreEqual(300, withTimeout!.TimeoutSeconds);
         }
     }
 

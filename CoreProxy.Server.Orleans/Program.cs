@@ -36,6 +36,14 @@ builder.Host.UseNLog();
 var certificate2 = GetHttpsCertificate();
 var certificatePassword = GetCertificatePassword(certificate2);
 
+// /api/invoke 的默认等待上限；单次请求可用 timeoutSeconds 覆盖（只要求 > 0，不设上限）。
+// 配置缺失或 ≤0 时回落到 900 秒（15 分钟）。
+var adminInvokeTimeout = TimeSpan.FromSeconds(
+    int.TryParse(builder.Configuration["AdminInvokeTimeoutSeconds"], out int invokeTimeoutSeconds)
+        && invokeTimeoutSeconds > 0
+        ? invokeTimeoutSeconds
+        : AdminApi.DefaultInvokeTimeoutSeconds);
+
 builder.Services.AddSingleton(certificatePassword);
 
 builder.Services.AddMemoryCache();
@@ -227,7 +235,8 @@ app.MapGet("/api/devices", (HttpContext ctx) => AdminApi.HandleDevices(ctx, cert
 app.MapPost("/api/invoke", (InvokeRequest request, HttpContext ctx) =>
     AdminApi.HandleInvokeAsync(
         request, certificatePassword.Password, ctx,
-        ctx.RequestServices.GetRequiredService<IHubContext<ChatHub>>()));
+        ctx.RequestServices.GetRequiredService<IHubContext<ChatHub>>(),
+        defaultInvokeTimeout: adminInvokeTimeout));
 
 app.Run();
 
