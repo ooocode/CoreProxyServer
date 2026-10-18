@@ -166,8 +166,7 @@ app.Use(async (ctx, next) =>
     {
         if (!AdminApi.CheckBasicAuth(ctx, certificatePassword.Password))
         {
-            ctx.Response.StatusCode = 401;
-            ctx.Response.Headers.WWWAuthenticate = "Basic realm=\"admin\"";
+            AdminApi.WriteUnauthorized(ctx);
             return;
         }
     }

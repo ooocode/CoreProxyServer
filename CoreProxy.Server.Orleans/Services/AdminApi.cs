@@ -90,17 +90,18 @@ namespace CoreProxy.Server.Orleans.Services
                 return false;
             }
 
-            byte[] raw;
-            try
-            {
-                raw = Convert.FromBase64String(header[BasicPrefix.Length..].Trim());
-            }
-            catch (FormatException)
+            var encoded = header[BasicPrefix.Length..].Trim();
+
+            // 非法 base64 是外部可直接构造的输入：用 TryFromBase64String 而不是
+            // FromBase64String + catch，避免每次探测都抛/接一个 FormatException。
+            // 两者对空串、内嵌空白与非法字符的接受/拒绝语义一致。
+            var raw = new byte[encoded.Length];
+            if (!Convert.TryFromBase64String(encoded, raw, out var written))
             {
                 return false;
             }
 
-            var decoded = Encoding.UTF8.GetString(raw);
+            var decoded = Encoding.UTF8.GetString(raw, 0, written);
             var separator = decoded.IndexOf(':');
             var candidate = separator >= 0 ? decoded[(separator + 1)..] : decoded;
 
@@ -109,15 +110,33 @@ namespace CoreProxy.Server.Orleans.Services
                 Encoding.UTF8.GetBytes(password));
         }
 
+        /// <summary>统一的 401 响应：状态码 + Basic 挑战头。中间件与各 handler 共用，避免两处漂移。</summary>
+        public static void WriteUnauthorized(HttpContext ctx)
+        {
+            ctx.Response.StatusCode = StatusCodes.Status401Unauthorized;
+            ctx.Response.Headers.WWWAuthenticate = "Basic realm=\"admin\"";
+        }
+
+        /// <summary>鉴权通过返回 null；否则写好 401 挑战并返回一个空 IResult 供调用方直接返回。</summary>
+        private static IResult? RejectUnauthorized(HttpContext ctx, string password)
+        {
+            if (CheckBasicAuth(ctx, password))
+            {
+                return null;
+            }
+
+            WriteUnauthorized(ctx);
+            return Results.Empty;
+        }
+
         /// <summary>
         /// 处理 GET /api/status：未带凭据返回 401 + WWW-Authenticate；否则返回当前 gRPC 隧道清单 JSON。
         /// </summary>
         public static IResult HandleStatus(HttpContext ctx, string password)
         {
-            if (!CheckBasicAuth(ctx, password))
+            if (RejectUnauthorized(ctx, password) is { } rejection)
             {
-                ctx.Response.Headers.WWWAuthenticate = "Basic realm=\"admin\"";
-                return Results.StatusCode(StatusCodes.Status401Unauthorized);
+                return rejection;
             }
 
             var items = ConnectionRepository.GetGrpcTunnels();
@@ -134,10 +153,9 @@ namespace CoreProxy.Server.Orleans.Services
         /// </summary>
         public static IResult HandleDevices(HttpContext ctx, string password)
         {
-            if (!CheckBasicAuth(ctx, password))
+            if (RejectUnauthorized(ctx, password) is { } rejection)
             {
-                ctx.Response.Headers.WWWAuthenticate = "Basic realm=\"admin\"";
-                return Results.StatusCode(StatusCodes.Status401Unauthorized);
+                return rejection;
             }
 
             var items = GloableSessionsManager.SignalrOnlineClients.Values
@@ -165,18 +183,19 @@ namespace CoreProxy.Server.Orleans.Services
         /// JSON 非法由绑定层直接 400，缺字段则在下面补一次校验。
         /// 语义分层：401 未鉴权 / 400 缺 method / 404 指定的 deviceId 没有在线连接、或全局模式下无连接支持该方法 /
         /// 409 指定的 deviceId 有在线连接但没有一条上报该方法 / 502 端上调用失败（客户端断开、未实现、超时）。
-        /// invokeOnClient 仅供测试注入；生产调用方不传，默认走真实 SignalR。
+        /// invokeOnClient / invokeTimeout 仅供测试注入；生产调用方不传，默认走真实 SignalR、超时 30s。
         /// </summary>
         public static async Task<IResult> HandleInvokeAsync(InvokeRequest request, string password, HttpContext ctx,
-            IHubContext<ChatHub> hubContext, InvokeOnClient? invokeOnClient = null)
+            IHubContext<ChatHub> hubContext, InvokeOnClient? invokeOnClient = null, TimeSpan? invokeTimeout = null)
         {
-            if (!CheckBasicAuth(ctx, password))
+            if (RejectUnauthorized(ctx, password) is { } rejection)
             {
-                ctx.Response.Headers.WWWAuthenticate = "Basic realm=\"admin\"";
-                return Results.StatusCode(StatusCodes.Status401Unauthorized);
+                return rejection;
             }
 
-            if (string.IsNullOrWhiteSpace(request.Method))
+            // 请求体 JSON 字面量为 null 时绑定层可能传入 null；非空参数在方法体里仍要防御，
+            // 否则会以 NullReferenceException → 500 暴露，而不是明确的 400。
+            if (request is null || string.IsNullOrWhiteSpace(request.Method))
             {
                 return Results.StatusCode(StatusCodes.Status400BadRequest);
             }
@@ -184,9 +203,12 @@ namespace CoreProxy.Server.Orleans.Services
             // 空白 deviceId 等价于不传（全局随机）；否则只在同 DeviceId 的连接里选。
             var pinnedDeviceId = string.IsNullOrWhiteSpace(request.DeviceId) ? null : request.DeviceId;
 
-            // 先做全量快照再选。ConcurrentDictionary.Values 的枚举是线程安全的，
+            // 单次枚举同时完成"筛选 + 均匀随机"：水塘抽样保证每条候选被选中的概率相同，
+            // 且不需要为候选列表分配内存。ConcurrentDictionary.Values 的枚举是线程安全的，
             // 期间设备上下线不会让枚举抛异常，最坏只是把已断开的连接纳入候选（调用时归为 502）。
-            var candidates = new List<(SignalrOnlineClient Client, string Method)>();
+            SignalrOnlineClient? client = null;
+            string? matchedMethod = null;
+            var candidateCount = 0;
             var pinnedDeviceOnline = false;
             foreach (var candidate in GloableSessionsManager.SignalrOnlineClients.Values)
             {
@@ -201,13 +223,21 @@ namespace CoreProxy.Server.Orleans.Services
 
                 // 只允许调用设备【主动上报】的方法：没上报就排除，避免把任意方法名透传给设备。
                 var method = FindReportedMethod(candidate, request.Method);
-                if (method is not null)
+                if (method is null)
                 {
-                    candidates.Add((candidate, method));
+                    continue;
+                }
+
+                // 第 n 条候选以 1/n 的概率替换当前选中项；枚举结束时即得到均匀随机的一条。
+                candidateCount++;
+                if (Random.Shared.Next(candidateCount) == 0)
+                {
+                    client = candidate;
+                    matchedMethod = method;
                 }
             }
 
-            if (candidates.Count == 0)
+            if (client is null || matchedMethod is null)
             {
                 // 指定了 deviceId：同 ID 有连接但都不支持该方法 → 409；同 ID 完全没有连接 → 404。
                 // 未指定 deviceId：没有任何在线连接支持该方法 → 404。
@@ -216,16 +246,20 @@ namespace CoreProxy.Server.Orleans.Services
                     : StatusCodes.Status404NotFound);
             }
 
-            var (client, matchedMethod) = candidates[Random.Shared.Next(candidates.Count)];
-
             invokeOnClient ??= (connectionId, method, payload, ct) =>
                 hubContext.Clients.Client(connectionId).InvokeAsync<string>(method, payload, ct);
+
+            // 超时 token 既约束 WaitAsync，也传给端上调用：WaitAsync 只让 HTTP 尽快返回，
+            // 真正取消 SignalR 调用还要靠这个 token，否则设备一直不返回时调用会永久挂起。
+            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ctx.RequestAborted);
+            timeoutCts.CancelAfter(invokeTimeout ?? InvokeTimeout);
 
             string result;
             try
             {
-                result = await invokeOnClient(client.ConnectionId, matchedMethod, request.Payload ?? string.Empty, ctx.RequestAborted)
-                    .WaitAsync(InvokeTimeout, ctx.RequestAborted);
+                result = await invokeOnClient(
+                        client.ConnectionId, matchedMethod, request.Payload ?? string.Empty, timeoutCts.Token)
+                    .WaitAsync(timeoutCts.Token);
             }
             catch (Exception)
             {
@@ -243,8 +277,19 @@ namespace CoreProxy.Server.Orleans.Services
         /// 下发必须用精确拼写：SignalR 客户端 On 处理器按精确方法名注册，用请求原文下发会因大小写
         /// 不符而匹配不到处理器，造出"过了白名单却 502"的假象。未上报则返回 null。
         /// </summary>
-        private static string? FindReportedMethod(SignalrOnlineClient client, string method) =>
-            client.Methods.FirstOrDefault(m =>
-                string.Equals(m, method, StringComparison.OrdinalIgnoreCase));
+        private static string? FindReportedMethod(SignalrOnlineClient client, string method)
+        {
+            var methods = client.Methods;
+            for (var i = 0; i < methods.Count; i++)
+            {
+                var reported = methods[i];
+                if (string.Equals(reported, method, StringComparison.OrdinalIgnoreCase))
+                {
+                    return reported;
+                }
+            }
+
+            return null;
+        }
     }
 }

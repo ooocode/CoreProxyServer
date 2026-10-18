@@ -97,6 +97,17 @@ namespace CoreProxy.Server.Orleans.Tests
             Assert.IsFalse(AdminApi.CheckBasicAuth(CtxWith("Basic not-base64!"), "any"));
         }
 
+        // 与 Convert.FromBase64String 保持一致：base64 内部的空白字符应被忽略。
+        // 这条守住 TryFromBase64String 改造前后的接受语义不变。
+        [TestMethod]
+        public void CheckBasicAuth_AcceptsBase64WithEmbeddedWhitespace()
+        {
+            var encoded = Convert.ToBase64String(Encoding.UTF8.GetBytes(":pw"));
+            var withWhitespace = encoded.Insert(encoded.Length / 2, " ");
+
+            Assert.IsTrue(AdminApi.CheckBasicAuth(CtxWith("Basic " + withWhitespace), "pw"));
+        }
+
         [TestMethod]
         public void CheckBasicAuth_MissingHeader_ReturnsFalse()
         {
@@ -272,7 +283,7 @@ namespace CoreProxy.Server.Orleans.Tests
 
         /// <summary>跑一次 HandleInvokeAsync，并把返回的 IResult 落到 HttpContext 上，返回该 ctx 供断言。</summary>
         private static async Task<DefaultHttpContext> Run(string? header, InvokeRequest request,
-            AdminApi.InvokeOnClient? invokeOnClient = null)
+            AdminApi.InvokeOnClient? invokeOnClient = null, TimeSpan? invokeTimeout = null)
         {
             var ctx = new DefaultHttpContext();
             if (header != null)
@@ -284,7 +295,7 @@ namespace CoreProxy.Server.Orleans.Tests
             // （ILoggerFactory、IJsonOptions…），真实应用中由框架注入，这里补 + 最小日志容器。
             ctx.RequestServices = new ServiceCollection().AddLogging().BuildServiceProvider();
 
-            var result = await AdminApi.HandleInvokeAsync(request, "pw", ctx, HubContext, invokeOnClient);
+            var result = await AdminApi.HandleInvokeAsync(request, "pw", ctx, HubContext, invokeOnClient, invokeTimeout);
             await result.ExecuteAsync(ctx);
             return ctx;
         }
@@ -631,6 +642,36 @@ namespace CoreProxy.Server.Orleans.Tests
 
             var ctx = await Run(Basic(":pw"), new InvokeRequest("d1", "SessionStart", "p"), Invoke);
             Assert.AreEqual(502, ctx.Response.StatusCode);
+        }
+
+        // 请求体 JSON 字面量为 null 时绑定层可能传入 null：必须是明确的 400，而不是 500。
+        [TestMethod]
+        public async Task Invoke_NullRequest_Returns400()
+        {
+            var ctx = await Run(Basic(":pw"), null!);
+            Assert.AreEqual(400, ctx.Response.StatusCode);
+        }
+
+        // 设备一直不返回时，HTTP 必须在超时后 502；同时超时要传给端上调用，
+        // 让 SignalR 调用被真正取消——否则 WaitAsync 返回后底层调用会永久悬挂。
+        [TestMethod]
+        public async Task Invoke_ClientNeverReturns_TimesOutAs502AndCancelsCall()
+        {
+            Online("d1", "conn-1", "SessionStart");
+
+            var cancellationObserved = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            Task<string> Invoke(string connectionId, string method, string payload, CancellationToken cancellationToken)
+            {
+                cancellationToken.Register(() => cancellationObserved.TrySetResult(true));
+                return new TaskCompletionSource<string>().Task; // 永不返回，且不主动观察 token
+            }
+
+            var ctx = await Run(Basic(":pw"), new InvokeRequest("d1", "SessionStart", "p"), Invoke,
+                TimeSpan.FromMilliseconds(50));
+
+            Assert.AreEqual(502, ctx.Response.StatusCode);
+            Assert.IsTrue(await cancellationObserved.Task.WaitAsync(TimeSpan.FromSeconds(5)),
+                "超时后应取消端上调用，避免 SignalR 调用永久挂起");
         }
     }
 
