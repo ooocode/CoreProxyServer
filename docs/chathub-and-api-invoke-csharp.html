@@ -594,6 +594,57 @@ Invoke-WebRequest -SkipCertificateCheck -HttpVersion 2.0 -Method Post `
   -ContentType 'application/json' `
   -Body '{"deviceId":"pc-001","method":"Ping","payload":"hello"}'</code></pre>
 
+<h3>5.5 <code>IHttpClientFactory</code> 版本（长驻服务推荐）</h3>
+
+<p>直接 <code>new HttpClient</code> 适合脚本；Web 服务、Worker 或需要频繁调用的长驻程序应使用 <code>IHttpClientFactory</code>，由容器统一管理 handler 池与生命周期，避免 socket 耗尽和 DNS 陈旧。需要 NuGet 包 <code>Microsoft.Extensions.Http</code>。</p>
+
+<pre><code>using Microsoft.Extensions.DependencyInjection;
+using System.Net;
+using System.Net.Http.Headers;
+using System.Net.Http.Json;
+using System.Text;
+
+const string server = "https://127.0.0.1:6099";
+const string clientPassword = "&lt;服务端 ssl/client-password.txt 的内容&gt;";
+
+using var services = new ServiceCollection()
+    .AddHttpClient("coreproxy", client =&gt;
+    {
+        client.BaseAddress = new Uri(server);
+        // 服务端 HTTP/2 only：默认请求版本必须显式设为 2.0
+        client.DefaultRequestVersion = HttpVersion.Version20;
+        client.DefaultVersionPolicy = HttpVersionPolicy.RequestVersionExact;
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+            "Basic", Convert.ToBase64String(Encoding.UTF8.GetBytes("admin:" + clientPassword)));
+    })
+    // handler 由 factory 创建并交给回调配置；factory 会按 HandlerLifetime 轮换它
+    .UseSocketsHttpHandler((handler, _) =&gt;
+    {
+        handler.SslOptions.RemoteCertificateValidationCallback = (_, _, _, _) =&gt; true;
+        handler.EnableMultipleHttp2Connections = true;
+    })
+    .Services
+    .BuildServiceProvider();
+
+var http = services.GetRequiredService&lt;IHttpClientFactory&gt;().CreateClient("coreproxy");
+
+using var response = await http.PostAsJsonAsync("/api/invoke", new
+{
+    method = "Ping",
+    payload = "hello"
+});
+
+Console.WriteLine($"HTTP {(int)response.StatusCode}");
+Console.WriteLine(await response.Content.ReadAsStringAsync());</code></pre>
+
+<ul>
+  <li><strong><code>UseSocketsHttpHandler</code> 与 <code>ConfigurePrimaryHttpMessageHandler</code></strong>：前者让 factory 自己创建 <code>SocketsHttpHandler</code> 并交给回调配置，不用自己 <code>new</code>，也不会被多个 client 共享；旧版本包没有该 API 时改用 <code>.ConfigurePrimaryHttpMessageHandler(() =&gt; new SocketsHttpHandler { ... })</code>。</li>
+  <li><strong>不要每次请求都 <code>new HttpClient</code></strong>：handler 与连接无法复用。factory 会池化 handler，并按 <code>HandlerLifetime</code>（默认 2 分钟）轮换。</li>
+  <li><strong>factory 创建的 <code>HttpClient</code> 不用 Dispose</strong>：可以安全丢弃，底层 handler 由 factory 管理。只有自己 <code>new</code> 的 handler/client 才需要释放。</li>
+  <li><strong>多台服务器 / 多套凭据</strong>：按名称注册多个 client（如 <code>"coreproxy-a"</code>、<code>"coreproxy-b"</code>），或封装成 typed client 注入。</li>
+  <li><strong>ASP.NET Core / Worker</strong>：在 <code>builder.Services.AddHttpClient(...)</code> 里注册，通过构造函数注入 <code>IHttpClientFactory</code> 或 typed client，不要自己 <code>BuildServiceProvider()</code>。</li>
+</ul>
+
 <h2 id="helper">6. 辅助接口：<code>/api/devices</code>、<code>/api/status</code></h2>
 
 <p>两个接口都是 <code>GET</code>，鉴权方式与 <code>/api/invoke</code> 完全相同（HTTP Basic + 同一口令），可用于排障。</p>
@@ -633,12 +684,15 @@ Invoke-WebRequest -SkipCertificateCheck -HttpVersion 2.0 -Method Post `
   &lt;/PropertyGroup&gt;
   &lt;ItemGroup&gt;
     &lt;PackageReference Include="Microsoft.AspNetCore.SignalR.Client" Version="10.0.12" /&gt;
+    &lt;!-- 方式 B（IHttpClientFactory）需要；只用方式 A 可去掉 --&gt;
+    &lt;PackageReference Include="Microsoft.Extensions.Http" Version="10.0.12" /&gt;
   &lt;/ItemGroup&gt;
 &lt;/Project&gt;</code></pre>
 
 <h3>7.2 Program.cs</h3>
 <pre><code>using Microsoft.AspNetCore.Http.Connections;
 using Microsoft.AspNetCore.SignalR.Client;
+using Microsoft.Extensions.DependencyInjection;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
@@ -688,6 +742,7 @@ await connection.StartAsync();
 Console.WriteLine($"[hub] connected, connectionId={connection.ConnectionId}");
 
 // ---------- 2. 调用 /api/invoke ----------
+// 方式 A：直接 new HttpClient（短脚本 / 单次调用，最简单）
 using var handler = NewHandler();
 using var http = new HttpClient(handler)
 {
@@ -697,6 +752,28 @@ using var http = new HttpClient(handler)
 };
 http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
     "Basic", Convert.ToBase64String(Encoding.UTF8.GetBytes("admin:" + password)));
+
+// 方式 B：IHttpClientFactory（长驻服务推荐；handler 池化，避免反复建 socket）
+// 与方式 A 二选一：取消注释后删掉方式 A 的 handler / http 两行即可。需要 Microsoft.Extensions.Http 包。
+// using var services = new ServiceCollection()
+//     .AddHttpClient("coreproxy", client =&gt;
+//     {
+//         client.BaseAddress = new Uri(server);
+//         client.DefaultRequestVersion = HttpVersion.Version20;
+//         client.DefaultVersionPolicy = HttpVersionPolicy.RequestVersionExact;
+//         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+//             "Basic", Convert.ToBase64String(Encoding.UTF8.GetBytes("admin:" + password)));
+//     })
+//     .UseSocketsHttpHandler((handler, _) =&gt;
+//     {
+//         handler.SslOptions.RemoteCertificateValidationCallback = (_, _, _, _) =&gt; true;
+//         handler.EnableMultipleHttp2Connections = true;
+//     })
+//     .Services
+//     .BuildServiceProvider();
+//
+// var http = services.GetRequiredService&lt;IHttpClientFactory&gt;().CreateClient("coreproxy");
+// // factory 创建的 HttpClient 不需要 Dispose；handler 的生命周期由 factory 管理。
 
 static async Task Invoke(HttpClient client, string label,
                          string? deviceId, string method, string? payload)
@@ -797,6 +874,7 @@ Console.WriteLine("[hub] stopped");</code></pre>
   <li><strong>连接</strong>：HTTPS + HTTP/2 WebSocket（<code>HttpMessageHandlerFactory</code> + <code>WebSocketConfiguration(HttpVersion=2.0)</code>）连接 <code>/chathub</code> 成功，服务端分配 <code>ConnectionId</code>；<code>WebSocketFactory</code> + 显式 <code>HttpMessageInvoker</code> 的等价写法同样实测成功。</li>
   <li><strong>配置矩阵</strong>：单独设置 <code>HttpVersion=2.0</code> 而不提供 handler，抛 <code>An HttpMessageInvoker instance must be passed...</code>；提供 handler 后又把证书回调设在 <code>ClientWebSocketOptions</code> 上，抛 <code>... must not be set on ClientWebSocketOptions...</code>；完全不设置 <code>HttpVersion</code>，连接被 H2-only 端点重置。三种失败均在本地复现。</li>
   <li><strong>调用</strong>：<code>/api/invoke</code> 正常调用返回 <code>200</code> 和 <code>result:"pong:hello"</code>；方法名用小写 <code>ping</code> 同样成功，响应中的 <code>method</code> 回显为设备上报的精确拼写 <code>Ping</code>。</li>
+  <li><strong><code>IHttpClientFactory</code> 路径</strong>：按 5.5 的 <code>ServiceCollection().AddHttpClient("coreproxy", ...).UseSocketsHttpHandler(...)</code> 建立命名 client，以 HTTP/2 + Basic 调用 <code>/api/invoke</code> 返回 <code>200</code>、<code>result:"pong:hello"</code>，与直接 <code>new HttpClient</code> 的结果一致。</li>
   <li><strong>随机选择（3 台虚拟设备实测）</strong>：<code>verify-a</code>/<code>verify-b</code> 上报 <code>Ping</code>，<code>verify-c</code> 只上报 <code>Other</code>。不带 <code>deviceId</code> 调用 <code>Ping</code> 共 <strong>400 次</strong>，全部 <code>200</code>，实际承接设备只有 <code>verify-a</code>（189 次）与 <code>verify-b</code>（211 次）；<code>verify-c</code> 一次都没被选中。调用 <code>Other</code> 20 次则全部落到唯一支持者 <code>verify-c</code>。</li>
   <li><strong>随机模式的其他分支</strong>：<code>method</code> 写小写 <code>ping</code> 仍命中并回显 <code>Ping</code>；<code>deviceId</code> 为空白字符串按随机模式处理；不带 <code>deviceId</code> 调用无人上报的 <code>Nope</code> → <code>404</code>；精确指定 <code>verify-c</code> 调用 <code>Ping</code> → <code>409</code>；精确指定不存在设备 → <code>404</code>；响应中的 <code>deviceId</code>/<code>connectionId</code> 均为实际承接者。</li>
   <li><strong>失败分支</strong>：随机模式下无设备支持该方法、或精确模式下设备不在线 → <code>404</code>；精确模式下方法未上报 → <code>409</code>；不带凭据 → <code>401</code>。</li>
