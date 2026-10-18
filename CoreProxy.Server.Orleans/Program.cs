@@ -9,6 +9,8 @@ using Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Options;
+using NLog;
+using NLog.Web;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
@@ -19,7 +21,18 @@ using System.Text.Json.Serialization;
 AppContext.SetSwitch("Microsoft.AspNetCore.Server.Kestrel.EnableWindows81Http2", true);
 
 var builder = WebApplication.CreateSlimBuilder(args);
-builder.Logging.AddFileLogger();
+
+NLog.LogManager.Setup().LoadConfiguration(builder =>
+{
+    const string errLogFileName = "${basedir}/Logs/${date:format=yyyy-MM-dd}-err.log";
+    builder.ForLogger().FilterMinLevel(NLog.LogLevel.Error).WriteToFile(
+        fileName: errLogFileName,
+        maxArchiveDays: 30  // 仅保留最近30天的文件
+     );
+});
+builder.Host.UseNLog();
+
+
 var certificate2 = GetHttpsCertificate();
 var certificatePassword = GetCertificatePassword(certificate2);
 

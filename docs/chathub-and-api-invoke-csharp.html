@@ -775,39 +775,100 @@ http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
 // var http = services.GetRequiredService&lt;IHttpClientFactory&gt;().CreateClient("coreproxy");
 // // factory 创建的 HttpClient 不需要 Dispose；handler 的生命周期由 factory 管理。
 
-static async Task Invoke(HttpClient client, string label,
+static async Task&lt;InvokeResult&gt; Invoke(HttpClient client, string label,
                          string? deviceId, string method, string? payload)
 {
     // deviceId 传 null 时 JSON 里是 "deviceId":null，服务端按随机模式处理
-    using var response = await client.PostAsJsonAsync(
-        "/api/invoke", new { deviceId, method, payload });
-    var text = await response.Content.ReadAsStringAsync();
-    Console.WriteLine($"[invoke] {label,-18} HTTP {(int)response.StatusCode} {text}");
+    HttpResponseMessage response;
+    try
+    {
+        response = await client.PostAsJsonAsync(
+            "/api/invoke", new { deviceId, method, payload });
+    }
+    catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
+    {
+        // 没拿到 HTTP 响应（连接失败、超时等）：补上本次调用的上下文再抛
+        throw new HttpRequestException(
+            $"{label} 请求失败（未拿到响应）："
+            + $"deviceId={deviceId ?? "&lt;随机&gt;"}，method={method}，payload={payload ?? "&lt;null&gt;"}；"
+            + ex.Message, ex);
+    }
+
+    using (response)
+    {
+        var text = await response.Content.ReadAsStringAsync();
+
+        if (!response.IsSuccessStatusCode)
+        {
+            // 把状态码、请求 URL、入参和服务端响应体都带上，排障时不用再抓包
+            throw new HttpRequestException(
+                $"{label} 调用失败：HTTP {(int)response.StatusCode} ({response.ReasonPhrase})；"
+                + $"POST {response.RequestMessage?.RequestUri}；"
+                + $"deviceId={deviceId ?? "&lt;随机&gt;"}，method={method}，payload={payload ?? "&lt;null&gt;"}；"
+                + $"响应体：{text}",
+                inner: null,
+                statusCode: response.StatusCode);
+        }
+
+        Console.WriteLine($"[invoke] {label,-18} HTTP {(int)response.StatusCode} {text}");
+
+        // 成功：解析成强类型对象返回；camelCase 由 JsonSerializerOptions.Web 匹配
+        return JsonSerializer.Deserialize&lt;InvokeResult&gt;(text, JsonSerializerOptions.Web)
+            ?? throw new JsonException($"{label} 服务端返回空 JSON：{text}");
+    }
 }
 
-await Invoke(http, "pinned",           "doc-sample-001", "Ping", "hello");
-await Invoke(http, "random-by-method", null,             "ping", "hello");
-await Invoke(http, "not-online",       "no-such-device", "Ping", "hello");
-await Invoke(http, "not-declared",     "doc-sample-001", "Nope", "hello");
+var pinned = await Invoke(http, "pinned",           "doc-sample-001", "Ping", "hello");
+var random = await Invoke(http, "random-by-method", null,             "ping", "hello");
+
+// 直接使用解析后的字段，不用再手工截 JSON
+Console.WriteLine($"[pinned] device={pinned.DeviceId} connection={pinned.ConnectionId} method={pinned.Method} result={pinned.Result}");
+Console.WriteLine($"[random] device={random.DeviceId} connection={random.ConnectionId} method={random.Method} result={random.Result}");
+
+// 这两个本来就是失败分支：确认异常里带有 404 / 409 和完整请求上下文
+foreach (var (label, deviceId, method) in new[]
+{
+    ("not-online",   "no-such-device", "Ping"),
+    ("not-declared", "doc-sample-001", "Nope")
+})
+{
+    try
+    {
+        await Invoke(http, label, deviceId, method, "hello");
+    }
+    catch (HttpRequestException ex)
+    {
+        Console.WriteLine($"[expected] {label}: HTTP {(int?)ex.StatusCode}");
+        Console.WriteLine($"           {ex.Message}");
+    }
+}
 
 Console.WriteLine($"[devices] {await http.GetStringAsync("/api/devices")}");
 
 await connection.StopAsync();
-Console.WriteLine("[hub] stopped");</code></pre>
+Console.WriteLine("[hub] stopped");
+
+// /api/invoke 成功响应体；camelCase 属性由 JsonSerializerOptions.Web 匹配
+sealed record InvokeResult(string DeviceId, string ConnectionId, string Method, string Result);</code></pre>
 
 <h3>7.3 运行</h3>
 <pre><code>dotnet run --project HubSample -- https://127.0.0.1:6099 "$(cat ssl/client-password.txt)"</code></pre>
 <p class="step">（口令从服务端机器的 <code>ssl/client-password.txt</code> 读取；Windows PowerShell 里用 <code>(Get-Content .\ssl\client-password.txt -Raw).Trim()</code>。）</p>
 
 <h3>7.4 实测输出</h3>
-<pre><code>[hub] connected, connectionId=PoHpKFOATQmnNm7Ob2O63A
-[invoke] pinned             HTTP 200 {"deviceId":"doc-sample-001","connectionId":"PoHpKFOATQmnNm7Ob2O63A","method":"Ping","result":"pong:hello"}
-[invoke] random-by-method   HTTP 200 {"deviceId":"doc-sample-001","connectionId":"PoHpKFOATQmnNm7Ob2O63A","method":"Ping","result":"pong:hello"}
-[invoke] not-online         HTTP 404
-[invoke] not-declared       HTTP 409
-[devices] {"total":1,"items":[{"deviceId":"doc-sample-001","machineName":"DESKTOP-PR0BBBD","userName":"alice","connectionId":"PoHpKFOATQmnNm7Ob2O63A","methods":["Ping","Echo"]}]}
+<pre><code>[hub] connected, connectionId=zFZ8dvngRwWCUQBYiwJhNA
+[invoke] pinned             HTTP 200 {"deviceId":"doc-sample-001","connectionId":"zFZ8dvngRwWCUQBYiwJhNA","method":"Ping","result":"pong:hello"}
+[invoke] random-by-method   HTTP 200 {"deviceId":"doc-sample-001","connectionId":"zFZ8dvngRwWCUQBYiwJhNA","method":"Ping","result":"pong:hello"}
+[pinned] device=doc-sample-001 connection=zFZ8dvngRwWCUQBYiwJhNA method=Ping result=pong:hello
+[random] device=doc-sample-001 connection=zFZ8dvngRwWCUQBYiwJhNA method=Ping result=pong:hello
+[expected] not-online: HTTP 404
+           not-online 调用失败：HTTP 404 (Not Found)；POST https://127.0.0.1:6110/api/invoke；deviceId=no-such-device，method=Ping，payload=hello；响应体：
+[expected] not-declared: HTTP 409
+           not-declared 调用失败：HTTP 409 (Conflict)；POST https://127.0.0.1:6110/api/invoke；deviceId=doc-sample-001，method=Nope，payload=hello；响应体：
+[devices] {"total":1,"items":[{"deviceId":"doc-sample-001","machineName":"DESKTOP-PR0BBBD","userName":"alice","connectionId":"zFZ8dvngRwWCUQBYiwJhNA","methods":["Ping","Echo"]}]}
 [hub] stopped</code></pre>
 <p class="step">本次示例只有一台设备，所以随机模式必然落到它；多设备时的分配实测见第 9 节。请求 <code>deviceId:null</code> 即不指定设备。</p>
+<p><code>Invoke</code> 成功时把响应体反序列化成 <code>InvokeResult</code> 返回，<code>Result</code> 就是设备方法的返回值原文；非 2xx 时抛出 <code>HttpRequestException</code>，<code>StatusCode</code> 属性就是 404/409/502 等状态码，<code>Message</code> 里带请求 URL、入参和服务端响应体；连接失败或超时也会包一层带上下文的 <code>HttpRequestException</code>。上面的两个预期失败分支显式捕获并打印，生产代码里按需重试或上抛即可。</p>
 
 <h2 id="troubleshooting">8. 常见问题排查</h2>
 
