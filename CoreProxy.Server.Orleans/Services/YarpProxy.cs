@@ -45,12 +45,14 @@ namespace CoreProxy.Server.Orleans.Services
             {
                 var path = context.Request.Path.ToUriComponent();
 
-                // 优先取路径首段；不是合法 token 时退回 proxy Cookie。
-                // 两处都只认服务端签发的 token：hex 之类的自造值一律不进入代理分支。
+                // 只认服务端签发的 token：优先取路径首段；
+                // 没有时由"目标页发起的子资源请求"的 Referer 兜底（顶层导航绝不走这里）。
                 var token = GetFirstSegment(path).ToString();
                 if (!ProxyTokenProtector.TryDecrypt(token, out var host))
                 {
-                    token = context.Request.Cookies["proxy"] ?? string.Empty;
+                    token = IsNavigationRequest(context.Request)
+                        ? string.Empty
+                        : GetTokenFromReferer(context.Request.Headers.Referer.ToString());
                     if (!ProxyTokenProtector.TryDecrypt(token, out host))
                     {
                         await next(context);
@@ -69,17 +71,47 @@ namespace CoreProxy.Server.Orleans.Services
                     ? targetUri.Authority
                     : host;
 
-                CookieTransformer cookieTransformer = new CookieTransformer(token, targetAuthority);
+                ProxyTransformer proxyTransformer = new ProxyTransformer(targetAuthority);
                 await httpForwarder.SendAsync(
                     context,
                     host, // 目标地址
                     ForwarderInvoker,
                     requestConfig: ForwarderRequestConfig.Empty,
-                    transformer: cookieTransformer
+                    transformer: proxyTransformer
                 );
             });
 
             return app;
+        }
+
+        /// <summary>
+        /// 是否"顶层导航"：地址栏输入、点击链接、iframe/embed 加载。
+        /// 这类请求绝不用 Referer 兜底——否则从代理页面点一个相对链接就能把 /admin 劫持到目标站点。
+        /// Sec-Fetch-Dest 缺失（curl / 旧浏览器）时按导航处理：宁可少代理，也不劫持导航。
+        /// </summary>
+        internal static bool IsNavigationRequest(HttpRequest request)
+        {
+            var dest = request.Headers["Sec-Fetch-Dest"].ToString();
+            return dest.Length == 0
+                || dest.Equals("document", StringComparison.OrdinalIgnoreCase)
+                || dest.Equals("iframe", StringComparison.OrdinalIgnoreCase)
+                || dest.Equals("frame", StringComparison.OrdinalIgnoreCase)
+                || dest.Equals("embed", StringComparison.OrdinalIgnoreCase)
+                || dest.Equals("object", StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>
+        /// 从 Referer 的路径里取首段，即"发起该请求的代理页面"所用的 token。
+        /// Referer 由浏览器按同源策略填写；拿不到或首段不是合法 token 时，后续解密会失败，请求不会进代理分支。
+        /// </summary>
+        internal static string GetTokenFromReferer(string? referer)
+        {
+            if (string.IsNullOrEmpty(referer) || !Uri.TryCreate(referer, UriKind.Absolute, out var uri))
+            {
+                return string.Empty;
+            }
+
+            return GetFirstSegment(uri.AbsolutePath).ToString();
         }
 
         /// <summary>
@@ -220,26 +252,17 @@ namespace CoreProxy.Server.Orleans.Services
         }
     }
 
-    public class CookieTransformer(string targetToken, string targetAuthority) : HttpTransformer
+    /// <summary>
+    /// 转发请求的 transformer：把请求 Host 覆盖成目标 authority，
+    /// 保证目标应用生成的绝对 URL 指向它自己而不是代理入口。
+    /// 旧版本还会回写 proxy Cookie；现在代理会话只靠路径 token / Referer，不再使用 Cookie。
+    /// </summary>
+    public class ProxyTransformer(string targetAuthority) : HttpTransformer
     {
-        /// <summary>
-        /// 把请求 Host 覆盖成目标 authority，保证目标应用生成的绝对 URL 指向它自己而不是代理入口。
-        /// </summary>
         public override ValueTask TransformRequestAsync(HttpContext httpContext, HttpRequestMessage proxyRequest, string destinationPrefix, CancellationToken cancellationToken)
         {
             var result = base.TransformRequestAsync(httpContext, proxyRequest, destinationPrefix, cancellationToken);
             proxyRequest.Headers.Host = targetAuthority;
-            return result;
-        }
-
-        public override async ValueTask<bool> TransformResponseAsync(HttpContext httpContext, HttpResponseMessage? proxyResponse, CancellationToken cancellationToken)
-        {
-            var result = await base.TransformResponseAsync(httpContext, proxyResponse, cancellationToken);
-
-            // 只需 Append：同名同路径的 Set-Cookie 会覆盖旧值（包括目标自己回写的 proxy）。
-            // Cookie 里存 token，不能存明文目标地址——否则等于把 host 写回给客户端。
-            httpContext.Response.Cookies.Append("proxy", targetToken);
-
             return result;
         }
     }
