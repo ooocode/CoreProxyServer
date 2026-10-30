@@ -77,7 +77,10 @@ namespace CoreProxy.Server.Orleans.Services
                     host, // 目标地址
                     ForwarderInvoker,
                     requestConfig: ForwarderRequestConfig.Empty,
-                    transformer: proxyTransformer
+                    transformer: proxyTransformer,
+                    // 显式绑定客户端连接的生命周期：浏览器断开/超时后立即取消上游请求，
+                    // 不把已无人接收的响应继续从目标服务器拉回来占着连接和缓冲。
+                    cancellationToken: context.RequestAborted
                 );
             });
 
