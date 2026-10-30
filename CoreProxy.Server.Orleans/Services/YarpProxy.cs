@@ -1,5 +1,7 @@
+using System.Buffers.Text;
 using System.Net;
 using System.Net.Security;
+using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using Yarp.ReverseProxy.Forwarder;
@@ -8,7 +10,9 @@ namespace CoreProxy.Server.Orleans.Services
 {
     /// <summary>
     /// YARP 反向代理接入。
-    /// 请求路径以 <c>/{hex}(@host@)/...</c> 开头（或带 proxy Cookie）时，整条请求原样转发到解析出的 host。
+    /// 请求路径以 <c>/{token}/...</c> 开头（或带 proxy Cookie）时，整条请求原样转发到 token 解密出的 host。
+    /// token 必须由服务端用密钥签发（admin 页面 /api/proxy-link 生成），
+    /// 不再接受任何人可自行构造的 hex(@host@)——否则等于把服务端变成任意外连代理。
     /// 转发使用本类自持的 <see cref="HttpMessageInvoker"/>（而不是 YARP 内部的
     /// <c>DirectForwardingHttpClientProvider</c>）：出站 TLS 需要忽略"证书名称不匹配"
     /// ——部分政府/内网站点证书链合法但 SAN 与访问域名对不上，默认校验会直接 502。
@@ -30,7 +34,7 @@ namespace CoreProxy.Server.Orleans.Services
 
         /// <summary>
         /// 挂上反向代理中间件（必须在 <c>builder.Build()</c> 之后、其它中间件之前调用）。
-        /// 判定与转发写在同一段中间件里（而不是 MapWhen 分支）：命中与否只解析一次 host，
+        /// 判定与转发写在同一段中间件里（而不是 MapWhen 分支）：命中与否只解析一次 token，
         /// 未命中的普通请求只多一次首段扫描，直接放行给下游中间件。
         /// </summary>
         public static WebApplication UseYarpReverseProxy(this WebApplication app)
@@ -41,24 +45,22 @@ namespace CoreProxy.Server.Orleans.Services
             {
                 var path = context.Request.Path.ToUriComponent();
 
-                // 优先取路径首段；不是合法 hex(@host@) 时退回 proxy Cookie
-                var host = GetHost(GetFirstSegment(path));
-                if (host.Length == 0)
+                // 优先取路径首段；不是合法 token 时退回 proxy Cookie。
+                // 两处都只认服务端签发的 token：hex 之类的自造值一律不进入代理分支。
+                var token = GetFirstSegment(path).ToString();
+                if (!ProxyTokenProtector.TryDecrypt(token, out var host))
                 {
-                    host = GetHost(context.Request.Cookies["proxy"]);
+                    token = context.Request.Cookies["proxy"] ?? string.Empty;
+                    if (!ProxyTokenProtector.TryDecrypt(token, out host))
+                    {
+                        await next(context);
+                        return;
+                    }
                 }
 
-                if (host.Length == 0)
-                {
-                    await next(context);
-                    return;
-                }
-
-                var hostHex = Convert.ToHexStringLower(Encoding.UTF8.GetBytes($"@{host}@"));
-
-                // 去掉路径里的 host 段，剩余部分原样转给目标
+                // 去掉路径里的 token 段，剩余部分原样转给目标
                 var parts = path.Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-                context.Request.Path = '/' + string.Join('/', parts.Where(x => x != hostHex));
+                context.Request.Path = '/' + string.Join('/', parts.Where(x => x != token));
 
                 // 反向代理要把 Host 改成目标自身的 authority：目标应用常据此生成绝对 URL
                 // （重定向、静态资源、回跳地址）。转发原始 Host 会让它回写指向代理本机地址的跳转，
@@ -67,7 +69,7 @@ namespace CoreProxy.Server.Orleans.Services
                     ? targetUri.Authority
                     : host;
 
-                CookieTransformer cookieTransformer = new CookieTransformer(hostHex, targetAuthority);
+                CookieTransformer cookieTransformer = new CookieTransformer(token, targetAuthority);
                 await httpForwarder.SendAsync(
                     context,
                     host, // 目标地址
@@ -115,37 +117,110 @@ namespace CoreProxy.Server.Orleans.Services
 
             return new HttpMessageInvoker(handler, disposeHandler: true);
         }
+    }
+
+    /// <summary>
+    /// 代理目标地址的加密封装：AES-256-GCM，输出 URL-safe Base64（无填充）。
+    /// 布局：version(1) || nonce(12) || ciphertext(n) || tag(16)。
+    /// 只有持有密钥（服务端）才能签发；客户端拿到 token 无法反推/伪造其它目标。
+    /// 密钥由证书口令派生（SHA-256），不额外落盘：证书重签 → 口令变化 → 旧链接全部失效。
+    /// </summary>
+    internal static class ProxyTokenProtector
+    {
+        private const byte CurrentVersion = 1;
+        private const int NonceSize = 12;
+        private const int TagSize = 16;
+
+        // token 的正常长度在几十个字符；放宽到 4K 是为了容错，同时避免超大输入做无谓分配
+        private const int MaxTokenChars = 4096;
+
+        private static readonly byte[] AssociatedData = "CoreProxy.YarpProxy.v1"u8.ToArray();
+        private static readonly object Sync = new();
+        private static volatile AesGcm? aesGcm;
 
         /// <summary>
-        /// 解析 hex 编码的 <c>@host@</c>；不合法时返回空串（调用方以此判定"不是代理请求"）。
-        /// 先逐字符校验 hex 再解码：普通请求（/api/status 之类）不该靠抛 FormatException 来做控制流。
+        /// 用证书口令派生 32 字节密钥并初始化。必须在开始处理请求前调用一次。
         /// </summary>
-        private static string GetHost(ReadOnlySpan<char> input)
+        public static void Configure(string secret)
         {
-            if (input.Length < 2 || (input.Length & 1) != 0)
+            ArgumentException.ThrowIfNullOrWhiteSpace(secret);
+
+            var key = SHA256.HashData(Encoding.UTF8.GetBytes(secret));
+            var created = new AesGcm(key, TagSize);
+            lock (Sync)
             {
-                return string.Empty;
+                // 不 Dispose 旧实例：它可能仍被并发请求持有，Dispose 会让这些请求 ObjectDisposedException。
+                // Configure 只在启动时调用一次（单测会重复调用，泄漏的是一个小对象，可忽略）。
+                aesGcm = created;
+            }
+        }
+
+        /// <summary>把目标地址加密成 token。</summary>
+        public static string Encrypt(string host)
+        {
+            var cipher = aesGcm ?? throw new InvalidOperationException(
+                "ProxyTokenProtector 未初始化（缺少 Configure 调用）");
+
+            var plaintext = Encoding.UTF8.GetBytes(host);
+            var payload = new byte[1 + NonceSize + plaintext.Length + TagSize];
+            payload[0] = CurrentVersion;
+
+            var nonce = payload.AsSpan(1, NonceSize);
+            RandomNumberGenerator.Fill(nonce);
+            cipher.Encrypt(
+                nonce,
+                plaintext,
+                payload.AsSpan(1 + NonceSize, plaintext.Length),
+                payload.AsSpan(1 + NonceSize + plaintext.Length, TagSize),
+                AssociatedData);
+
+            return Base64Url.EncodeToString(payload);
+        }
+
+        /// <summary>校验并解密 token；任何非法/篡改/版本不符都返回 false 且不抛异常。</summary>
+        public static bool TryDecrypt(ReadOnlySpan<char> token, out string host)
+        {
+            host = string.Empty;
+
+            // 未配置（如单测未初始化）时按"不是代理请求"处理，而不是让请求 500
+            var cipher = aesGcm;
+            if (cipher is null || token.Length is < 1 + NonceSize + TagSize or > MaxTokenChars)
+            {
+                return false;
             }
 
-            foreach (var c in input)
+            try
             {
-                if (!char.IsAsciiHexDigit(c))
+                Span<byte> buffer = token.Length <= 512 ? stackalloc byte[512] : new byte[token.Length];
+                // 注意：TryDecodeFromChars 对非法输入并不总是返回 false，部分情况会抛 FormatException，
+                // 所以解码与解密整段都要兜住——这里处理的是外部可任意构造输入。
+                if (!Base64Url.TryDecodeFromChars(token, buffer, out var written)
+                    || written < 1 + NonceSize + TagSize
+                    || buffer[0] != CurrentVersion)
                 {
-                    return string.Empty;
+                    return false;
                 }
-            }
 
-            var raw = Encoding.UTF8.GetString(Convert.FromHexString(input));
-            if (raw.StartsWith('@') && raw.EndsWith('@'))
+                var cipherLength = written - 1 - NonceSize - TagSize;
+                Span<byte> plaintext = cipherLength <= 256 ? stackalloc byte[256] : new byte[cipherLength];
+                cipher.Decrypt(
+                    buffer.Slice(1, NonceSize),
+                    buffer.Slice(1 + NonceSize, cipherLength),
+                    buffer.Slice(1 + NonceSize + cipherLength, TagSize),
+                    plaintext[..cipherLength],
+                    AssociatedData);
+
+                host = Encoding.UTF8.GetString(plaintext[..cipherLength]);
+                return host.Length > 0;
+            }
+            catch (Exception ex) when (ex is FormatException or CryptographicException or ArgumentException)
             {
-                return raw.Replace("@", string.Empty);
+                return false;
             }
-
-            return string.Empty;
         }
     }
 
-    public class CookieTransformer(string targetHost, string targetAuthority) : HttpTransformer
+    public class CookieTransformer(string targetToken, string targetAuthority) : HttpTransformer
     {
         /// <summary>
         /// 把请求 Host 覆盖成目标 authority，保证目标应用生成的绝对 URL 指向它自己而不是代理入口。
@@ -162,8 +237,8 @@ namespace CoreProxy.Server.Orleans.Services
             var result = await base.TransformResponseAsync(httpContext, proxyResponse, cancellationToken);
 
             // 只需 Append：同名同路径的 Set-Cookie 会覆盖旧值（包括目标自己回写的 proxy）。
-            // 之前先 Delete 再 Append 会多发一条过期 Cookie，浏览器最终值相同，纯属冗余。
-            httpContext.Response.Cookies.Append("proxy", targetHost);
+            // Cookie 里存 token，不能存明文目标地址——否则等于把 host 写回给客户端。
+            httpContext.Response.Cookies.Append("proxy", targetToken);
 
             return result;
         }

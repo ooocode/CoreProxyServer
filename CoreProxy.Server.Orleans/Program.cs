@@ -36,6 +36,9 @@ builder.Host.UseNLog();
 var certificate2 = GetHttpsCertificate();
 var certificatePassword = GetCertificatePassword(certificate2);
 
+// 反代 token 的 AES 密钥直接由证书口令派生：证书重签 → 口令变化 → 旧代理链接全部失效。
+ProxyTokenProtector.Configure(certificatePassword.Password);
+
 // /api/invoke 的默认等待上限；单次请求可用 timeoutSeconds 覆盖（只要求 > 0，不设上限）。
 // 配置缺失或 ≤0 时回落到 900 秒（15 分钟）。
 var adminInvokeTimeout = TimeSpan.FromSeconds(
@@ -242,6 +245,11 @@ app.MapPost("/api/invoke", (InvokeRequest request, HttpContext ctx) =>
         request, certificatePassword.Password, ctx,
         ctx.RequestServices.GetRequiredService<IHubContext<ChatHub>>(),
         defaultInvokeTimeout: adminInvokeTimeout));
+
+// 生成加密的反代地址（鉴权同上）：输入目标地址，返回 token 与代理路径。
+// 只有服务端能签发 token，外部无法自行拼出指向其它目标的代理链接。
+app.MapPost("/api/proxy-link", (ProxyLinkRequest request, HttpContext ctx) =>
+    AdminApi.HandleProxyLink(request, certificatePassword.Password, ctx));
 
 app.Run();
 

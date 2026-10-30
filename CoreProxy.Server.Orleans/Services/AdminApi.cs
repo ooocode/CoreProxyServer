@@ -31,6 +31,12 @@ namespace CoreProxy.Server.Orleans.Services
     /// </summary>
     public sealed record InvokePayload(string DeviceId, string ConnectionId, string Method, string Result);
 
+    /// <summary>/api/proxy-link 的请求体：url 为要代理的目标地址，如 http://10.240.4.68。</summary>
+    public sealed record ProxyLinkRequest(string? Url);
+
+    /// <summary>/api/proxy-link 的响应体：token 是加密后的路径段，path 是可直接拼接的代理路径。</summary>
+    public sealed record ProxyLinkPayload(string Token, string Path);
+
     /// <summary>
     /// 管理接口专用的 source-gen JSON 上下文（AOT）。
     /// 刻意与 AppJsonSerializerContext 分开：后者的 Options 被 SignalR 的 JSON 协议共用
@@ -41,6 +47,8 @@ namespace CoreProxy.Server.Orleans.Services
     [JsonSerializable(typeof(DevicesPayload))]
     [JsonSerializable(typeof(InvokeRequest))]
     [JsonSerializable(typeof(InvokePayload))]
+    [JsonSerializable(typeof(ProxyLinkRequest))]
+    [JsonSerializable(typeof(ProxyLinkPayload))]
     public partial class AdminJsonContext : JsonSerializerContext;
 
     /// <summary>
@@ -88,7 +96,8 @@ namespace CoreProxy.Server.Orleans.Services
             || path.StartsWithSegments("/admin.html")
             || path.StartsWithSegments("/api/status")
             || path.StartsWithSegments("/api/devices")
-            || path.StartsWithSegments("/api/invoke");
+            || path.StartsWithSegments("/api/invoke")
+            || path.StartsWithSegments("/api/proxy-link");
 
         /// <summary>
         /// 校验 HTTP Basic 凭据。口令取解码后 ":" 之后那一段（无 ":" 则取整段），
@@ -180,6 +189,56 @@ namespace CoreProxy.Server.Orleans.Services
             return Results.Json(
                 new DevicesPayload(items.Count, items),
                 AdminJsonContext.Default.DevicesPayload);
+        }
+
+        /// <summary>
+        /// 处理 POST /api/proxy-link：把目标地址加密成反代 token（鉴权同上，未授权 401）。
+        /// 只接受 http/https 绝对地址，非法输入返回 400。
+        /// 返回的 path 形如 <c>/{token}/</c>，调用方拼上自己的 origin 即为可用地址；
+        /// 该 token 只有服务端密钥能签发，客户端无法自行构造其它目标。
+        /// </summary>
+        public static IResult HandleProxyLink(ProxyLinkRequest request, string password, HttpContext ctx)
+        {
+            if (RejectUnauthorized(ctx, password) is { } rejection)
+            {
+                return rejection;
+            }
+
+            if (request is null || !TryNormalizeTarget(request.Url, out var target))
+            {
+                return Results.StatusCode(StatusCodes.Status400BadRequest);
+            }
+
+            var token = ProxyTokenProtector.Encrypt(target);
+            return Results.Json(
+                new ProxyLinkPayload(token, "/" + token + "/"),
+                AdminJsonContext.Default.ProxyLinkPayload);
+        }
+
+        /// <summary>
+        /// 规范化代理目标：只接受 http/https 绝对地址，返回 <c>scheme://host[:port]</c>。
+        /// 带路径的输入只保留 authority（路径由使用方在 token 段之后追加）。
+        /// </summary>
+        private static bool TryNormalizeTarget(string? url, out string target)
+        {
+            target = string.Empty;
+            if (string.IsNullOrWhiteSpace(url) || !Uri.TryCreate(url.Trim(), UriKind.Absolute, out var uri))
+            {
+                return false;
+            }
+
+            if (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps)
+            {
+                return false;
+            }
+
+            if (string.IsNullOrEmpty(uri.Host))
+            {
+                return false;
+            }
+
+            target = uri.GetLeftPart(UriPartial.Authority);
+            return true;
         }
 
         /// <summary>

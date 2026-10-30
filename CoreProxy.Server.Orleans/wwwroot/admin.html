@@ -95,6 +95,16 @@
 
   <div class="banner warn" id="banner"></div>
 
+  <h2>生成代理地址</h2>
+  <div class="panel">
+    <label>目标地址
+      <input id="proxyUrl" type="text" placeholder="http://10.240.4.68">
+    </label>
+    <button id="genProxy" type="button">生成</button>
+    <button id="copyProxy" type="button" disabled>复制</button>
+  </div>
+  <div class="result" id="proxyResult"></div>
+
   <table>
     <thead>
       <tr><th>客户端 IP</th><th>目标地址</th><th>已运行时长</th></tr>
@@ -141,6 +151,12 @@
   var invMethodEl = document.getElementById('invMethod');
   var invPayloadEl = document.getElementById('invPayload');
   var invResultEl = document.getElementById('invResult');
+
+  var proxyUrlEl = document.getElementById('proxyUrl');
+  var genProxyEl = document.getElementById('genProxy');
+  var copyProxyEl = document.getElementById('copyProxy');
+  var proxyResultEl = document.getElementById('proxyResult');
+  var lastProxyUrl = '';
 
   // 最近一次拉到的数据；时长由本地每秒重算，不在轮询间重取
   var items = [];
@@ -441,6 +457,51 @@
   invDeviceEl.addEventListener('change', function () { syncMethods(invDeviceEl.value); });
   invPayloadEl.addEventListener('keydown', function (e) {
     if (e.key === 'Enter') invoke();
+  });
+
+  function showProxyResult(text, ok) {
+    proxyResultEl.textContent = text;
+    proxyResultEl.className = 'result' + (text ? (ok ? ' show ok' : ' show err') : '');
+    copyProxyEl.disabled = !ok;
+    if (!ok) lastProxyUrl = '';
+  }
+
+  // 地址由服务端用密钥加密（/api/proxy-link），页面拿到的只是 token；
+  // 外部无法自行拼出指向其它目标的代理地址。
+  function generateProxy() {
+    var url = proxyUrlEl.value.trim();
+    if (!url) { showProxyResult('请输入目标地址，例如 http://10.240.4.68', false); return; }
+    genProxyEl.disabled = true;
+    fetch('/api/proxy-link', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: url })
+    }).then(function (res) {
+      if (res.status === 401) throw new Error('鉴权失败，请刷新页面重新输入凭据');
+      if (res.status === 400) throw new Error('地址无效：需要 http:// 或 https:// 开头的完整地址');
+      if (!res.ok) throw new Error('生成失败：HTTP ' + res.status);
+      return res.json();
+    }).then(function (data) {
+      lastProxyUrl = location.origin + data.path;
+      showProxyResult(lastProxyUrl, true);
+    }).catch(function (e) {
+      showProxyResult(String(e && e.message ? e.message : e), false);
+    }).finally(function () {
+      genProxyEl.disabled = false;
+    });
+  }
+
+  genProxyEl.addEventListener('click', generateProxy);
+  proxyUrlEl.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') generateProxy();
+  });
+  copyProxyEl.addEventListener('click', function () {
+    if (!lastProxyUrl) return;
+    navigator.clipboard.writeText(lastProxyUrl).then(function () {
+      copyProxyEl.textContent = '已复制';
+      setTimeout(function () { copyProxyEl.textContent = '复制'; }, 1200);
+    }).catch(function () { /* 剪贴板不可用时忽略 */ });
   });
 
   refreshAll();
