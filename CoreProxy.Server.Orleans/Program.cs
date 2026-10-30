@@ -161,7 +161,12 @@ builder.Services.AddSignalR(opt =>
 
 builder.Services.AddDataProtection();
 
+// 核心步骤：注册 YARP 转发器服务（反向代理的中间件与其实现见 Services/YarpProxy.cs）
+builder.Services.AddYarpForwarder();
+
 var app = builder.Build();
+
+app.UseYarpReverseProxy();
 
 app.UseWebSockets();
 
