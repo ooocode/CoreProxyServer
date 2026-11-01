@@ -51,10 +51,10 @@ dotnet run -c Release --project tools/bench -- \
 
 入口在 [Program.cs](CoreProxy.Server.Orleans/Program.cs)，Kestrel 配置全部内联于此，是理解行为的关键：
 
-- **协议与端口**：HTTP/2 only。生产端口 `6099`（`appsettings.json` 里 `Urls`），bench 常用 `6110`。`Http2MaxStreamsPerConnection=8`。
+- **协议与端口**：按监听 URL 的 scheme 选协议——HTTPS 端点 `Http1AndHttp2`，由 ALPN 正常协商（浏览器/现代客户端走 h2，仅支持 HTTP/1.1 的客户端回退 h1.1）；明文端点保持 `Http2`（h2c prior knowledge，供 gRPC / `tools/bench` 的 `http://` 使用）。生产端口 `6099`（`appsettings.json` 里 `Urls`），bench 常用 `6110`。`Http2MaxStreamsPerConnection=8`。
 - **HTTP/2 流量控制窗口是"核心中的核心"**：`InitialConnectionWindowSize=64MB`、`InitialStreamWindowSize=32MB`、`MaxFrameSize=16777215`，故意调大以跑满带宽。
 - **保活语义**：`KeepAlivePingDelay=30s` / `KeepAlivePingTimeout=20s`。重置计时器的是任意入站帧，所以只能探测"完全静默"连接；真实回收耗时 ≈ Delay+Timeout。改保活前先读 `kestrel-http2-keepalive-semantics` 相关注释与线上结论。
-- **证书**：`GetHttpsCertificate()` 在 `BaseDirectory/ssl/` 下自签/读取 pfx；客户端口令 = 证书原始字节的 SHA-256 十六进制串，写成 `ssl/client-password.txt`。非回环 IP 的连接需在 `Authorization: Password <hash>` 里带上它（`MyGrpcService.CheckPassword`）。
+- **证书**：`GetHttpsCertificate()` 在 `BaseDirectory/ssl/` 下自签/读取 pfx；生成时写入 SAN（随机域名、`localhost`、本机主机名、本机全部网卡 IP）与 BasicConstraints/KeyUsage/EKU(serverAuth)，以兼容只认 SAN 的现代浏览器。客户端口令 = 证书原始字节的 SHA-256 十六进制串，写成 `ssl/client-password.txt`。非回环 IP 的连接需在 `Authorization: Password <hash>` 里带上它（`MyGrpcService.CheckPassword`）。
 
 服务端各能力组件（`Services/` 与 `Internal/`）：
 

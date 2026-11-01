@@ -11,6 +11,9 @@ using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Options;
 using NLog;
 using NLog.Web;
+using System.Net;
+using System.Net.NetworkInformation;
+using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
@@ -87,7 +90,18 @@ builder.WebHost.ConfigureKestrel(serverOptions =>
     }
 
     serverOptions.AddServerHeader = false; // 禁用 Server 头
-    serverOptions.ConfigureEndpointDefaults(c => c.Protocols = HttpProtocols.Http2);
+
+    // 按监听 URL 的 scheme 选择端点协议：
+    // - HTTPS 端点：HTTP/1.1 + HTTP/2，由 ALPN 正常协商（浏览器与现代客户端走 h2，
+    //   只支持 HTTP/1.1 的客户端回退 h1.1）。
+    // - 明文端点：HTTP/2 prior knowledge（h2c），供 gRPC / tools/bench 使用。
+    // ListenOptions 不暴露 TLS 状态，故按 --urls / Urls 的 scheme 判定；同一进程混用两种
+    // scheme 时按明文处理（h2c），保证 gRPC 客户端不被破坏。
+    string[] configuredUrls = (builder.Configuration["urls"] ?? "https://*:6099")
+        .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+    bool hasPlaintextEndpoint = configuredUrls.Any(url => url.StartsWith("http://", StringComparison.OrdinalIgnoreCase));
+    serverOptions.ConfigureEndpointDefaults(c =>
+        c.Protocols = hasPlaintextEndpoint ? HttpProtocols.Http2 : HttpProtocols.Http1AndHttp2);
 
 #if !DEBUG
     serverOptions.ConfigureHttpsDefaults(s => s.ServerCertificate = certificate2);
@@ -278,7 +292,30 @@ X509Certificate2 GetHttpsCertificate()
 
     string cn = $"{RandomNumberGenerator.GetString("abcdefghijklmnopqrstuvwxyz0123456789", 10)}.org";
     var req = new CertificateRequest($"cn={cn}", rsa, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
-    req.CertificateExtensions.Add(new X509KeyUsageExtension(X509KeyUsageFlags.DigitalSignature, true));
+
+    // 现代浏览器（Chrome 58+ / Edge / Safari）已不再用 CN 匹配主机名，只认 SubjectAltName；
+    // 只有 CN 的证书在浏览器里会直接报 ERR_CERT_COMMON_NAME_INVALID。
+    // 证书在首次启动时于本机生成，所以把本机主机名、回环和所有本机网卡地址都写进 SAN，
+    // 浏览器用 IP 访问（管理页 / 反代）时也能匹配上。
+    var san = new SubjectAlternativeNameBuilder();
+    san.AddDnsName(cn);
+    san.AddDnsName("localhost");
+    san.AddDnsName(Environment.MachineName);
+    foreach (var address in GetLocalIpAddresses())
+    {
+        san.AddIpAddress(address);
+    }
+    req.CertificateExtensions.Add(san.Build());
+
+    // 以下三项是浏览器/客户端校验服务端证书时的常规要求：
+    // BasicConstraints 标明这是终端证书而非 CA；KeyUsage 覆盖 TLS 两种签名/加密用途；
+    // EKU(serverAuth) 显式声明可作服务端证书（缺失时有的客户端会直接拒绝）。
+    req.CertificateExtensions.Add(new X509BasicConstraintsExtension(false, false, 0, true));
+    req.CertificateExtensions.Add(new X509KeyUsageExtension(
+        X509KeyUsageFlags.DigitalSignature | X509KeyUsageFlags.KeyEncipherment, true));
+    req.CertificateExtensions.Add(new X509EnhancedKeyUsageExtension(
+        new OidCollection { new("1.3.6.1.5.5.7.3.1") }, false));
+    req.CertificateExtensions.Add(new X509SubjectKeyIdentifierExtension(req.PublicKey, false));
 
     var cert = req.CreateSelfSigned(DateTimeOffset.Now.AddDays(-1), DateTimeOffset.Now.AddYears(5));
 
@@ -292,6 +329,46 @@ X509Certificate2 GetHttpsCertificate()
     File.WriteAllBytes(pdxFileName, rawBytes);
     File.WriteAllText(passwordFileName, password);
     return certificate;
+}
+
+static IEnumerable<IPAddress> GetLocalIpAddresses()
+{
+    // 回环地址优先写入（localhost / 127.0.0.1 / ::1 访问场景）
+    var seen = new HashSet<IPAddress>();
+    var result = new List<IPAddress>();
+    void Add(IPAddress address)
+    {
+        if ((address.AddressFamily is AddressFamily.InterNetwork or AddressFamily.InterNetworkV6) && seen.Add(address))
+        {
+            result.Add(address);
+        }
+    }
+
+    Add(IPAddress.Loopback);
+    Add(IPAddress.IPv6Loopback);
+
+    try
+    {
+        // 取所有已启用网卡的单播地址：浏览器用局域网 IP / 公网 IP 直连时靠这些 SAN 匹配。
+        // 枚举失败（容器、受限权限）不影响启动，至少还有回环地址。
+        foreach (var nic in NetworkInterface.GetAllNetworkInterfaces())
+        {
+            if (nic.OperationalStatus != OperationalStatus.Up || nic.NetworkInterfaceType == NetworkInterfaceType.Loopback)
+            {
+                continue;
+            }
+
+            foreach (var unicast in nic.GetIPProperties().UnicastAddresses)
+            {
+                Add(unicast.Address);
+            }
+        }
+    }
+    catch (NetworkInformationException)
+    {
+    }
+
+    return result;
 }
 
 CertificatePassword GetCertificatePassword(X509Certificate2 certificate2)
