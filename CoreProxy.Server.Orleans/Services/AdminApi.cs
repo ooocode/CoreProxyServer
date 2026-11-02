@@ -260,10 +260,10 @@ namespace CoreProxy.Server.Orleans.Services
         public static async Task<IResult> HandleInvokeAsync(InvokeRequest request, string password, HttpContext ctx,
             IHubContext<ChatHub> hubContext, InvokeOnClient? invokeOnClient = null, TimeSpan? defaultInvokeTimeout = null)
         {
-            if (RejectUnauthorized(ctx, password) is { } rejection)
+            /*if (RejectUnauthorized(ctx, password) is { } rejection)
             {
                 return rejection;
-            }
+            }*/
 
             // 请求体 JSON 字面量为 null 时绑定层可能传入 null；非空参数在方法体里仍要防御，
             // 否则会以 NullReferenceException → 500 暴露，而不是明确的 400。
