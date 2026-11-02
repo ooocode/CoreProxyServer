@@ -96,7 +96,7 @@ namespace CoreProxy.Server.Orleans.Services
             || path.StartsWithSegments("/admin.html")
             || path.StartsWithSegments("/api/status")
             || path.StartsWithSegments("/api/devices")
-            || path.StartsWithSegments("/api/invoke")
+            //|| path.StartsWithSegments("/api/invoke")
             || path.StartsWithSegments("/api/proxy-link");
 
         /// <summary>
