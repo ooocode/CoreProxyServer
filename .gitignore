@@ -48,3 +48,4 @@ artifacts/inttest/logs/server.out.log
 artifacts/inttest/logs/server.pid
 artifacts/inttest/logs/short-soak.log
 artifacts/inttest/logs/soak-batches.log
+/.vs/CopilotSnapshots/6FB18CAAE7305148A0AF4A657E0E8839
