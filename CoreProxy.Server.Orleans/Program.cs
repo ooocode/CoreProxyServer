@@ -1,20 +1,15 @@
 using CoreProxy.Server.Orleans;
 using CoreProxy.Server.Orleans.BackgroundServices;
+using CoreProxy.Server.Orleans.Endpoints;
 using CoreProxy.Server.Orleans.Internal;
 using CoreProxy.Server.Orleans.Models;
 using CoreProxy.Server.Orleans.Services;
+using CoreProxy.Server.Orleans.Startup;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Caching.Memory;
 using NLog;
 using NLog.Web;
-using System.Net;
-using System.Net.NetworkInformation;
-using System.Net.Sockets;
-using System.Security.Cryptography;
-using System.Security.Cryptography.X509Certificates;
-using System.Text;
-using System.Text.Json.Serialization;
 //https://www.zhifeiya.cn/post/2026/2/1/d6a548a1
 
 
@@ -33,23 +28,26 @@ NLog.LogManager.Setup().LoadConfiguration(builder =>
 builder.Host.UseNLog();
 
 
-var certificate2 = GetHttpsCertificate();
-var certificatePassword = GetCertificatePassword(certificate2);
+var baseDirectory = AppDomain.CurrentDomain.BaseDirectory;
+var certificate2 = CertificateFactory.LoadOrCreate(baseDirectory);
+var certificatePassword = CertificateFactory.ComputePassword(certificate2, baseDirectory);
 
 // 反代 token 的 AES 密钥直接由证书口令派生：证书重签 → 口令变化 → 旧代理链接全部失效。
 ProxyTokenProtector.Configure(certificatePassword.Password);
 
 // /api/invoke 的默认等待上限；单次请求可用 timeoutSeconds 覆盖（只要求 > 0，不设上限）。
 // 配置缺失或 ≤0 时回落到 900 秒（15 分钟）。
-var adminInvokeTimeout = TimeSpan.FromSeconds(
-    int.TryParse(builder.Configuration["AdminInvokeTimeoutSeconds"], out int invokeTimeoutSeconds)
-        && invokeTimeoutSeconds > 0
-        ? invokeTimeoutSeconds
-        : AdminApi.DefaultInvokeTimeoutSeconds);
+var coreOptions = CoreProxyOptions.FromConfiguration(builder.Configuration);
+builder.Services.AddSingleton(coreOptions);
+var adminInvokeTimeout = coreOptions.AdminInvokeTimeout;
 
 builder.Services.AddSingleton(certificatePassword);
 
 builder.Services.AddMemoryCache();
+
+// 隧道/设备登记表：进程内单例，原先的静态全局字典改为注入，便于测试隔离与后续替换实现。
+builder.Services.AddSingleton<TunnelRegistry>();
+builder.Services.AddSingleton<DeviceRegistry>();
 
 // 管理 API 的强类型 JSON 走 source-gen（AOT 友好），避免 minimal API 在运行时反射序列化。
 // 只挂 admin 专用 context（含 InvokeRequest/InvokePayload 等），不掺反射兜底 resolver：
@@ -62,70 +60,12 @@ builder.Services.ConfigureHttpJsonOptions(options =>
 //默认 60s；配 0 可禁用缓存（每次建连都重新解析）。
 builder.Services.AddSingleton(sp => new TargetResolver(
     sp.GetRequiredService<IMemoryCache>(),
-    int.TryParse(builder.Configuration["TargetDnsCacheTtlSeconds"], out int ttlSeconds) && ttlSeconds >= 0
-        ? TimeSpan.FromSeconds(ttlSeconds)
-        : TimeSpan.FromSeconds(60)));
+    coreOptions.DnsCacheTtl));
 
+int? maxStreamsPerConnection = coreOptions.Http2MaxStreamsPerConnection;
 
 builder.WebHost.ConfigureKestrel(serverOptions =>
-{
-    // 保活探测：连接上连续 30 秒没有任何【入站】帧时，服务端向客户端发 PING。
-    // 注意：重置该计时器的是任意入站帧（含 WINDOW_UPDATE 等），并非只有 PING ACK，
-    // 所以真正会被探测到的只有"完全静默"的连接；单向持续收数据的连接永远不会被 PING。
-    // 30s 短于常见 NAT / 负载均衡的 60s 空闲超时，足以维持空闲隧道不被中间设备回收。
-    serverOptions.Limits.Http2.KeepAlivePingDelay = TimeSpan.FromSeconds(30);
-
-    // PING 发出后等待入站帧的时限，超时即判定对端已死，先发 GOAWAY(INTERNAL_ERROR) 再 FIN。
-    // 该值只需覆盖 RTT + 抖动，无需留到分钟级；Kestrel 默认值为 20s。
-    // 原先的 60s 会让死连接在被回收前多滞留约 45 秒（连接 + 上游目标连接 + 会话状态都跟着滞留）。
-    // 实测：计时器由 1 秒心跳驱动，故对端完全静默到被回收的实际耗时 ≈ Delay + Timeout + 0~2s。
-    serverOptions.Limits.Http2.KeepAlivePingTimeout = TimeSpan.FromSeconds(20);
-
-    if (int.TryParse(builder.Configuration["Http2MaxStreamsPerConnection"], out int maxStreams) && maxStreams > 0)
-    {
-        serverOptions.Limits.Http2.MaxStreamsPerConnection = maxStreams;
-    }
-
-    serverOptions.AddServerHeader = false; // 禁用 Server 头
-
-    // 按监听 URL 的 scheme 选择端点协议：
-    // - HTTPS 端点：HTTP/1.1 + HTTP/2，由 ALPN 正常协商（浏览器与现代客户端走 h2，
-    //   只支持 HTTP/1.1 的客户端回退 h1.1）。
-    // - 明文端点：HTTP/2 prior knowledge（h2c），供 gRPC / tools/bench 使用。
-    // ListenOptions 不暴露 TLS 状态，故按 --urls / Urls 的 scheme 判定；同一进程混用两种
-    // scheme 时按明文处理（h2c），保证 gRPC 客户端不被破坏。
-    string[] configuredUrls = (builder.Configuration["urls"] ?? "https://*:6099")
-        .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-    bool hasPlaintextEndpoint = configuredUrls.Any(url => url.StartsWith("http://", StringComparison.OrdinalIgnoreCase));
-    serverOptions.ConfigureEndpointDefaults(c =>
-        c.Protocols = hasPlaintextEndpoint ? HttpProtocols.Http2 : HttpProtocols.Http1AndHttp2);
-
-#if !DEBUG
-    serverOptions.ConfigureHttpsDefaults(s => s.ServerCertificate = certificate2);
-#endif
-
-    //// --- HTTP/2 流量控制窗口 (核心中的核心) ---
-    //// ConnectionWindow 必须略大于所有 StreamWindow 的总和
-    //// 设置为 64MB 以完全覆盖 25MB 的 BDP，留出缓冲余量
-    serverOptions.Limits.Http2.InitialConnectionWindowSize = 1024 * 1024 * 64;
-
-    //// 单个 Stream 的窗口设置为 32MB，确保单个双向流就能跑满带宽
-    serverOptions.Limits.Http2.InitialStreamWindowSize = 1024 * 1024 * 32;
-
-    //// --- 缓冲区与帧大小 ---
-    //// 增加最大帧大小以减少 Header 处理频率 (Max: 64KB - 1)
-    serverOptions.Limits.Http2.MaxFrameSize = 16777215;
-
-    //// 响应缓冲区：为了跑满 1Gbps，Kestrel 需要足够的内存来暂存即将发往网卡的数据
-    //// 设置为 4MB 可以在 0GC 和 吞吐量之间取得平衡
-    serverOptions.Limits.MaxResponseBufferSize = 1024 * 1024 * 4;
-
-    //// 请求缓冲区：同样设置为 4MB
-    serverOptions.Limits.MaxRequestBufferSize = 1024 * 1024 * 4;
-
-    serverOptions.Limits.MinRequestBodyDataRate = null; // 高延迟下建议关闭或调低，防止误判为慢速攻击
-    serverOptions.Limits.MinResponseDataRate = null;
-});
+    KestrelConfigurator.Configure(serverOptions, builder.Configuration, certificate2, maxStreamsPerConnection));
 
 builder.WebHost.UseKestrelHttpsConfiguration();
 
@@ -185,191 +125,10 @@ app.Use(async (ctx, next) =>
 
 app.UseStaticFiles();
 
-// 管理页首页：/admin → wwwroot/admin.html（UseStaticFiles 不做无扩展名映射，故显式指向文件；
-// 鉴权已由上面的中间件按 /admin 前缀放行前校验）
-app.MapGet("/admin", (HttpContext ctx) =>
-{
-    // WebRootPath 在 wwwroot 不存在时为 null，直接 Path.Combine 会抛 ArgumentNullException → 500
-    var env = ctx.RequestServices.GetRequiredService<IWebHostEnvironment>();
-    var webRoot = env.WebRootPath ?? Path.Combine(env.ContentRootPath, "wwwroot");
-    return Results.File(Path.Combine(webRoot, "admin.html"), "text/html");
-});
-
-app.MapGet("/", () =>
-{
-    const string text = """
-                <!DOCTYPE html>
-                <html>
-                <head>
-                <title>Welcome to nginx!</title>
-                <style>
-                html { color-scheme: light dark; }
-                body { width: 35em; margin: 0 auto;
-                font-family: Tahoma, Verdana, Arial, sans-serif; }
-                </style>
-                </head>
-                <body>
-                <h1>Welcome to nginx!</h1>
-                <p>If you see this page, the nginx web server is successfully installed and
-                working. Further configuration is required.</p>
-
-                <p>For online documentation and support please refer to
-                <a href="http://nginx.org/">nginx.org</a>.<br/>
-                Commercial support is available at
-                <a href="http://nginx.com/">nginx.com</a>.</p>
-
-                <p><em>Thank you for using nginx.</em></p>
-                </body>
-                </html>
-                """;
-    return TypedResults.Content(text, "text/html", Encoding.UTF8);
-});
-
-app.MapGrpcService<MyGrpcService>();
+app.MapGrpcService<TunnelGrpcService>();
 app.MapHub<ChatHub>("/chathub");
 
-// 管理页数据：返回当前 gRPC 隧道清单（鉴权见上面的中间件）
-app.MapGet("/api/status", (HttpContext ctx) => AdminApi.HandleStatus(ctx, certificatePassword.Password));
-
-// 在线 SignalR 设备及其上报的可调用方法（鉴权同上）
-app.MapGet("/api/devices", (HttpContext ctx) => AdminApi.HandleDevices(ctx, certificatePassword.Password));
-
-// 调用 SignalR 在线设备上报的某个方法并等返回值（鉴权同上）：
-// 带 deviceId 精确指定设备；不带 deviceId 则从所有上报了该方法的在线设备中随机选一个。
-// 请求体 InvokeRequest 由 minimal API 强类型绑定（source-gen，见上面的 ConfigureHttpJsonOptions）
-app.MapPost("/api/invoke", (InvokeRequest request, HttpContext ctx) =>
-    AdminApi.HandleInvokeAsync(
-        request, certificatePassword.Password, ctx,
-        ctx.RequestServices.GetRequiredService<IHubContext<ChatHub>>(),
-        defaultInvokeTimeout: adminInvokeTimeout));
-
-// 生成加密的反代地址（鉴权同上）：输入目标地址，返回 token 与代理路径。
-// 只有服务端能签发 token，外部无法自行拼出指向其它目标的代理链接。
-app.MapPost("/api/proxy-link", (ProxyLinkRequest request, HttpContext ctx) =>
-    AdminApi.HandleProxyLink(request, certificatePassword.Password, ctx));
+AdminEndpoints.Map(app, certificatePassword, adminInvokeTimeout);
+WelcomeEndpoints.Map(app);
 
 app.Run();
-
-X509Certificate2 GetHttpsCertificate()
-{
-    //　在本地调试和发布都没有问题，但是通过IIS发布到服务器上之后发现出现找不到文件路径错误。是由于IIS应用程序池中的【加载用户配置文件】选项默认为False。解决此问题需要将该配置修改为True。即可解决该问题。
-    string sslDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ssl");
-    if (!Directory.Exists(sslDir))
-    {
-        Directory.CreateDirectory(sslDir);
-    }
-
-    string pdxFileName = Path.Combine(sslDir, "https-certificate.pfx");
-    string passwordFileName = Path.Combine(sslDir, "https-certificate-password.txt");
-    if (File.Exists(pdxFileName) && File.Exists(passwordFileName))
-    {
-        var passowrd = File.ReadAllText(passwordFileName).Trim();
-#if NET9_0_OR_GREATER
-        return X509CertificateLoader.LoadPkcs12FromFile(pdxFileName, passowrd);
-#else
-        return new X509Certificate2(pdxFileName, password);
-#endif
-    }
-
-    using var rsa = RSA.Create(4096);
-
-    string cn = $"{RandomNumberGenerator.GetString("abcdefghijklmnopqrstuvwxyz0123456789", 10)}.org";
-    var req = new CertificateRequest($"cn={cn}", rsa, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
-
-    // 现代浏览器（Chrome 58+ / Edge / Safari）已不再用 CN 匹配主机名，只认 SubjectAltName；
-    // 只有 CN 的证书在浏览器里会直接报 ERR_CERT_COMMON_NAME_INVALID。
-    // 证书在首次启动时于本机生成，所以把本机主机名、回环和所有本机网卡地址都写进 SAN，
-    // 浏览器用 IP 访问（管理页 / 反代）时也能匹配上。
-    var san = new SubjectAlternativeNameBuilder();
-    san.AddDnsName(cn);
-    san.AddDnsName("localhost");
-    san.AddDnsName(Environment.MachineName);
-    foreach (var address in GetLocalIpAddresses())
-    {
-        san.AddIpAddress(address);
-    }
-    req.CertificateExtensions.Add(san.Build());
-
-    // 以下三项是浏览器/客户端校验服务端证书时的常规要求：
-    // BasicConstraints 标明这是终端证书而非 CA；KeyUsage 覆盖 TLS 两种签名/加密用途；
-    // EKU(serverAuth) 显式声明可作服务端证书（缺失时有的客户端会直接拒绝）。
-    req.CertificateExtensions.Add(new X509BasicConstraintsExtension(false, false, 0, true));
-    req.CertificateExtensions.Add(new X509KeyUsageExtension(
-        X509KeyUsageFlags.DigitalSignature | X509KeyUsageFlags.KeyEncipherment, true));
-    req.CertificateExtensions.Add(new X509EnhancedKeyUsageExtension(
-        new OidCollection { new("1.3.6.1.5.5.7.3.1") }, false));
-    req.CertificateExtensions.Add(new X509SubjectKeyIdentifierExtension(req.PublicKey, false));
-
-    var cert = req.CreateSelfSigned(DateTimeOffset.Now.AddDays(-1), DateTimeOffset.Now.AddYears(5));
-
-    var password = Guid.NewGuid().ToString("N");
-    var rawBytes = cert.Export(X509ContentType.Pfx, password);
-#if NET9_0_OR_GREATER
-    var certificate = X509CertificateLoader.LoadPkcs12(rawBytes, password, X509KeyStorageFlags.PersistKeySet | X509KeyStorageFlags.Exportable);
-#else
-    var certificate = new X509Certificate2(rawBytes, password);
-#endif
-    File.WriteAllBytes(pdxFileName, rawBytes);
-    File.WriteAllText(passwordFileName, password);
-    return certificate;
-}
-
-static IEnumerable<IPAddress> GetLocalIpAddresses()
-{
-    // 回环地址优先写入（localhost / 127.0.0.1 / ::1 访问场景）
-    var seen = new HashSet<IPAddress>();
-    var result = new List<IPAddress>();
-    void Add(IPAddress address)
-    {
-        if ((address.AddressFamily is AddressFamily.InterNetwork or AddressFamily.InterNetworkV6) && seen.Add(address))
-        {
-            result.Add(address);
-        }
-    }
-
-    Add(IPAddress.Loopback);
-    Add(IPAddress.IPv6Loopback);
-
-    try
-    {
-        // 取所有已启用网卡的单播地址：浏览器用局域网 IP / 公网 IP 直连时靠这些 SAN 匹配。
-        // 枚举失败（容器、受限权限）不影响启动，至少还有回环地址。
-        foreach (var nic in NetworkInterface.GetAllNetworkInterfaces())
-        {
-            if (nic.OperationalStatus != OperationalStatus.Up || nic.NetworkInterfaceType == NetworkInterfaceType.Loopback)
-            {
-                continue;
-            }
-
-            foreach (var unicast in nic.GetIPProperties().UnicastAddresses)
-            {
-                Add(unicast.Address);
-            }
-        }
-    }
-    catch (NetworkInformationException)
-    {
-    }
-
-    return result;
-}
-
-CertificatePassword GetCertificatePassword(X509Certificate2 certificate2)
-{
-    var cerBytes = certificate2.GetRawCertData();
-    var bytes = SHA256.HashData(cerBytes);
-    var result = Convert.ToHexString(bytes);
-
-    string fileName = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ssl", "client-password.txt");
-    File.WriteAllText(fileName, result);
-    return new CertificatePassword
-    {
-        Password = result
-    };
-}
-
-namespace CoreProxy.Server.Orleans
-{
-    [JsonSerializable(typeof(string))]
-    internal partial class AppJsonSerializerContext : JsonSerializerContext;
-}

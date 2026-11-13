@@ -48,6 +48,11 @@
 	</ItemGroup>
 
 	<ItemGroup>
+		<!-- 客户端与服务端共用的隧道常量（收尾窗口、请求头名） -->
+		<ProjectReference Include="..\CoreProxy.Shared\CoreProxy.Shared.csproj" />
+	</ItemGroup>
+
+	<ItemGroup>
 		<!-- 让测试项目可直接单测 TargetResolver.PickPreferred 等 internal 成员 -->
 		<InternalsVisibleTo Include="CoreProxy.Server.Orleans.Tests" />
 	</ItemGroup>

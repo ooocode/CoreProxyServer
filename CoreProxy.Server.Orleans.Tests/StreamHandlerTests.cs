@@ -25,9 +25,6 @@ namespace CoreProxy.Server.Orleans.Tests
 
         public TestContext TestContext { get; set; } = null!;
 
-        [TestCleanup]
-        public void Cleanup() => GlobalState.Connections.Clear();
-
         // ---------------- 握手 ----------------
 
         [TestMethod]
@@ -240,7 +237,7 @@ namespace CoreProxy.Server.Orleans.Tests
             AssertBytesEqual(prefix, await TestTargetServer.ReadExactlyAsync(target, prefix.Length, Timeout));
 
             await tunnel.Task.WaitAsync(TimeSpan.FromSeconds(10));
-            Assert.AreEqual(0, GlobalState.Connections.Count, "异常结束后不应残留连接记录");
+            Assert.AreEqual(0, tunnel.Registry.Count, "异常结束后不应残留连接记录");
         }
 
         // ---------------- 压力与边界 ----------------
@@ -406,7 +403,7 @@ namespace CoreProxy.Server.Orleans.Tests
 
                 using var target = await server.AcceptAsync(Timeout);
                 await tunnel.ReadHandshakeAsync(Timeout);
-                await WaitUntilAsync(() => GlobalState.Connections.Count == 1, Timeout);
+                await WaitUntilAsync(() => tunnel.Registry.Count == 1, Timeout);
 
                 //双向同时传输
                 var targetTask = Task.Run(async () =>
@@ -429,7 +426,7 @@ namespace CoreProxy.Server.Orleans.Tests
 
                 target.Shutdown(SocketShutdown.Send); //目标回应方向 FIN，让隧道自然收敛
                 await tunnel.Task.WaitAsync(Timeout);
-                await WaitUntilAsync(() => GlobalState.Connections.IsEmpty, Timeout);
+                await WaitUntilAsync(() => tunnel.Registry.IsEmpty, Timeout);
 
                 totalBytes += request.Length + response.Length;
             }
@@ -464,7 +461,7 @@ namespace CoreProxy.Server.Orleans.Tests
             tunnel.CompleteClientStream();
 
             await tunnel.Task.WaitAsync(Timeout);
-            Assert.AreEqual(0, GlobalState.Connections.Count, "隧道结束后不应残留连接记录");
+            Assert.AreEqual(0, tunnel.Registry.Count, "隧道结束后不应残留连接记录");
         }
 
         [TestMethod]
@@ -476,15 +473,15 @@ namespace CoreProxy.Server.Orleans.Tests
             var target = await server.AcceptAsync(Timeout);
             await tunnel.ReadHandshakeAsync(Timeout);
 
-            await WaitUntilAsync(() => GlobalState.Connections.Count == 1, Timeout);
-            var item = GlobalState.Connections.Values.Single();
+            await WaitUntilAsync(() => tunnel.Registry.Count == 1, Timeout);
+            var item = tunnel.Registry.Snapshot().Single();
             StringAssert.Contains(item.ClientIpAddress, $"127.0.0.1:{server.Port}", "连接记录应包含目标地址");
 
             target.Dispose();
             tunnel.CompleteClientStream();
             await tunnel.Task.WaitAsync(Timeout);
 
-            await WaitUntilAsync(() => GlobalState.Connections.IsEmpty, Timeout);
+            await WaitUntilAsync(() => tunnel.Registry.IsEmpty, Timeout);
         }
 
         [TestMethod]
@@ -495,13 +492,13 @@ namespace CoreProxy.Server.Orleans.Tests
 
             using var target = await server.AcceptAsync(Timeout);
             await tunnel.ReadHandshakeAsync(Timeout);
-            await WaitUntilAsync(() => GlobalState.Connections.Count == 1, Timeout);
+            await WaitUntilAsync(() => tunnel.Registry.Count == 1, Timeout);
 
             tunnel.Cancel();
 
             //取消属于正常收尾，方法应正常返回而不是把 OperationCanceledException 抛给 gRPC
             await tunnel.Task.WaitAsync(Timeout);
-            await WaitUntilAsync(() => GlobalState.Connections.IsEmpty, Timeout);
+            await WaitUntilAsync(() => tunnel.Registry.IsEmpty, Timeout);
         }
 
         [TestMethod]
@@ -539,13 +536,13 @@ namespace CoreProxy.Server.Orleans.Tests
 
             //目标收到完整请求和 FIN 后保持连接（既不回数据也不关闭），隧道此时卡在无限等待分支
             AssertBytesEqual(request, await TestTargetServer.ReadToEndAsync(target, FinTimeout));
-            await WaitUntilAsync(() => GlobalState.Connections.Count == 1, Timeout);
+            await WaitUntilAsync(() => tunnel.Registry.Count == 1, Timeout);
 
             //客户端此时中断
             tunnel.Cancel();
 
             await tunnel.Task.WaitAsync(Timeout);
-            await WaitUntilAsync(() => GlobalState.Connections.IsEmpty, Timeout);
+            await WaitUntilAsync(() => tunnel.Registry.IsEmpty, Timeout);
         }
 
         /// <summary>
@@ -560,7 +557,7 @@ namespace CoreProxy.Server.Orleans.Tests
 
             using var target = await server.AcceptAsync(Timeout);
             await tunnel.ReadHandshakeAsync(Timeout);
-            await WaitUntilAsync(() => GlobalState.Connections.Count == 1, Timeout);
+            await WaitUntilAsync(() => tunnel.Registry.Count == 1, Timeout);
 
             //客户端中断：之后向客户端方向的写入都会失败
             tunnel.Cancel();
@@ -583,7 +580,7 @@ namespace CoreProxy.Server.Orleans.Tests
             });
 
             await tunnel.Task.WaitAsync(Timeout);
-            await WaitUntilAsync(() => GlobalState.Connections.IsEmpty, Timeout);
+            await WaitUntilAsync(() => tunnel.Registry.IsEmpty, Timeout);
             await writing;
         }
 
@@ -682,7 +679,7 @@ namespace CoreProxy.Server.Orleans.Tests
             await using var tunnel = Tunnel.Start($"http://127.0.0.1:{GetClosedPort()}/");
 
             await Assert.ThrowsExceptionAsync<SocketException>(async () => await tunnel.Task.WaitAsync(Timeout));
-            Assert.AreEqual(0, GlobalState.Connections.Count, "连接失败不应留下记录");
+            Assert.AreEqual(0, tunnel.Registry.Count, "连接失败不应留下记录");
         }
 
         [TestMethod]

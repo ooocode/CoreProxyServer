@@ -1,0 +1,341 @@
+using CoreProxy.Server.Orleans.Internal;
+using CoreProxy.Server.Orleans.Models;
+using CoreProxy.Shared;
+using DotNext.IO.Pipelines;
+using Google.Protobuf;
+using Google.Protobuf.WellKnownTypes;
+using Grpc.Core;
+using Hello;
+using Microsoft.Net.Http.Headers;
+using System.Buffers;
+using System.Net;
+using System.Net.Sockets;
+
+namespace CoreProxy.Server.Orleans.Services
+{
+    public class TunnelGrpcService(
+        IHostApplicationLifetime hostApplicationLifetime,
+        CertificatePassword certificatePassword,
+        ILogger<TunnelGrpcService> logger,
+        CoreProxyOptions options,
+        TargetResolver targetResolver,
+        TunnelRegistry tunnelRegistry,
+        DeviceRegistry deviceRegistry) : Greeter.GreeterBase
+    {
+        /// <summary>
+        /// 判断异常是否属于"客户端主动断开"这一正常收尾，而非真实故障。
+        /// 代理两端任一端断开（浏览器关闭、gRPC RST、连接被对端重置）都会让另一方向抛这类异常。
+        /// 注意：目标连接本身的 SocketException（目标不可达/中断）**不算**收尾，仍按真实故障记 Error。
+        /// </summary>
+        internal static bool IsClientTeardown(Exception ex) =>
+            ex is IOException                      // 客户端重置请求流（RST_STREAM）/连接被重置
+            || (ex is RpcException rpc && rpc.StatusCode is StatusCode.Cancelled or StatusCode.Aborted);
+
+        /// <summary>
+        /// 解析目标 + 建立连接的独立超时。
+        /// 不能只依赖客户端取消：目标服务器卡住（不回 SYN/ACK）时，一条隧道会一直挂着，
+        /// 实测过一次服务端连某个 CDN 迟迟不返回、客户端侧挂了 4 分钟。
+        /// 可用 ConnectTimeoutSeconds 配置覆盖
+        /// </summary>
+        private readonly TimeSpan connectTimeout = options.ConnectTimeout;
+
+        private void CheckPassword(ServerCallContext context)
+        {
+            var ipAddress = context.GetHttpContext().Connection.RemoteIpAddress;
+            if (ipAddress == null || IPAddress.IsLoopback(ipAddress))
+            {
+                return;
+            }
+
+            // 只剥掉开头的 "Password " 前缀（大小写不敏感）。旧实现用 Replace 会替换所有出现位置，
+            // 且对 "password xxx" 这类小写写法直接判为未授权。
+            const string passwordPrefix = "Password ";
+            var authorization = context.RequestHeaders.GetValue(HeaderNames.Authorization);
+            var password = authorization is not null
+                && authorization.StartsWith(passwordPrefix, StringComparison.OrdinalIgnoreCase)
+                    ? authorization[passwordPrefix.Length..].Trim()
+                    : authorization;
+
+            if (string.IsNullOrWhiteSpace(password) || !string.Equals(password, certificatePassword.Password, StringComparison.Ordinal))
+            {
+                throw new RpcException(new Status(StatusCode.Unauthenticated, string.Empty));
+            }
+        }
+
+        public static long GetUnixTimeMilliseconds() => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+
+        /// <summary>
+        /// 把 gRPC 的 Peer 字符串（形如 ipv4:127.0.0.1:54321 / ipv6:[::1]:54321，带 scheme 前缀和端口）
+        /// 剥成纯 IP 字符串，供管理页直接展示"客户端 IP"，避免前端再去解析前缀/端口。
+        /// </summary>
+        internal static string? StripPeerToIp(string? peer)
+        {
+            if (string.IsNullOrWhiteSpace(peer))
+            {
+                return null;
+            }
+
+            var s = peer;
+            if (s.StartsWith("ipv4:", StringComparison.Ordinal) || s.StartsWith("ipv6:", StringComparison.Ordinal))
+            {
+                s = s[(s.IndexOf(':') + 1)..];
+            }
+
+            return IPEndPoint.TryParse(s, out var ep) ? ep.Address.ToString() : null;
+        }
+
+        public override async Task StreamHandler(IAsyncStreamReader<HttpData> requestStream, IServerStreamWriter<HttpData> responseStream, ServerCallContext context)
+        {
+            CheckPassword(context);
+
+            //目标地址无效时返回 InvalidArgument，而不是让 Uri 构造函数抛出未知异常
+            var uriString = context.RequestHeaders.GetValue(TunnelDefaults.RequestedWithHeader);
+            if (!Uri.TryCreate(uriString, UriKind.Absolute, out var uri) || uri.DnsSafeHost.Length == 0 || uri.Port <= 0)
+            {
+                throw new RpcException(new Status(StatusCode.InvalidArgument, TunnelDefaults.RequestedWithHeader));
+            }
+
+            //DnsSafeHost 会去掉 IPv6 字面量的方括号
+            var host = uri.DnsSafeHost;
+            var port = uri.Port;
+
+            string connectionId = Guid.CreateVersion7().ToString("N");
+
+            using var cancellationSource = CancellationTokenSource.CreateLinkedTokenSource(
+                        context.CancellationToken, hostApplicationLifetime.ApplicationStopping);
+            var cancellationToken = cancellationSource.Token;
+
+            //解析目标 + 连接目标服务器（带独立超时）
+            await using var target = await ConnectToTargetAsync(host, port, cancellationToken);
+
+            //发送空包，表示连接成功
+            await responseStream.WriteAsync(new()
+            {
+                Payload = ByteString.Empty,
+                UnixTimeMilliseconds = GetUnixTimeMilliseconds()
+            }, cancellationToken);
+
+            if (logger.IsEnabled(LogLevel.Information))
+            {
+                logger.LogInformation("开始连接目标服务器 {host}:{port}，ConnectionId:{connectionId}", host, port, connectionId);
+            }
+
+            //添加连接信息
+            tunnelRegistry.TryAdd(connectionId, new ConnectItem
+            {
+                Kind = ConnectionKind.Grpc,
+                Peer = context.Peer,                    // 原始串，供 ClientIpAddress 派生保真
+                ClientIp = StripPeerToIp(context.Peer), // 纯 IP，供管理页展示
+                Target = $"{host}:{port}",
+                DateTime = DateTimeOffset.UtcNow
+            });
+
+            try
+            {
+                //客户端循环
+                var taskClient = HandlerClientAsync(requestStream, target, cancellationToken);
+
+                //服务器循环
+                var taskServer = HandlerServerAsync(target, responseStream, cancellationToken);
+
+                //等待任意一个完成
+                var completeTask = await Task.WhenAny(taskClient, taskServer);
+
+                //未完成的任务
+                var todoTask = completeTask == taskClient ? taskServer : taskClient;
+
+                if (completeTask == taskClient && taskClient.Status == TaskStatus.RanToCompletion && await taskClient)
+                {
+                    //客户端正常发完并且已向目标服务器补发 FIN：目标服务器此时才知道请求结束，
+                    //它的响应可能比"客户端发完"晚任意长时间，所以必须一直等到目标服务器关闭或客户端取消 RPC。
+                    //这里加超时就是截断数据
+                    await Task.WhenAny(todoTask, Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken));
+                }
+                else
+                {
+                    //其余情况（目标服务器先关闭、写入失败、客户端流异常、取消）：
+                    //另一个方向已经没有可送达的数据，给一个收尾窗口即可，不能无限等。
+                    //目标服务器半关闭时协议里没有"通知客户端"的手段，只能靠结束 RPC 让它知道流已经结束
+                    await Task.WhenAny(todoTask, Task.Delay(TunnelDefaults.TeardownWindow, cancellationToken));
+                }
+
+                cancellationSource.Cancel();
+
+                await foreach (var item in Task.WhenEach(taskClient, taskServer))
+                {
+                    try
+                    {
+                        await item; // 展开任务以捕捉真正的异常
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        /* 忽略正常的取消 */
+                        if (logger.IsEnabled(LogLevel.Information))
+                        {
+                            logger.LogInformation("数据流转发取消 - ConnectionId:{connectionId}", connectionId);
+                        }
+                    }
+                    catch (Exception ex) when (IsClientTeardown(ex))
+                    {
+                        //客户端主动断开/RST 请求流是【正常收尾】（浏览器关闭、连接被重置、代理链路结束），
+                        //不是故障。此前一律走 LogError，导致每次正常请求结束都刷一条 error，淹没真实故障。
+                        //此处仍记下原因（Information），并保留 ex 供需要时排查。
+                        if (logger.IsEnabled(LogLevel.Information))
+                        {
+                            logger.LogInformation("数据流转发提前结束（客户端断开）- ConnectionId:{connectionId} {reason}",
+                                connectionId, ex.Message);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        logger.LogError(ex, "数据流转发异常 - ConnectionId:{connectionId}", connectionId);
+                    }
+                }
+            }
+            finally
+            {
+                tunnelRegistry.TryRemove(connectionId, out var _);
+                cancellationSource.Cancel();
+
+                if (logger.IsEnabled(LogLevel.Information))
+                {
+                    logger.LogInformation("结束连接目标服务器 ConnectionId:{connectionId}", connectionId);
+                }
+            }
+        }
+
+
+        /// <summary>
+        /// 解析目标地址并建立连接，整个过程受 connectTimeout 约束。
+        /// 超时按 Unavailable 返回（可重试），与"客户端主动取消"区分开
+        /// </summary>
+        /// <param name="host"></param>
+        /// <param name="port"></param>
+        /// <param name="cancellationToken"></param>
+        /// <returns></returns>
+        private async Task<TargetConnection> ConnectToTargetAsync(string host, int port, CancellationToken cancellationToken)
+        {
+            using var timeoutSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeoutSource.CancelAfter(connectTimeout);
+
+            try
+            {
+                var ip = await targetResolver.ResolveAsync(host, timeoutSource.Token);
+                return await TargetConnection.ConnectAsync(new IPEndPoint(ip, port), timeoutSource.Token);
+            }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+                //是本地超时而不是客户端取消：给一个明确、可重试的状态，而不是让它一直挂着
+                throw new RpcException(new Status(StatusCode.Unavailable, $"{host}:{port}"));
+            }
+        }
+
+
+        /// <summary>
+        /// 处理客户端
+        /// </summary>
+        /// <param name="requestStream"></param>
+        /// <param name="target"></param>
+        /// <param name="cancellationToken"></param>
+        /// <returns>是否已向目标服务器补发 FIN（即客户端是否正常发完）</returns>
+        private static async Task<bool> HandlerClientAsync(IAsyncStreamReader<HttpData> requestStream, TargetConnection target, CancellationToken cancellationToken)
+        {
+            //循环读取客户端数据
+            await foreach (var httpData in requestStream.ReadAllAsync(cancellationToken))
+            {
+                //发往服务器：WriteAsync 返回即数据已经交给内核
+                await target.WriteAsync(httpData.Payload.Memory, cancellationToken);
+            }
+
+            //客户端正常发完：只关闭发送方向补发 FIN（半关闭），让目标服务器知道请求已结束，接收方向继续排空。
+            //写入若失败会抛异常，绝不会走到这里，因此不会把截断的请求当成完整请求
+            try
+            {
+                target.ShutdownSend();
+                return true;
+            }
+            catch (Exception ex) when (ex is SocketException or ObjectDisposedException or InvalidOperationException)
+            {
+                //连接已被中止或 socket 已释放：目标服务器那边已经收到 FIN 或 RST，无需处理
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// 处理服务器：把目标服务器的数据转发给客户端
+        /// </summary>
+        /// <param name="target"></param>
+        /// <param name="responseStream"></param>
+        /// <param name="cancellationToken"></param>
+        private static async Task HandlerServerAsync(TargetConnection target, IServerStreamWriter<HttpData> responseStream, CancellationToken cancellationToken)
+        {
+            // 初始缓冲保持很小：空闲隧道只占 16KB（16k 连接约 256MB，而不是 64KB 时的 1GB）。
+            // 目标端持续高速发送（一次读满初始缓冲）时升级到 256KB：单条 gRPC 消息能带回更多字节，
+            // 减少消息数、序列化次数与系统调用。升级只发生一次，无流量隧道不会为峰值付费。
+            const int InitialBufferSize = 16 * 1024;
+            const int MaxBufferSize = 256 * 1024;
+
+            var buffer = ArrayPool<byte>.Shared.Rent(InitialBufferSize);
+            // 复用消息对象：WriteAsync 内部立即序列化（与下方 UnsafeWrap 的前提相同），
+            // 每条消息因此只分配一个 ByteString 包装，而不是再分配一个 HttpData。
+            var message = new HttpData();
+            try
+            {
+                while (true)
+                {
+                    var read = await target.ReadAsync(buffer, cancellationToken);
+                    if (read == 0)
+                    {
+                        //目标服务器关闭了发送方向
+                        break;
+                    }
+
+                    //UnsafeWrap 直接引用缓冲区，只有"WriteAsync 内部立即序列化"这一点成立才安全（Grpc.AspNetCore 如此）
+                    message.Payload = UnsafeByteOperations.UnsafeWrap(buffer.AsMemory(0, read));
+                    await responseStream.WriteAsync(message, cancellationToken);
+
+                    if (read == buffer.Length && buffer.Length < MaxBufferSize)
+                    {
+                        var larger = ArrayPool<byte>.Shared.Rent(MaxBufferSize);
+                        ArrayPool<byte>.Shared.Return(buffer);
+                        buffer = larger;
+                    }
+                }
+            }
+            finally
+            {
+                ArrayPool<byte>.Shared.Return(buffer);
+            }
+        }
+
+
+        public override Task<StatusReply> GetStatus(GetStatusRequest request, ServerCallContext context)
+        {
+            CheckPassword(context);
+
+            var reply = new StatusReply
+            {
+                SocketCount = tunnelRegistry.Count
+            };
+
+            if (request.IncludeDetail)
+            {
+                reply.Connections.AddRange(tunnelRegistry.Snapshot()
+                    .Select(x => new StatusDetail
+                    {
+                        IpAddress = x.ClientIpAddress,
+                        DateTime = Timestamp.FromDateTimeOffset(x.DateTime)
+                    }));
+            }
+
+            return Task.FromResult(reply);
+        }
+
+        public override Task<SignalrOnlineClients> GetSignalrOnlineClients(Empty request, ServerCallContext context)
+        {
+            var result = new SignalrOnlineClients();
+            result.Clients.AddRange(deviceRegistry.Snapshot());
+            return Task.FromResult(result);
+        }
+    }
+}

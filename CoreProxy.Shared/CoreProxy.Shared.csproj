@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+	<PropertyGroup>
+		<!-- 单目标 net10：客户端用 .NET 10 SDK 构建，net11 服务端可以直接引用 net10 库。
+		     若改成 net10;net11 多目标，.NET 10 SDK 在 restore 阶段就会因无法识别 net11 而让客户端构建失败（NETSDK1045）。 -->
+		<TargetFramework>net10.0</TargetFramework>
+		<Nullable>enable</Nullable>
+		<ImplicitUsings>enable</ImplicitUsings>
+	</PropertyGroup>
+</Project>

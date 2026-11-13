@@ -51,8 +51,30 @@ jobs:
         name: x64
         path: output-x64
 
+  test-server:
+    runs-on: ubuntu-22.04
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: 11.0.x
+    - run: dotnet build CoreProxy.Server.Orleans.Tests/CoreProxy.Server.Orleans.Tests.csproj -c Debug
+    # TargetResolverTests 走真实 DNS（114.114.114.114），CI 环境不可保证可达
+    - run: dotnet test CoreProxy.Server.Orleans.Tests/CoreProxy.Server.Orleans.Tests.csproj -c Debug --filter "FullyQualifiedName!~TargetResolverTests"
+
+  test-client:
+    # 客户端含 Windows COM 源生成器，不在 Linux 上构建
+    runs-on: windows-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: 10.0.x
+    - run: dotnet build CoreProxy.Exe.Tests/CoreProxy.Exe.Tests.csproj -c Debug
+    - run: dotnet test CoreProxy.Exe.Tests/CoreProxy.Exe.Tests.csproj -c Debug
+
   release:
-    needs: [build-linux-arm64, build-linux-x64]
+    needs: [build-linux-arm64, build-linux-x64, test-server, test-client]
     runs-on: ubuntu-22.04
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:

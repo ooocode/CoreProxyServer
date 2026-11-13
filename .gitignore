@@ -6,6 +6,10 @@
 
 # VSTest 部署/结果目录
 [Tt]est[Rr]esult*/
+
+# 构建输出（所有项目通用；此前依赖各项目自己的 .gitignore，删除遗留项目后需要兜底）
+[Bb]in/
+[Oo]bj/
 /CoreProxy.Exe/appsettings.json
 artifacts/inttest/status.ps1
 artifacts/inttest/client/_注册COM组件.ps1

@@ -85,21 +85,21 @@ namespace CoreProxy.Server.Orleans.Tests
         [TestMethod]
         public void StripsIpv4SchemeAndPort()
         {
-            Assert.AreEqual("127.0.0.1", MyGrpcService.StripPeerToIp("ipv4:127.0.0.1:54321"));
+            Assert.AreEqual("127.0.0.1", TunnelGrpcService.StripPeerToIp("ipv4:127.0.0.1:54321"));
         }
 
         [TestMethod]
         public void StripsIpv6SchemeAndPort_UnbracketsAddress()
         {
-            Assert.AreEqual("::1", MyGrpcService.StripPeerToIp("ipv6:[::1]:54321"));
+            Assert.AreEqual("::1", TunnelGrpcService.StripPeerToIp("ipv6:[::1]:54321"));
         }
 
         [TestMethod]
         public void ReturnsNull_WhenUnparseable()
         {
-            Assert.IsNull(MyGrpcService.StripPeerToIp("not-a-peer"));
-            Assert.IsNull(MyGrpcService.StripPeerToIp(""));
-            Assert.IsNull(MyGrpcService.StripPeerToIp(null));
+            Assert.IsNull(TunnelGrpcService.StripPeerToIp("not-a-peer"));
+            Assert.IsNull(TunnelGrpcService.StripPeerToIp(""));
+            Assert.IsNull(TunnelGrpcService.StripPeerToIp(null));
         }
     }
 }

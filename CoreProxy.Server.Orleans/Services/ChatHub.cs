@@ -1,14 +1,15 @@
-﻿using Hello;
+﻿using CoreProxy.Server.Orleans.Internal;
+using Hello;
 using Microsoft.AspNetCore.SignalR;
 
 namespace CoreProxy.Server.Orleans.Services
 {
     /// <summary>
     /// 设备在线表维护。设备连上来时在 query 的 info 里带一段【明文 JSON】（见 DeviceInfo），
-    /// 解析后映射成 proto SignalrOnlineClient 存入 GloableSessionsManager（gRPC GetSignalrOnlineClients 仍按该 proto 返回）。
+    /// 解析后映射成 proto SignalrOnlineClient 存入 DeviceRegistry（gRPC GetSignalrOnlineClients 仍按该 proto 返回）。
     /// 在线表以 ConnectionId 为键：同一个 DeviceId 允许多条连接同时在线，互不覆盖。
     /// </summary>
-    public class ChatHub(ILogger<MyGrpcService> logger) : Hub
+    public class ChatHub(DeviceRegistry devices, ILogger<TunnelGrpcService> logger) : Hub
     {
         public override Task OnConnectedAsync()
         {
@@ -27,7 +28,7 @@ namespace CoreProxy.Server.Orleans.Services
             }
 
             // ConnectionId 由 SignalR 为每条连接唯一分配，因此同一 DeviceId 重复上线不会冲突。
-            GloableSessionsManager.SignalrOnlineClients.TryAdd(client.ConnectionId, client);
+            devices.TryAdd(client.ConnectionId, client);
 
             if (logger.IsEnabled(LogLevel.Information))
             {
@@ -43,7 +44,7 @@ namespace CoreProxy.Server.Orleans.Services
         {
             // 只移除这条连接自己。同一 DeviceId 的其它在线连接不受影响。
             // 不再依赖 query 里的 info：即便断开时取不到/解析不了 info，也不会漏清理。
-            if (GloableSessionsManager.SignalrOnlineClients.TryRemove(Context.ConnectionId, out var d)
+            if (devices.TryRemove(Context.ConnectionId, out var d)
                 && logger.IsEnabled(LogLevel.Information))
             {
                 // 正常离线（客户端关闭/重连）不是故障，用 Information 记录，避免淹没真实错误

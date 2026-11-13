@@ -52,7 +52,7 @@ end of `Main` — it never completes, the process never exits, and a piping shel
 | Target | Path exercised |
 |---|---|
 | `http://127.0.0.1:<port>/` | IP literal — short-circuits `IPAddress.TryParse`, **no DNS** |
-| `http://lvh.me:<port>/` | domain → new net11 `DnsResolver` (+ `IMemoryCache` when TTL>0); `lvh.me` → 127.0.0.1 via 114 |
+| `http://lvh.me:<port>/` | domain → net11 `DnsResolver` (+ `IMemoryCache` when TTL>0); 解析走系统 DNS |
 | same domain again | TTL cache-hit path |
 | `http://does-not-exist.invalid:<port>/` | NXDOMAIN → clean `InvalidArgument` |
 
@@ -60,16 +60,14 @@ end of `Main` — it never completes, the process never exits, and a piping shel
 
 ## Gotchas / findings from the field
 
-- **TargetResolver hardcodes `114.114.114.114`** (a public China DNS) via a `static readonly`
-  `DnsResolver` — no injection point anymore. Observed: it still resolved `localhost` and the
-  machine's own LAN hostname through the live server even though `nslookup <name> 114.114.114.114`
-  returns NXDOMAIN, i.e. net11's `DnsResolver` falls back to local/hosts resolution. So the
-  rewritten tests that target `localhost` do resolve — but they now depend on **live DNS** and
-  will be flaky/failing offline or where 114 is unreachable. (The old tests injected a fake resolver.)
+- **TargetResolver 默认走 net11 `DnsResolver`（系统 DNS，未指定服务器）。** 构造函数第三个参数
+  `resolveAsync` 可注入解析委托（仅供测试）；`StreamHandlerCacheAndThroughputTests` 已注入固定回环，
+  不再依赖真实 DNS。`TargetResolverTests` 仍走真实 DNS，CI 用
+  `--filter "FullyQualifiedName!~TargetResolverTests"` 排除。
 - **Raw `SocketException` on connect-refused escapes as `RPC_Unknown`.** `ConnectToTargetAsync`
   only wraps `OperationCanceledException` → `Unavailable`; a refused TCP connect throws
   `SocketException 10061` which gRPC maps to `Unknown: Exception was thrown by handler`.
-  Pre-existing, not from the TargetResolver diff (see `Services/MyGrpcService.cs`).
+  Pre-existing, not from the TargetResolver diff (see `Services/TunnelGrpcService.cs`).
 
 ## Logs
 

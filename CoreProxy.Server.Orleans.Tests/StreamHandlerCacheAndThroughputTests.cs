@@ -3,6 +3,7 @@ using CoreProxy.Server.Orleans.Tests.Infrastructure;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System.Diagnostics;
+using System.Net;
 
 namespace CoreProxy.Server.Orleans.Tests
 {
@@ -19,18 +20,22 @@ namespace CoreProxy.Server.Orleans.Tests
 
         private const int MiB = 1024 * 1024;
 
+        /// <summary>测试内固定解析到回环，不依赖真实 DNS（CI 也能稳定跑）。</summary>
+        private static readonly Func<string, CancellationToken, Task<IReadOnlyList<IPAddress>>> LocalhostResolver =
+            static (_, _) => Task.FromResult<IReadOnlyList<IPAddress>>([IPAddress.Loopback]);
+
         // ---------------- 建连路径：DNS 缓存实际生效 ----------------
 
         /// <summary>
         /// 多条隧道指向同一主机名，共用一个解析器实例（即生产里 DI 的单例）。
-        /// 走真实 DnsResolver（114）解析 localhost → 127.0.0.1；只有第一次建连 miss，其余全部命中缓存。
+        /// 解析器注入固定返回回环地址；只有第一次建连 miss，其余全部命中缓存。
         /// </summary>
         [TestMethod]
         public async Task RepeatedTunnelsToSameHostResolveDnsOnlyOnce()
         {
             using var server = new TestTargetServer();
             var cache = new MemoryCache(new MemoryCacheOptions { TrackStatistics = true });
-            var resolver = new TargetResolver(cache, TimeSpan.FromHours(1));
+            var resolver = new TargetResolver(cache, TimeSpan.FromHours(1), LocalhostResolver);
 
             for (var i = 0; i < 3; i++)
             {
@@ -54,7 +59,7 @@ namespace CoreProxy.Server.Orleans.Tests
         {
             using var server = new TestTargetServer();
             var cache = new MemoryCache(new MemoryCacheOptions { TrackStatistics = true });
-            var resolver = new TargetResolver(cache, TimeSpan.Zero);
+            var resolver = new TargetResolver(cache, TimeSpan.Zero, LocalhostResolver);
 
             for (var i = 0; i < 3; i++)
             {

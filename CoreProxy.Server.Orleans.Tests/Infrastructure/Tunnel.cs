@@ -28,14 +28,17 @@ namespace CoreProxy.Server.Orleans.Tests.Infrastructure
         private readonly Channel<HttpData> responseChannel = Channel.CreateUnbounded<HttpData>();
 
         private Tunnel(string? uri, string? authorization, IPAddress clientIpAddress, TestHostApplicationLifetime lifetime,
-            TimeSpan? connectTimeout, TargetResolver? resolver)
+            TimeSpan? connectTimeout, TargetResolver? resolver, TunnelRegistry? registry, DeviceRegistry? devices)
         {
-            var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
-            {
-                ["ConnectTimeoutSeconds"] = ((int)(connectTimeout ?? TimeSpan.FromSeconds(20)).TotalSeconds).ToString(),
-            }).Build();
+            var options = new CoreProxyOptions(
+                connectTimeout ?? TimeSpan.FromSeconds(20),
+                TimeSpan.FromSeconds(60),
+                TimeSpan.FromSeconds(900),
+                null);
 
             Lifetime = lifetime;
+            Registry = registry ?? new TunnelRegistry();
+            Devices = devices ?? new DeviceRegistry();
 
             var headers = new Metadata();
             if (uri is not null)
@@ -49,12 +52,14 @@ namespace CoreProxy.Server.Orleans.Tests.Infrastructure
             }
 
             var context = new TestServerCallContext(headers, contextSource.Token, clientIpAddress);
-            var service = new MyGrpcService(
+            var service = new TunnelGrpcService(
                 lifetime,
                 new CertificatePassword { Password = Password },
-                NullLogger<MyGrpcService>.Instance,
-                configuration,
-                resolver ?? new TargetResolver(new MemoryCache(new MemoryCacheOptions()), TimeSpan.FromSeconds(60)));
+                NullLogger<TunnelGrpcService>.Instance,
+                options,
+                resolver ?? new TargetResolver(new MemoryCache(new MemoryCacheOptions()), TimeSpan.FromSeconds(60)),
+                Registry,
+                Devices);
 
             clientReader = new ChannelStreamReader<HttpData>(clientChannel.Reader);
             Task = service.StreamHandler(
@@ -67,10 +72,18 @@ namespace CoreProxy.Server.Orleans.Tests.Infrastructure
         }
 
         public static Tunnel Start(string? uri, string? authorization = null, IPAddress? clientIpAddress = null,
-            TestHostApplicationLifetime? lifetime = null, TimeSpan? connectTimeout = null, TargetResolver? resolver = null) =>
-            new(uri, authorization, clientIpAddress ?? IPAddress.Loopback, lifetime ?? new TestHostApplicationLifetime(), connectTimeout, resolver);
+            TestHostApplicationLifetime? lifetime = null, TimeSpan? connectTimeout = null, TargetResolver? resolver = null,
+            TunnelRegistry? registry = null, DeviceRegistry? devices = null) =>
+            new(uri, authorization, clientIpAddress ?? IPAddress.Loopback, lifetime ?? new TestHostApplicationLifetime(),
+                connectTimeout, resolver, registry, devices);
 
         public Task Task { get; }
+
+        /// <summary>本隧道使用的连接登记表；测试用它断言连接生命周期。</summary>
+        public TunnelRegistry Registry { get; }
+
+        /// <summary>本隧道使用的设备登记表。</summary>
+        public DeviceRegistry Devices { get; }
 
         /// <summary>诊断用：生产代码实际从请求流里读走了哪些消息</summary>
         public IReadOnlyList<HttpData> ConsumedByTunnel => clientReader.Consumed;

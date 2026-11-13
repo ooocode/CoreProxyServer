@@ -13,18 +13,23 @@ namespace CoreProxy.Server.Orleans.Internal
     /// 缓存后同一主机在 TTL 内命中即不再解析，隧道建立延迟只跟 TCP 握手有关。
     /// </para>
     /// <para>
-    /// 默认走 net11 新增的 <see cref="DnsResolver"/>（而不是静态 <see cref="Dns.GetHostAddressesAsync(string, CancellationToken)"/>），
-    /// 用 114.114.114.114 公共 DNS。地址选择固定取一条：优先 IPv4，缺则回退 IPv6
+    /// 默认走 net11 新增的 <see cref="DnsResolver"/>（而不是静态 <see cref="Dns.GetHostAddressesAsync(string, CancellationToken)"/>）；
+    /// 未指定 DNS 服务器，使用系统解析。地址选择固定取一条：优先 IPv4，缺则回退 IPv6
     /// （与旧行为一致，不做多 A 记录的轮询）。
     /// </para>
     /// </summary>
     /// <param name="memoryCache">DNS 结果缓存；同一主机在 TTL 内命中缓存即不再解析（并发首次解析可能各查一次）</param>
     /// <param name="ttl">缓存有效期；<see cref="TimeSpan.Zero"/> 表示不缓存（每次解析）</param>
+    /// <param name="resolveAsync">解析委托；仅供测试注入，生产不传，走 <see cref="DnsResolver"/></param>
     public sealed class TargetResolver(
         IMemoryCache memoryCache,
-        TimeSpan ttl)
+        TimeSpan ttl,
+        Func<string, CancellationToken, Task<IReadOnlyList<IPAddress>>>? resolveAsync = null)
     {
         private static readonly DnsResolver dnsResolver = new();
+
+        private readonly Func<string, CancellationToken, Task<IReadOnlyList<IPAddress>>> resolveAsync =
+            resolveAsync ?? ResolveWithDnsResolverAsync;
 
         /// <summary>
         /// 解析目标 IP：字面量直接使用，域名走缓存/DNS，优先 IPv4、缺则 IPv6。
@@ -52,7 +57,16 @@ namespace CoreProxy.Server.Orleans.Internal
         }
 
         /// <summary>解析并挑选一个可用地址；无可用地址抛 InvalidArgument</summary>
-        private static async Task<IPAddress> ResolveUncachedAsync(string host, CancellationToken cancellationToken)
+        private async Task<IPAddress> ResolveUncachedAsync(string host, CancellationToken cancellationToken)
+        {
+            var addresses = await resolveAsync(host, cancellationToken).ConfigureAwait(false);
+
+            return PickPreferred(addresses)
+                   ?? throw new RpcException(new Status(StatusCode.InvalidArgument, host));
+        }
+
+        /// <summary>默认解析：走 net11 DnsResolver；非 NoError 或无记录都算解析失败。</summary>
+        private static async Task<IReadOnlyList<IPAddress>> ResolveWithDnsResolverAsync(string host, CancellationToken cancellationToken)
         {
             var result = await dnsResolver.ResolveAddressesAsync(host, cancellationToken).ConfigureAwait(false);
 
@@ -62,8 +76,7 @@ namespace CoreProxy.Server.Orleans.Internal
                 throw new RpcException(new Status(StatusCode.InvalidArgument, host));
             }
 
-            return PickPreferred(result.Records.Select(static r => r.Address))
-                   ?? throw new RpcException(new Status(StatusCode.InvalidArgument, host));
+            return result.Records.Select(static r => r.Address).ToArray();
         }
 
         /// <summary>优先 IPv4，其次 IPv6；两者都没有返回 null。</summary>

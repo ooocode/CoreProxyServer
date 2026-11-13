@@ -6,7 +6,7 @@ namespace CoreProxy.Server.Orleans.Tests.Infrastructure
 {
     /// <summary>
     /// 手写的 ServerCallContext 实现。
-    /// MyGrpcService.CheckPassword 会调用 Grpc.AspNetCore.Server 的 GetHttpContext() 扩展方法，
+    /// TunnelGrpcService.CheckPassword 会调用 Grpc.AspNetCore.Server 的 GetHttpContext() 扩展方法，
     /// 它从 UserState["__HttpContext"] 取 HttpContext，所以这里必须塞入一个带 RemoteIpAddress 的假 HttpContext。
     /// </summary>
     public sealed class TestServerCallContext : ServerCallContext

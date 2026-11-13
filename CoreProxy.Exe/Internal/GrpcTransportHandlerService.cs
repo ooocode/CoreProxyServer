@@ -1,4 +1,5 @@
 ﻿using CoreProxy.BackgroundServices;
+using CoreProxy.Shared;
 using DotNext;
 using DotNext.IO.Pipelines;
 using Google.Protobuf;
@@ -49,7 +50,7 @@ namespace CoreProxy.Internal
             var cancellationToken = tokenSource.Token;
             Metadata entries = new()
             {
-                { HeaderNames.XRequestedWith,targetUri }
+                { TunnelDefaults.RequestedWithHeader,targetUri }
             };
 
             logger.LogInformation("开始连接 {server}", targetUri);
@@ -103,7 +104,7 @@ namespace CoreProxy.Internal
                 else
                 {
                     //其余情况（服务器先关闭、浏览器异常、取消）：另一个方向已经没有可送达的数据，给个收尾窗口即可
-                    await Task.WhenAny(todoTask, Task.Delay(TimeSpan.FromSeconds(5), cancellationToken));
+                    await Task.WhenAny(todoTask, Task.Delay(TunnelDefaults.TeardownWindow, cancellationToken));
                 }
 
                 tokenSource.Cancel();
