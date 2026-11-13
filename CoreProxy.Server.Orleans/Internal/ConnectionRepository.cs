@@ -14,7 +14,6 @@ namespace CoreProxy.Server.Orleans.Internal
         /// </summary>
         public static List<RuntimeTunnel> GetGrpcTunnels()
         {
-            var now = DateTimeOffset.UtcNow;
             return GlobalState.Connections.Values
                 .Where(x => x.Kind == ConnectionKind.Grpc && x.ClientIp != null && x.Target != null)
                 .Select(x => new RuntimeTunnel(x.ClientIp!, x.Target!, x.DateTime))

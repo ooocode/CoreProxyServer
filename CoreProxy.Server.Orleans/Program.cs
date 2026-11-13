@@ -3,12 +3,9 @@ using CoreProxy.Server.Orleans.BackgroundServices;
 using CoreProxy.Server.Orleans.Internal;
 using CoreProxy.Server.Orleans.Models;
 using CoreProxy.Server.Orleans.Services;
-using Microsoft.AspNetCore.Connections;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
-using Microsoft.AspNetCore.Server.Kestrel.Transport.Sockets;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Caching.Memory;
-using Microsoft.Extensions.Options;
 using NLog;
 using NLog.Web;
 using System.Net;
@@ -141,25 +138,6 @@ if (Microsoft.Extensions.Hosting.Systemd.SystemdHelpers.IsSystemdService())
     builder.Services.AddHostedService<AutoExitBackgroundService>();
 }
 
-//出口连接工厂：内部已强制开启内联调度，保证半关闭(FIN)不会抢在未发完的数据前面
-builder.Services.AddSingleton<IConnectionFactory>(sp => TargetConnectionFactory.Create(
-    sp.GetRequiredService<IOptions<SocketTransportOptions>>().Value,
-    sp.GetRequiredService<ILoggerFactory>()));
-
-builder.Services.AddSingleton(s =>
-{
-    var opt = s.GetRequiredService<IOptions<SocketTransportOptions>>();
-    var logger = s.GetRequiredService<ILogger<SocketConnectionContextFactory>>();
-    return new SocketConnectionContextFactory(new SocketConnectionFactoryOptions
-    {
-        IOQueueCount = opt.Value.IOQueueCount,
-        MaxReadBufferSize = opt.Value.MaxReadBufferSize,
-        MaxWriteBufferSize = opt.Value.MaxWriteBufferSize,
-        UnsafePreferInlineScheduling = opt.Value.UnsafePreferInlineScheduling,
-        WaitForDataBeforeAllocatingBuffer = opt.Value.WaitForDataBeforeAllocatingBuffer
-    }, logger);
-});
-
 builder.Services.AddGrpc(options =>
 {
     options.MaxSendMessageSize = null;    // 不限制发送消息大小
@@ -170,7 +148,8 @@ builder.Services.AddGrpc(options =>
 builder.Services.AddHostedService<LinuxTestBackgroundService>();
 builder.Services.AddSignalR(opt =>
 {
-    opt.EnableDetailedErrors = true;
+    // 不回传服务端异常细节：设备端不需要，只会把内部实现泄漏给客户端
+    opt.EnableDetailedErrors = false;
     opt.MaximumReceiveMessageSize = int.MaxValue / 2;
     opt.MaximumParallelInvocationsPerClient = 8192 * 10;
     opt.StreamBufferCapacity = int.MaxValue / 2;
@@ -208,9 +187,13 @@ app.UseStaticFiles();
 
 // 管理页首页：/admin → wwwroot/admin.html（UseStaticFiles 不做无扩展名映射，故显式指向文件；
 // 鉴权已由上面的中间件按 /admin 前缀放行前校验）
-app.MapGet("/admin", (HttpContext ctx) => Results.File(
-    Path.Combine(ctx.RequestServices.GetRequiredService<IWebHostEnvironment>().WebRootPath, "admin.html"),
-    "text/html"));
+app.MapGet("/admin", (HttpContext ctx) =>
+{
+    // WebRootPath 在 wwwroot 不存在时为 null，直接 Path.Combine 会抛 ArgumentNullException → 500
+    var env = ctx.RequestServices.GetRequiredService<IWebHostEnvironment>();
+    var webRoot = env.WebRootPath ?? Path.Combine(env.ContentRootPath, "wwwroot");
+    return Results.File(Path.Combine(webRoot, "admin.html"), "text/html");
+});
 
 app.MapGet("/", () =>
 {

@@ -126,9 +126,11 @@ namespace CoreProxy.Server.Orleans.Services
             var separator = decoded.IndexOf(':');
             var candidate = separator >= 0 ? decoded[(separator + 1)..] : decoded;
 
+            // 先各自哈希成定长再比较：FixedTimeEquals 对长度不同的输入会立即返回，
+            // 直接比原文会泄漏口令长度。
             return CryptographicOperations.FixedTimeEquals(
-                Encoding.UTF8.GetBytes(candidate),
-                Encoding.UTF8.GetBytes(password));
+                SHA256.HashData(Encoding.UTF8.GetBytes(candidate)),
+                SHA256.HashData(Encoding.UTF8.GetBytes(password)));
         }
 
         /// <summary>统一的 401 响应：状态码 + Basic 挑战头。中间件与各 handler 共用，避免两处漂移。</summary>

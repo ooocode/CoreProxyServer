@@ -47,8 +47,15 @@ namespace CoreProxy.Server.Orleans.Services
                 return;
             }
 
-            var password = context.RequestHeaders.GetValue(HeaderNames.Authorization)
-               ?.Replace("Password ", string.Empty);
+            // 只剥掉开头的 "Password " 前缀（大小写不敏感）。旧实现用 Replace 会替换所有出现位置，
+            // 且对 "password xxx" 这类小写写法直接判为未授权。
+            const string passwordPrefix = "Password ";
+            var authorization = context.RequestHeaders.GetValue(HeaderNames.Authorization);
+            var password = authorization is not null
+                && authorization.StartsWith(passwordPrefix, StringComparison.OrdinalIgnoreCase)
+                    ? authorization[passwordPrefix.Length..].Trim()
+                    : authorization;
+
             if (string.IsNullOrWhiteSpace(password) || !string.Equals(password, certificatePassword.Password, StringComparison.Ordinal))
             {
                 throw new RpcException(new Status(StatusCode.Unauthenticated, string.Empty));

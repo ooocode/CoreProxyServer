@@ -10,7 +10,7 @@ namespace CoreProxy.Server.Orleans.Internal
     /// <para>
     /// 代理场景下大量隧道的目标主机是同一个后端：每建一条隧道都做一次 DNS 是纯粹的重复开销，
     /// 一次解析要付出 10~100ms+ 的网络往返，且完全挡在"发握手包"之前的建连关键路径上。
-    /// 缓存后同一主机在 TTL 内只解析一次，隧道建立延迟只跟 TCP 握手有关。
+    /// 缓存后同一主机在 TTL 内命中即不再解析，隧道建立延迟只跟 TCP 握手有关。
     /// </para>
     /// <para>
     /// 默认走 net11 新增的 <see cref="DnsResolver"/>（而不是静态 <see cref="Dns.GetHostAddressesAsync(string, CancellationToken)"/>），
@@ -18,7 +18,7 @@ namespace CoreProxy.Server.Orleans.Internal
     /// （与旧行为一致，不做多 A 记录的轮询）。
     /// </para>
     /// </summary>
-    /// <param name="memoryCache">DNS 结果缓存；同一主机在 TTL 内只解析一次</param>
+    /// <param name="memoryCache">DNS 结果缓存；同一主机在 TTL 内命中缓存即不再解析（并发首次解析可能各查一次）</param>
     /// <param name="ttl">缓存有效期；<see cref="TimeSpan.Zero"/> 表示不缓存（每次解析）</param>
     public sealed class TargetResolver(
         IMemoryCache memoryCache,

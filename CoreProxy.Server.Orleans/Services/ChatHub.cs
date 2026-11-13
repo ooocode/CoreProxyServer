@@ -44,9 +44,10 @@ namespace CoreProxy.Server.Orleans.Services
             // 只移除这条连接自己。同一 DeviceId 的其它在线连接不受影响。
             // 不再依赖 query 里的 info：即便断开时取不到/解析不了 info，也不会漏清理。
             if (GloableSessionsManager.SignalrOnlineClients.TryRemove(Context.ConnectionId, out var d)
-                && logger.IsEnabled(LogLevel.Error))
+                && logger.IsEnabled(LogLevel.Information))
             {
-                logger.LogError("设备离线: {d.DeviceId} {d.ConnectionId}", d.DeviceId, d.ConnectionId);
+                // 正常离线（客户端关闭/重连）不是故障，用 Information 记录，避免淹没真实错误
+                logger.LogInformation("设备离线: {d.DeviceId} {d.ConnectionId}", d.DeviceId, d.ConnectionId);
             }
 
             await base.OnDisconnectedAsync(exception);
