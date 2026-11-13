@@ -269,7 +269,16 @@ namespace CoreProxy.Server.Orleans.Services
         /// <param name="cancellationToken"></param>
         private static async Task HandlerServerAsync(TargetConnection target, IServerStreamWriter<HttpData> responseStream, CancellationToken cancellationToken)
         {
-            var buffer = ArrayPool<byte>.Shared.Rent(64 * 1024);
+            // 初始缓冲保持很小：空闲隧道只占 16KB（16k 连接约 256MB，而不是 64KB 时的 1GB）。
+            // 目标端持续高速发送（一次读满初始缓冲）时升级到 256KB：单条 gRPC 消息能带回更多字节，
+            // 减少消息数、序列化次数与系统调用。升级只发生一次，无流量隧道不会为峰值付费。
+            const int InitialBufferSize = 16 * 1024;
+            const int MaxBufferSize = 256 * 1024;
+
+            var buffer = ArrayPool<byte>.Shared.Rent(InitialBufferSize);
+            // 复用消息对象：WriteAsync 内部立即序列化（与下方 UnsafeWrap 的前提相同），
+            // 每条消息因此只分配一个 ByteString 包装，而不是再分配一个 HttpData。
+            var message = new HttpData();
             try
             {
                 while (true)
@@ -282,10 +291,15 @@ namespace CoreProxy.Server.Orleans.Services
                     }
 
                     //UnsafeWrap 直接引用缓冲区，只有"WriteAsync 内部立即序列化"这一点成立才安全（Grpc.AspNetCore 如此）
-                    await responseStream.WriteAsync(new HttpData
+                    message.Payload = UnsafeByteOperations.UnsafeWrap(buffer.AsMemory(0, read));
+                    await responseStream.WriteAsync(message, cancellationToken);
+
+                    if (read == buffer.Length && buffer.Length < MaxBufferSize)
                     {
-                        Payload = UnsafeByteOperations.UnsafeWrap(buffer.AsMemory(0, read))
-                    }, cancellationToken);
+                        var larger = ArrayPool<byte>.Shared.Rent(MaxBufferSize);
+                        ArrayPool<byte>.Shared.Return(buffer);
+                        buffer = larger;
+                    }
                 }
             }
             finally

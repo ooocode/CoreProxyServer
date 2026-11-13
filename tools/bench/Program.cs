@@ -35,13 +35,27 @@ public static class Program
         var serverPid = int.Parse(Arg(args, "--server-pid", "0"));
         var intervalMs = int.Parse(Arg(args, "--interval-ms", "0"));
         var batch = int.Parse(Arg(args, "--batch", "0"));
+        var payloadBytes = Math.Max(16, int.Parse(Arg(args, "--payload", "256")));
+        var clientPid = int.Parse(Arg(args, "--client-pid", "0"));
+        var writeChunk = int.Parse(Arg(args, "--write-chunk", "0"));
+        var socksArg = Arg(args, "--socks", "");
+        IPEndPoint? socksEndpoint = null;
+        if (!string.IsNullOrEmpty(socksArg))
+        {
+            var parts = socksArg.Split(':');
+            socksEndpoint = new IPEndPoint(IPAddress.Parse(parts[0]), int.Parse(parts[1]));
+        }
 
         using var echo = new EchoServer();
         echo.Start();
         var targetUri = $"http://127.0.0.1:{echo.Port}/";
         Console.WriteLine($"[echo]    echo 目标服务器   127.0.0.1:{echo.Port}");
         Console.WriteLine($"[server]  被测服务器       {server}");
-        Console.WriteLine($"[plan]    阶梯并发         {string.Join(", ", steps)}，每档停留 {holdMs}ms");
+        if (socksEndpoint is not null)
+        {
+            Console.WriteLine($"[socks]   客户端监听口     {socksEndpoint}");
+        }
+        Console.WriteLine($"[plan]    阶梯并发         {string.Join(", ", steps)}，每档停留 {holdMs}ms，单包 {payloadBytes}B");
         Console.WriteLine();
 
         // 关键：服务端配置 Http2MaxStreamsPerConnection=8，
@@ -80,12 +94,23 @@ public static class Program
         var statusClient = new Greeter.GreeterClient(statusChannel);
 
         using var stop = new CancellationTokenSource();
-        var tunnels = new ConcurrentDictionary<long, Tunnel>();
+        var tunnels = new ConcurrentDictionary<long, ITunnel>();
         long nextId = 0;
+
+        // socksEndpoint 为空时直连服务端 gRPC；否则每条隧道先经过客户端 SOCKS5 监听口，
+        // 完整链路：压测客户端 → 客户端 → gRPC → 服务端 → echo 目标。
+        ITunnel StartTunnel(bool startLoop = true, int intervalMs = 0)
+        {
+            var id = Interlocked.Increment(ref nextId);
+            return socksEndpoint is null
+                ? Tunnel.Start(ClientFor(id), targetUri, id, stop.Token, startLoop, intervalMs, payloadBytes)
+                : SocksTunnel.Start(socksEndpoint, new IPEndPoint(IPAddress.Loopback, echo.Port), id, stop.Token,
+                    payloadBytes, startLoop, intervalMs, writeChunk);
+        }
 
         // 预热：先建一条，确认协议与数据面都对
         {
-            var warm = Tunnel.Start(ClientFor(Interlocked.Increment(ref nextId)), targetUri, nextId, stop.Token, startLoop: false);
+            var warm = StartTunnel(startLoop: false);
             if (!await warm.Established.Task.WaitAsync(TimeSpan.FromSeconds(15)) || warm.Failure is not null)
             {
                 Console.WriteLine($"[FATAL] 预热隧道未建立：{warm.Failure?.GetBaseException().Message}");
@@ -100,13 +125,18 @@ public static class Program
             await warm.DisposeAsync();
         }
 
-        Console.WriteLine($"{"并发",-7}{"本地存活",-9}{"失败",-6}{"建连ms",-8}{"服务端核对",-12}{"本档往返",-10}{"本档吞吐KB",-12}{"服务端SocketCount",-18}{"服务端CPU%",-11}{"服务端WS(MB)",-12}");
+        Console.WriteLine($"{"并发",-7}{"本地存活",-9}{"失败",-6}{"建连ms",-8}{"服务端核对",-12}{"本档往返",-10}{"本档吞吐KB",-12}{"服务端SocketCount",-18}{"服务端CPU%",-11}{"服务端WS(MB)",-12}{"客户端CPU%",-11}{"客户端WS(MB)",-12}{"压测端CPU%",-11}");
         var allErrors = new ConcurrentBag<string>();
 
         Process? serverProc = null;
         if (serverPid != 0)
         {
             try { serverProc = Process.GetProcessById(serverPid); } catch { }
+        }
+        Process? clientProc = null;
+        if (clientPid != 0)
+        {
+            try { clientProc = Process.GetProcessById(clientPid); } catch { }
         }
 
         foreach (var target in steps)
@@ -123,11 +153,10 @@ public static class Program
                 for (var opened = 0; opened < toOpen;)
                 {
                     var n = Math.Min(batchSize, toOpen - opened);
-                    var thisBatch = new List<Tunnel>(n);
+                    var thisBatch = new List<ITunnel>(n);
                     for (var i = 0; i < n; i++)
                     {
-                        thisBatch.Add(Tunnel.Start(ClientFor(Interlocked.Increment(ref nextId)), targetUri,
-                            nextId, stop.Token, intervalMs: intervalMs));
+                        thisBatch.Add(StartTunnel(intervalMs: intervalMs));
                     }
                     opened += n;
 
@@ -162,6 +191,9 @@ public static class Program
 
             var cpuBefore = SampleCpu(serverProc);
             var wsampleBefore = serverProc?.WorkingSet64 ?? 0;
+            var clientCpuBefore = SampleCpu(clientProc);
+            var clientWsBefore = clientProc?.WorkingSet64 ?? 0;
+            var selfCpuBefore = SampleCpu(Process.GetCurrentProcess());
 
             await Task.Delay(holdMs);
 
@@ -169,9 +201,18 @@ public static class Program
             var bytes = tunnels.Values.Sum(t => t.BytesEchoed) - bytesBefore;
             var cpuAfter = SampleCpu(serverProc);
             var wsAfter = serverProc?.WorkingSet64 ?? 0;
+            var clientCpuAfter = SampleCpu(clientProc);
+            var clientWsAfter = clientProc?.WorkingSet64 ?? 0;
+            var selfCpuAfter = SampleCpu(Process.GetCurrentProcess());
             // 服务端 CPU：本档窗口内消耗的 CPU 时间占单核的百分比
             var serverCpu = cpuBefore >= 0 && cpuAfter >= 0 && holdMs > 0
                 ? (cpuAfter - cpuBefore) / (holdMs / 1000.0) * 100
+                : -1;
+            var clientCpu = clientCpuBefore >= 0 && clientCpuAfter >= 0 && holdMs > 0
+                ? (clientCpuAfter - clientCpuBefore) / (holdMs / 1000.0) * 100
+                : -1;
+            var selfCpu = selfCpuBefore >= 0 && selfCpuAfter >= 0 && holdMs > 0
+                ? (selfCpuAfter - selfCpuBefore) / (holdMs / 1000.0) * 100
                 : -1;
 
             stageSw.Stop();
@@ -191,7 +232,7 @@ public static class Program
             var failed = tunnels.Values.Count(t => t.Failure is not null);
             var check = socketCount == tunnels.Count ? "一致" : $"差{socketCount - tunnels.Count}";
             Console.WriteLine($"{target,-7}{tunnels.Count,-9}{failed,-6}{establishSw.ElapsedMilliseconds,-8}{check,-12}{roundTrips,-10}{bytes / 1024.0,-12:N0}{socketCount,-18}"
-                + $"{serverCpu,-11:N1}{wsAfter / 1024.0 / 1024.0,-12:N1}");
+                + $"{serverCpu,-11:N1}{wsAfter / 1024.0 / 1024.0,-12:N1}{clientCpu,-11:N1}{clientWsAfter / 1024.0 / 1024.0,-12:N1}{selfCpu,-11:N1}");
         }
 
         // 收尾：全部关闭后服务端连接数必须归零（验证无泄漏）
@@ -238,21 +279,34 @@ public static class Program
     }
 }
 
+/// <summary>压测隧道的统一表面：直连 gRPC 与经客户端 SOCKS5 两种实现</summary>
+public interface ITunnel : IAsyncDisposable
+{
+    long Id { get; }
+    TaskCompletionSource<bool> Established { get; }
+    Exception? Failure { get; }
+    long RoundTrips { get; }
+    long BytesEchoed { get; }
+    Task<bool> ProbeAsync(TimeSpan timeout);
+}
+
 /// <summary>一条并发隧道：gRPC 双向流 + 后台 echo 校验循环</summary>
-public sealed class Tunnel : IAsyncDisposable
+public sealed class Tunnel : ITunnel
 {
     private const int PayloadSize = 256;
 
     private readonly AsyncDuplexStreamingCall<HttpData, HttpData> _call;
     private readonly CancellationToken _token;
     private readonly CancellationTokenSource _loopCts = new();
+    private readonly int _payloadSize;
     private Task? _loop;
 
-    private Tunnel(long id, AsyncDuplexStreamingCall<HttpData, HttpData> call, CancellationToken token)
+    private Tunnel(long id, AsyncDuplexStreamingCall<HttpData, HttpData> call, CancellationToken token, int payloadSize)
     {
         Id = id;
         _call = call;
         _token = token;
+        _payloadSize = payloadSize;
     }
 
     public long Id { get; }
@@ -268,11 +322,11 @@ public sealed class Tunnel : IAsyncDisposable
     private long _bytesEchoed;
 
     public static Tunnel Start(Greeter.GreeterClient client, string targetUri, long id, CancellationToken token,
-        bool startLoop = true, int intervalMs = 0)
+        bool startLoop = true, int intervalMs = 0, int payloadSize = PayloadSize)
     {
         var headers = new Metadata { { "X-Requested-With", targetUri } };
         var call = client.StreamHandler(headers, cancellationToken: token);
-        var tunnel = new Tunnel(id, call, token);
+        var tunnel = new Tunnel(id, call, token, payloadSize);
         tunnel._loop = tunnel.RunAsync(startLoop, intervalMs);
         return tunnel;
     }
@@ -298,25 +352,35 @@ public sealed class Tunnel : IAsyncDisposable
                 return; // 预热：不启动后台 echo 循环，改由调用方手动 ProbeAsync，避免并发写同一流
             }
 
-            var payload = new byte[PayloadSize];
+            var payload = new byte[_payloadSize];
             Encoding.UTF8.GetBytes($"c{Id}:", payload);
             var linked = CancellationTokenSource.CreateLinkedTokenSource(_token, _loopCts.Token);
             var ct = linked.Token;
 
             while (!ct.IsCancellationRequested)
             {
-                payload[PayloadSize - 1] = (byte)(Interlocked.Read(ref _roundTrips) & 0xFF);
+                payload[_payloadSize - 1] = (byte)(Interlocked.Read(ref _roundTrips) & 0xFF);
                 await _call.RequestStream.WriteAsync(new HttpData { Payload = ByteString.CopyFrom(payload) }, ct);
 
-                if (!await _call.ResponseStream.MoveNext(ct)) break;
-                var back = _call.ResponseStream.Current.Payload.Span;
-                if (back.Length != PayloadSize || !back.SequenceEqual(payload))
+                // 隧道是字节流：服务端按自己的读块（当前 64KB）拆成多条消息回传，
+                // 不能假设一条响应消息正好对应一次写入，必须按字节数累积后再校验。
+                var received = 0;
+                while (received < _payloadSize)
                 {
-                    throw new IOException($"echo 数据不一致 #{Id} 往返 {RoundTrips}（收到 {back.Length} 字节）");
+                    if (!await _call.ResponseStream.MoveNext(ct)) break;
+                    var chunk = _call.ResponseStream.Current.Payload.Span;
+                    if (chunk.Length == 0) continue;
+                    if (received + chunk.Length > _payloadSize
+                        || !chunk.SequenceEqual(payload.AsSpan(received, chunk.Length)))
+                    {
+                        throw new IOException($"echo 数据不一致 #{Id} 往返 {RoundTrips}（已收 {received}+{chunk.Length} 字节）");
+                    }
+                    received += chunk.Length;
                 }
+                if (received != _payloadSize) break;
 
                 Interlocked.Increment(ref _roundTrips);
-                Interlocked.Add(ref _bytesEchoed, PayloadSize * 2L);
+                Interlocked.Add(ref _bytesEchoed, _payloadSize * 2L);
 
                 // 轻负载模式：每轮结束后睡一会儿，让隧道保持存活但 CPU 不被打满——
                 // 这样才能单独测"并发连接数上限"，而不会被数据吞吐的 CPU 瓶颈抢在前面
@@ -356,6 +420,174 @@ public sealed class Tunnel : IAsyncDisposable
         try { _call.RequestStream.CompleteAsync().Wait(TimeSpan.FromSeconds(2)); } catch { }
         try { _call.Dispose(); } catch { }
         if (_loop is not null) { try { await _loop.WaitAsync(TimeSpan.FromSeconds(2)); } catch { } }
+        _loopCts.Dispose();
+    }
+}
+
+/// <summary>
+/// 经客户端 SOCKS5 监听口建立的隧道：压测客户端 → 客户端 → gRPC → 服务端 → echo 目标。
+/// 用原始 Socket 做 echo 校验，口径与直连 gRPC 的 <see cref="Tunnel"/> 一致。
+/// </summary>
+public sealed class SocksTunnel : ITunnel
+{
+    private readonly Socket _socket;
+    private readonly CancellationToken _token;
+    private readonly CancellationTokenSource _loopCts = new();
+    private readonly int _payloadSize;
+    private readonly int _writeChunk;
+    private Task? _loop;
+
+    private SocksTunnel(long id, Socket socket, CancellationToken token, int payloadSize, int writeChunk)
+    {
+        Id = id;
+        _socket = socket;
+        _token = token;
+        _payloadSize = payloadSize;
+        _writeChunk = writeChunk > 0 && writeChunk < payloadSize ? writeChunk : payloadSize;
+    }
+
+    public long Id { get; }
+
+    public TaskCompletionSource<bool> Established { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    public Exception? Failure { get; private set; }
+
+    public long RoundTrips => Interlocked.Read(ref _roundTrips);
+    private long _roundTrips;
+
+    public long BytesEchoed => Interlocked.Read(ref _bytesEchoed);
+    private long _bytesEchoed;
+
+    public static SocksTunnel Start(IPEndPoint socks, IPEndPoint target, long id, CancellationToken token,
+        int payloadSize, bool startLoop = true, int intervalMs = 0, int writeChunk = 0)
+    {
+        var socket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp) { NoDelay = true };
+        var tunnel = new SocksTunnel(id, socket, token, payloadSize, writeChunk);
+        tunnel._loop = tunnel.RunAsync(socks, target, startLoop, intervalMs);
+        return tunnel;
+    }
+
+    private async Task RunAsync(IPEndPoint socks, IPEndPoint target, bool startLoop, int intervalMs)
+    {
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(_token, _loopCts.Token);
+        var ct = linked.Token;
+        try
+        {
+            await _socket.ConnectAsync(socks, ct);
+
+            // SOCKS5 问候：只提供"无认证"
+            await _socket.SendAsync(new byte[] { 5, 1, 0 }, SocketFlags.None, ct);
+            var greeting = new byte[2];
+            await ReceiveExactlyAsync(greeting, ct);
+            if (greeting[0] != 5 || greeting[1] != 0)
+            {
+                throw new IOException("SOCKS5 握手被拒绝");
+            }
+
+            if (target.Address.AddressFamily != AddressFamily.InterNetwork)
+            {
+                throw new IOException("压测目标必须是 IPv4");
+            }
+
+            var request = new byte[10];
+            request[0] = 5; // VER
+            request[1] = 1; // CONNECT
+            request[2] = 0; // RSV
+            request[3] = 1; // ATYP=IPv4
+            target.Address.TryWriteBytes(request.AsSpan(4, 4), out _);
+            request[8] = (byte)(target.Port >> 8);
+            request[9] = (byte)target.Port;
+            await _socket.SendAsync(request, SocketFlags.None, ct);
+
+            // CoreProxy 客户端固定回 10 字节：05 00 00 01 7f 00 00 01 1f 40
+            var connectReply = new byte[10];
+            await ReceiveExactlyAsync(connectReply, ct);
+            if (connectReply[0] != 5 || connectReply[1] != 0)
+            {
+                throw new IOException($"SOCKS5 CONNECT 失败，REP={connectReply[1]}");
+            }
+
+            Established.TrySetResult(true);
+
+            if (!startLoop)
+            {
+                return;
+            }
+
+            var payload = new byte[_payloadSize];
+            Encoding.UTF8.GetBytes($"c{Id}:", payload);
+            var back = new byte[_payloadSize];
+            while (!ct.IsCancellationRequested)
+            {
+                payload[_payloadSize - 1] = (byte)(Interlocked.Read(ref _roundTrips) & 0xFF);
+                // 模拟浏览器按小块写入：客户端会为每个管道分段生成一条 gRPC 消息
+                for (var offset = 0; offset < _payloadSize; offset += _writeChunk)
+                {
+                    await _socket.SendAsync(payload.AsMemory(offset, Math.Min(_writeChunk, _payloadSize - offset)),
+                        SocketFlags.None, ct);
+                }
+                await ReceiveExactlyAsync(back, ct);
+                if (!back.AsSpan().SequenceEqual(payload))
+                {
+                    throw new IOException($"echo 数据不一致 #{Id} 往返 {RoundTrips}");
+                }
+
+                Interlocked.Increment(ref _roundTrips);
+                Interlocked.Add(ref _bytesEchoed, _payloadSize * 2L);
+
+                if (intervalMs > 0)
+                {
+                    await Task.Delay(intervalMs, ct);
+                }
+            }
+
+            Established.TrySetResult(true);
+        }
+        catch (OperationCanceledException)
+        {
+            Established.TrySetResult(true);
+        }
+        catch (Exception ex)
+        {
+            Failure = ex;
+            Established.TrySetResult(true);
+        }
+    }
+
+    public async Task<bool> ProbeAsync(TimeSpan timeout)
+    {
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(_token);
+        cts.CancelAfter(timeout);
+        var payload = Encoding.UTF8.GetBytes($"probe-{Id}-{Guid.NewGuid():N}");
+        await _socket.SendAsync(payload, SocketFlags.None, cts.Token);
+        var back = new byte[payload.Length];
+        await ReceiveExactlyAsync(back, cts.Token);
+        return back.AsSpan().SequenceEqual(payload);
+    }
+
+    private async ValueTask ReceiveExactlyAsync(Memory<byte> buffer, CancellationToken cancellationToken)
+    {
+        while (!buffer.IsEmpty)
+        {
+            var read = await _socket.ReceiveAsync(buffer, SocketFlags.None, cancellationToken);
+            if (read <= 0)
+            {
+                throw new IOException("SOCKS5 连接提前关闭");
+            }
+
+            buffer = buffer[read..];
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        _loopCts.Cancel();
+        try { _socket.Shutdown(SocketShutdown.Both); } catch { }
+        _socket.Dispose();
+        if (_loop is not null)
+        {
+            try { await _loop.WaitAsync(TimeSpan.FromSeconds(2)); } catch { }
+        }
         _loopCts.Dispose();
     }
 }
